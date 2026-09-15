@@ -1,0 +1,56 @@
+{
+ "look_up": {
+  "file": "sheets/look_up.png",
+  "frames": 7,
+  "w": 32,
+  "h": 32
+ },
+ "pickup_bag": {
+  "file": "sheets/pickup_bag.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "pickup_suit": {
+  "file": "sheets/pickup_suit.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "walk_suit": {
+  "file": "sheets/walk_suit.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "walk_suit_bag": {
+  "file": "sheets/walk_suit_bag.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "walk_underwear": {
+  "file": "sheets/walk_underwear.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "company2": {
+  "file": "sheets/company2.png",
+  "frames": 1,
+  "w": 48,
+  "h": 64
+ },
+ "suit_ground": {
+  "file": "sheets/suit_ground.png",
+  "frames": 1,
+  "w": 20,
+  "h": 20
+ },
+ "bag_ground": {
+  "file": "sheets/bag_ground.png",
+  "frames": 1,
+  "w": 16,
+  "h": 16
+ }
+}
