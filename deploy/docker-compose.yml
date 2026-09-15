@@ -1,0 +1,22 @@
+services:
+  web:
+    image: ghcr.io/4this/woo-momo-web:latest
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - /srv/momo/models:/usr/share/nginx/models:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/4this/woo-momo-api:latest
+    build:
+      context: ../backend
+      dockerfile: ../deploy/api.Dockerfile
+    expose:
+      - "8000"
+    restart: unless-stopped
