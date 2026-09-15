@@ -123,14 +123,14 @@
 
 | 컴포넌트 | 모양 | 상태 |
 |---|---|---|
-| `PixelWindow` | 3.4 창 테두리, `--win` 바탕, 패딩 32/40. slot: 제목(h2, display 22px) + 본문. 우상단에 `PixelTag` 슬롯 | 기본 / 등장 애니메이션 |
+| `PixelWindow` | 3.4 창 테두리, `--win` 바탕, 패딩 md 24/32 · sm 22/28 (시안 기준). slot: 제목(h2, display 22px) + 본문. 우상단에 `PixelTag` 슬롯 | 기본 / 등장 애니메이션 |
 | `PixelTag` | mono 13px, 패딩 4px 10px, 배경 `--line` 글자 `--bg`. 변형 `ok`(배경 `--ok`), `danger`(배경 `--danger`) | — |
 | `ChoiceMenu` | 세로 선택지 목록. 각 항목 높이 ≥ 48px, 패딩 14px 20px. 선택된 항목: 배경 `--raise`, 글자 `--accent`, 왼쪽에 `CursorIcon`(14×16 삼각형 SVG). 비선택: 글자 `--text-3`, 커서 자리 14px 비움 | 선택 / 비선택 / 비활성. 키보드 ↑↓ Enter 지원 |
 | `PixelButton` | display 18px, 높이 52px, 패딩 0 28px. 기본: 배경 `--raise` 글자 `--accent` + 커서 아이콘(선택 메뉴 1항목과 동일한 모양). 보조: 테두리 2px `--line`, 배경 없음 | 기본 / 보조 / 비활성(글자 `--text-3`, 커서 숨김) / 포커스 |
 | `StatCard` | 배경 `--bg`, 패딩 18px 20px. mono 13px 라벨 → body 18px 값 → 14px 정사각 3칸 게이지(`--ok` 채움, `--raise` 빈칸) | ok / 부분 / 실패(`--danger` 칸) |
 | `KeyValueGrid` | 4열 격자, 배경 `--bg`, 패딩 16px 20px. 각 칸: mono 13px `--text-3` 키 + mono 14px `--text` 값 | — |
 | `SpeechText` | body 20px, 행간 1.75. 강조 단어 `--accent`. 타이핑 효과 옵션 | 타이핑 중 / 완료 |
-| `Avatar` | 96×96 `--raise` 틀 안에 64×64 스프라이트 정지 프레임(2배) | — |
+| `Avatar` | 96×96 `--raise` 틀 안에 64×64 스프라이트 정지 프레임(2배). props `src`, `frames`(필수), `frameW`/`frameH` 기본 32 | — |
 | `PixelProgress` | 캔버스 장면(높이 200px, 배경 `--bg`) + 바(높이 22px, 테두리 3px `--line`, 패딩 2px, 채움 `--accent`) + mono 15px 3열(수신/상태문구/퍼센트·남은시간). 장면 로직은 `pixel-progress/index.html`의 STAGES를 그대로 이식 | 0–30 / 30–70 / 70–90 / 90–100 / 완료 / 실패 |
 | `SpriteFrame` | 스프라이트 시트 한 프레임 표시. props: 시트, 프레임 폭·높이, 인덱스, 배율 | 정지 / 루프 |
 

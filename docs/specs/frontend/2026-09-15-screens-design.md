@@ -50,7 +50,7 @@
 | 3 | 동의 | `KeyValueGrid`(모델 id · 용량 · 저장 위치 "이 브라우저의 캐시" · 삭제 방법) + `ChoiceMenu` ["네, 이해했고 이 브라우저에 내려받는 데 동의합니다" / "아니요, 더 알아보고 올게요"] | "네" 선택 → 창 4 펼침. "아니요" 선택 → 창 2로 스크롤 백, 아무것도 저장하지 않음 |
 | 4 | 장비 확인 | `StatCard` ×3: WebGPU(`navigator.gpu` 유무) · GPU(`adapter.info`/`requestAdapterInfo` 이름, 못 읽으면 "이름 확인 불가") · 저장 공간(`navigator.storage.estimate()` 여유 vs 매니페스트 `size`). 결과 태그: 셋 다 통과 "출전 가능"(`ok`) / 저장 공간만 부족 "공간 부족"(`danger`) / WebGPU 없음 "실행 불가"(`danger`). 면책 본문(하드웨어에 따라 품질·속도 차이, GPU 메모리 부족 시 E2B 전환). `PixelButton`"확인했습니다. 내려받기 시작" | 버튼 → `navigator.storage.persist()` 요청 → 다운로드 시작 → `phase = 'prepare'`. WebGPU 없음이면 버튼 비활성 + 안내(최신 Chrome·GPU). 저장 공간 부족이면 버튼 비활성 + 필요 용량 안내 |
 
-- 용량 표기는 매니페스트 `size`를 GB 소수 첫째 자리로("약 3.0GB"). 하드코딩 금지.
+- 용량 표기는 매니페스트 `size`를 **1024 기준(GiB)** 소수 첫째 자리로("약 2.8GB") — 브라우저 저장 공간 표기와 같은 기준. 하드코딩 금지.
 - 다운로드 창은 랜딩에 두지 않는다. 버튼을 누르는 순간 준비 화면으로 바뀌고 거기서 캐릭터가 걷기 시작한다.
 
 ### 4.2 PrepareView
@@ -134,7 +134,7 @@
 
 | 대상 | 접근 | 설명 |
 |---|---|---|
-| `stores/model.ts` — `status: 'idle'|'downloading'|'initializing'|'ready'|'error'`, `received`, `total`, `error`, `manifest`, `download()`, `init()`, `retry()`, `useFallback()`, `clearCache()` | internal | 준비 창 1과 랜딩 창 3·4가 읽는다. 화면은 `services/modelCache.ts`·`services/llm.ts`를 직접 부르지 않는다 |
+| `stores/model.ts` — `status: 'idle'|'downloading'|'downloaded'|'initializing'|'ready'|'error'`(`downloaded`: 다운로드 끝, 초기화 전), `received`, `total`, `error`, `manifest`, `download()`, `init()`, `retry()`, `useFallback()`, `clearCache()` | internal | 준비 창 1과 랜딩 창 3·4가 읽는다. 화면은 `services/modelCache.ts`·`services/llm.ts`를 직접 부르지 않는다 |
 | `stores/interview.ts` — `phase`, `stage`, `profile {field, job}`, `resumeText`, `fallbackQuestions`, `messages[]`, `streaming`, `report`, `canStart`, `start()`, `send(text)`, `abort()`, `finish()`, `reset()` | internal | 네 화면 전부 |
 | `services/api.ts` — `getManifest()`, `getQuestions(field)` | internal | `docs/API.md` 형태 그대로 반환, 변환 없음 |
 | `services/pdf.ts` — `extractText(file): Promise<string>` | internal | pdf.js, 워커 로컬 번들 |
