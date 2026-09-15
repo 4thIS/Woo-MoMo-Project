@@ -132,7 +132,7 @@ src/
 - 사용자 답변을 user 턴으로 추가하고 스트리밍 생성. 프론트는 흐름을 통제하지 않고 출력을 그대로 말풍선에 표시한다.
 - 안전장치는 두 가지만 둔다.
   1. 모델 응답에 종료 문장("면접을 마치겠습니다")이 포함되거나 사용자가 "면접 종료"를 누르면 리포트 단계로 이동.
-  2. 대화 이력 토큰 근사치가 6,500을 넘으면 입력을 막고 종료를 유도한다.
+  2. 대화 이력 토큰 근사치가 6,500을 넘으면 입력을 막고 종료를 유도한다. 근사는 한글 1자 = 1토큰, 그 외 4자 = 1토큰으로 계산한다(정확한 토크나이저 불필요, 보수적 추정).
 
 ### 4.4 리포트 생성
 - 같은 세션에 리포트 지시문(`prompts/report.ts`)을 user 턴으로 추가한다: 지금까지의 질문과 답변을 문항별로 정리하고 각 답변에 대한 피드백을 아래 JSON 형식으로만 출력.
@@ -145,11 +145,12 @@ src/
   "id": "gemma4-e4b-it",
   "url": "/models/gemma4-e4b-it-web.litertlm",
   "size": 4400000000,
-  "template": { "system": "...", "user": "...", "model": "...", "end": "..." },
+  "template": { "turnStart": "<|turn>", "turnEnd": "<turn|>", "roles": { "system": "system", "user": "user", "model": "model" } },
   "systemPromptOverride": null,
   "fallback": { "id": "gemma4-e2b-it", "url": "/models/gemma4-e2b-it-web.litertlm", "size": 2000000000 }
 }
 ```
+- `template` 값은 참고 코드(C:\MyCode\localLLM)의 토큰을 초기값으로 쓰되, D-6에 실제 모델 토크나이저와 대조해 확정한다.
 - `fallback`은 E4B 초기화 실패(GPU 메모리 부족 등) 시 재시도용.
 - 파인튜닝 모델 반영은 이 파일과 모델 파일 교체만으로 끝난다. 프론트 재배포 없음.
 
