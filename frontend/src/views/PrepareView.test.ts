@@ -25,6 +25,15 @@ import PrepareView from './PrepareView.vue'
 
 const mountView = () => mount(PrepareView, { global: { stubs: { PixelProgress: true } } })
 
+/** ① 지원 정보(분야 IT + 직무)를 채우고 직무 입력을 떠나 ② 이력서 단계로 넘어간다 */
+async function fillProfile(w: ReturnType<typeof mountView>) {
+  await w.findAll('[role=radio]')[0].trigger('click') // IT
+  await flushPromises()
+  await w.find('[data-test=job]').setValue('백엔드 개발자')
+  await w.find('[data-test=job]').trigger('blur')
+  await flushPromises()
+}
+
 beforeEach(() => {
   setActivePinia(createPinia())
   const m = useModelStore()
@@ -45,15 +54,13 @@ describe('PrepareView', () => {
   it('분야 칩 + 직무 + PDF → 입력 완료 태그', async () => {
     vi.mocked(extractPdfText).mockResolvedValue('이력서 '.repeat(100))
     const w = mountView()
-    await w.findAll('[role=radio]')[0].trigger('click') // IT
-    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await fillProfile(w)
     const input = w.find('[data-test=file]')
     Object.defineProperty(input.element, 'files', {
       value: [new File(['x'], 'cv.pdf', { type: 'application/pdf' })],
     })
     await input.trigger('change')
     await flushPromises()
-    expect(w.text()).toContain('입력 완료')
     expect(w.text()).toMatch(/\d+자 추출/)
     expect(useInterviewStore().resumeName).toBe('cv.pdf')
   })
@@ -61,6 +68,7 @@ describe('PrepareView', () => {
   it('추출 글자가 적으면 직접 붙여넣기 안내', async () => {
     vi.mocked(extractPdfText).mockResolvedValue('짧음')
     const w = mountView()
+    await fillProfile(w)
     const input = w.find('[data-test=file]')
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'scan.pdf')] })
     await input.trigger('change')
@@ -72,12 +80,49 @@ describe('PrepareView', () => {
   it('붙여넣기는 blur 없이 입력만으로도 즉시 반영된다', async () => {
     vi.mocked(extractPdfText).mockResolvedValue('짧음')
     const w = mountView()
+    await fillProfile(w)
     const input = w.find('[data-test=file]')
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'scan.pdf')] })
     await input.trigger('change')
     await flushPromises()
     await w.find('[data-test=paste]').setValue('가'.repeat(60))
     expect(useInterviewStore().resumeDone).toBe(true)
+  })
+
+  it('처음엔 지원 정보만 보이고 이력서 폼은 없다; 다음 화살표는 비활성', () => {
+    const w = mountView()
+    expect(w.find('[data-test=step-profile]').exists()).toBe(true)
+    expect(w.find('[data-test=step-resume]').exists()).toBe(false)
+    expect((w.find('[data-test=step-next]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((w.find('[data-test=step-prev]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('분야·직무를 채우고 직무 입력을 떠나면 같은 자리에 이력서 폼이 나타난다', async () => {
+    const w = mountView()
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises() // 폴백 질문 로드까지 끝낸 뒤 직무 입력
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    expect(w.find('[data-test=step-resume]').exists()).toBe(false) // 입력 중엔 안 넘어감
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-profile]').exists()).toBe(false)
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+    expect(w.text()).toContain('2 / 2')
+  })
+
+  it('화살표로 지원 정보 ↔ 이력서를 왕복하고, 뒤로 간 뒤엔 자동 전환하지 않는다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    await w.find('[data-test=step-prev]').trigger('click')
+    expect(w.find('[data-test=step-profile]').exists()).toBe(true)
+    expect((w.find('[data-test=job]').element as HTMLInputElement).value).toBe('백엔드 개발자')
+    await w.find('[data-test=job]').setValue('프론트엔드 개발자')
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-profile]').exists()).toBe(true) // 자동 전환 없음
+    await w.find('[data-test=step-next]').trigger('click')
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+    expect(useInterviewStore().profile.job).toBe('프론트엔드 개발자')
   })
 
   it('모델 ready + 입력 완료면 버튼 활성, 클릭하면 interview로', async () => {

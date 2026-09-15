@@ -9,6 +9,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
+import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
 const model = useModelStore()
 const interview = useInterviewStore()
@@ -54,6 +55,24 @@ watch(
   },
   { immediate: true },
 )
+
+/* 입력 2단계: ① 지원 정보 → ② 이력서. 처음 완료 때만 자동 전환, 그 뒤엔 화살표로만 이동 */
+const step = ref<1 | 2>(1)
+const navigatedBack = ref(false)
+function tryAdvance() {
+  if (step.value === 1 && interview.profileDone && !navigatedBack.value) step.value = 2
+}
+function goBack() {
+  step.value = 1
+  navigatedBack.value = true
+}
+function goNext() {
+  if (interview.profileDone) step.value = 2
+}
+async function onField(field: Field) {
+  await interview.setField(field)
+  if (interview.profile.job.trim()) tryAdvance()
+}
 
 /* 이력서 */
 const extracting = ref(false)
@@ -102,7 +121,7 @@ async function clearAndRetry() {
 
     <div class="content">
       <!-- 1. 다운로드 / 초기화 -->
-      <PixelWindow title="면접관이 출근하는 중">
+      <PixelWindow title="면접관이 출근하는 중" padding="sm">
         <PixelProgress
           :progress="model.progress"
           :phase="phase"
@@ -126,82 +145,110 @@ async function clearAndRetry() {
         </PixelProgress>
       </PixelWindow>
 
-      <!-- 2. 지원 정보 -->
-      <PixelWindow title="어디에 지원하시나요?">
-        <template #tag
-          ><PixelTag v-if="interview.profileDone" tone="ok">입력 완료</PixelTag></template
-        >
-        <div class="field">
-          <span class="mono label">기업 분야</span>
-          <ChoiceMenu
-            :items="fieldItems"
-            :model-value="interview.profile.field"
-            direction="horizontal"
-            aria-label="기업 분야"
-            @update:model-value="interview.setField"
-          />
-        </div>
-        <div class="field">
-          <label class="mono label" for="job">지원 직무</label>
-          <input
-            id="job"
-            data-test="job"
-            class="input"
-            :value="interview.profile.job"
-            maxlength="40"
-            placeholder="예: 백엔드 개발자"
-            @input="interview.setJob(($event.target as HTMLInputElement).value)"
-          />
-          <span class="mono hint"
-            >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산 관리</span
-          >
-        </div>
-      </PixelWindow>
-
-      <!-- 3. 이력서 -->
-      <PixelWindow title="이력서">
+      <!-- 2. 입력: ① 지원 정보 → ② 이력서 (같은 자리, 페이드 전환) -->
+      <PixelWindow :title="step === 1 ? '어디에 지원하시나요?' : '이력서'">
         <template #tag>
-          <PixelTag v-if="interview.resumeDone" tone="ok">
-            {{ interview.resumeText.length.toLocaleString() }}자 추출
-          </PixelTag>
+          <div class="stepnav">
+            <PixelTag v-if="step === 1 && interview.profileDone" tone="ok">입력 완료</PixelTag>
+            <PixelTag v-if="step === 2 && interview.resumeDone" tone="ok">
+              {{ interview.resumeText.length.toLocaleString() }}자 추출
+            </PixelTag>
+            <button
+              type="button"
+              class="arrow"
+              data-test="step-prev"
+              aria-label="이전: 지원 정보"
+              :disabled="step === 1"
+              @click="goBack"
+            >
+              <CursorIcon class="flip" />
+            </button>
+            <span class="mono stepnum">{{ step }} / 2</span>
+            <button
+              type="button"
+              class="arrow"
+              data-test="step-next"
+              aria-label="다음: 이력서"
+              :disabled="step === 2 || !interview.profileDone"
+              @click="goNext"
+            >
+              <CursorIcon />
+            </button>
+          </div>
         </template>
-        <label class="file-row">
-          <DocIcon />
-          <span class="mono name">{{
-            interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
-          }}</span>
-          <span class="mono pick">{{ interview.resumeName ? '다른 파일' : '파일 선택' }}</span>
-          <input
-            data-test="file"
-            type="file"
-            accept="application/pdf"
-            class="sr"
-            @change="onFile"
-          />
-        </label>
-        <p v-if="extracting" class="mono hint">읽는 중…</p>
-        <div v-if="interview.resumeText && !tooShort" class="preview">
-          {{ interview.resumeText }}
-        </div>
-        <template v-if="tooShort">
-          <p class="mono warn">
-            글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 이력서 내용을 직접 붙여넣어
-            주세요.
-          </p>
-          <textarea
-            v-model="pasted"
-            data-test="paste"
-            class="input paste"
-            rows="6"
-            placeholder="이력서 내용을 붙여넣기"
-            @input="usePasted"
-            @blur="usePasted"
-          />
-        </template>
-        <p class="mono hint">
-          앞 {{ (2000).toLocaleString() }}자만 면접관에게 전달됩니다. 이름·연락처 같은 개인정보도 이
-          브라우저 안에서만 읽힙니다.
-        </p>
+
+        <Transition name="fade" mode="out-in">
+          <div v-if="step === 1" key="profile" class="step" data-test="step-profile">
+            <div class="field">
+              <span class="mono label">기업 분야</span>
+              <ChoiceMenu
+                :items="fieldItems"
+                :model-value="interview.profile.field"
+                direction="horizontal"
+                aria-label="기업 분야"
+                @update:model-value="onField"
+              />
+            </div>
+            <div class="field">
+              <label class="mono label" for="job">지원 직무</label>
+              <input
+                id="job"
+                data-test="job"
+                class="input"
+                :value="interview.profile.job"
+                maxlength="40"
+                placeholder="예: 백엔드 개발자"
+                @input="interview.setJob(($event.target as HTMLInputElement).value)"
+                @keydown.enter="tryAdvance"
+                @blur="tryAdvance"
+              />
+              <span class="mono hint"
+                >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산 관리 —
+                입력을 마치면 이력서 단계로 넘어갑니다</span
+              >
+            </div>
+          </div>
+
+          <div v-else key="resume" class="step" data-test="step-resume">
+            <label class="file-row">
+              <DocIcon />
+              <span class="mono name">{{
+                interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
+              }}</span>
+              <span class="mono pick">{{ interview.resumeName ? '다른 파일' : '파일 선택' }}</span>
+              <input
+                data-test="file"
+                type="file"
+                accept="application/pdf"
+                class="sr"
+                @change="onFile"
+              />
+            </label>
+            <p v-if="extracting" class="mono hint">읽는 중…</p>
+            <div v-if="interview.resumeText && !tooShort" class="preview">
+              {{ interview.resumeText }}
+            </div>
+            <template v-if="tooShort">
+              <p class="mono warn">
+                글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 이력서 내용을 직접 붙여넣어
+                주세요.
+              </p>
+              <textarea
+                v-model="pasted"
+                data-test="paste"
+                class="input paste"
+                rows="6"
+                placeholder="이력서 내용을 붙여넣기"
+                @input="usePasted"
+                @blur="usePasted"
+              />
+            </template>
+            <p class="mono hint">
+              앞 {{ (2000).toLocaleString() }}자만 면접관에게 전달됩니다. 이름·연락처 같은
+              개인정보도 이 브라우저 안에서만 읽힙니다.
+            </p>
+          </div>
+        </Transition>
       </PixelWindow>
 
       <!-- 시작 -->
@@ -261,6 +308,54 @@ async function clearAndRetry() {
   flex-direction: column;
   gap: var(--sp-10);
   padding: 0 var(--sp-4);
+}
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+/* 단계 전환: 투명 → 불투명. 스크롤 페이드와 같은 선형 예외 */
+.fade-enter-active {
+  transition: opacity 0.25s linear;
+}
+.fade-leave-active {
+  transition: none;
+}
+.fade-enter-from {
+  opacity: 0;
+}
+.stepnav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.stepnum {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.arrow {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--raise);
+  color: var(--accent);
+  border: 0;
+  cursor: pointer;
+}
+.arrow:disabled {
+  color: var(--text-3);
+  background: var(--bg);
+  cursor: default;
+}
+.flip {
+  transform: scaleX(-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fade-enter-active {
+    transition: none;
+  }
 }
 .field {
   display: flex;
