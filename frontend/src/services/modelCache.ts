@@ -39,17 +39,12 @@ export async function downloadModel(
   }
   if (received !== expectedSize || received !== declared)
     throw new Error(`incomplete: ${received}/${expectedSize}`)
-  // ponytail: bytes (not Blob) as Response body — some fetch polyfills (e.g. jsdom's) mangle a Blob body.
-  const bytes = new Uint8Array(received)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
+  // TS6 Uint8Array<ArrayBufferLike> vs BlobPart의 ArrayBufferView<ArrayBuffer> 불일치(타입 전용, fetch 바디는 항상 실제 ArrayBuffer).
+  const blob = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' })
   const cache = await caches.open(CACHE)
   await cache.put(
     cacheKey(id, url),
-    new Response(bytes, { headers: { 'Content-Length': String(received) } }),
+    new Response(blob, { headers: { 'Content-Length': String(received) } }),
   )
 }
 

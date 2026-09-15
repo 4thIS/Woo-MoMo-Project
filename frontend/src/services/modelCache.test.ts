@@ -1,3 +1,4 @@
+import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cacheKey, clearModels, downloadModel, getModelBlob, hasModel } from './modelCache'
 
@@ -30,6 +31,9 @@ let caches: ReturnType<typeof fakeCaches>
 beforeEach(() => {
   caches = fakeCaches()
   vi.stubGlobal('caches', caches)
+  // jsdom의 Blob과 Node(undici)의 Response는 서로를 인식하지 못해 Response가 Blob을 문자열로 바꿔버린다.
+  // Response가 인식하는 Node Blob으로 전역을 바꿔 실제 브라우저 동작(Response가 Blob을 그대로 받음)에 맞춘다.
+  vi.stubGlobal('Blob', NodeBlob)
 })
 afterEach(() => vi.unstubAllGlobals())
 
