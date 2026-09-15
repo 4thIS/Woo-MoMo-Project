@@ -3,7 +3,52 @@
 파이에는 리포를 **git clone**해서 올리고, 이미지는 파이에서 직접 빌드한다(GHCR 불필요).
 프론트 빌드 산출물이 없어도 `web` 이미지는 플레이스홀더 페이지로 기동한다.
 
-## 최초 1회
+## 실제 파이 구성 (webPi, 2026-09-15 기준)
+
+위의 일반 절차와 다른 점만 적는다. **이 절이 우선한다.**
+
+| 항목 | 값 |
+|---|---|
+| 접속 | Tailscale SSH, `admin@webPi` (키 인증) |
+| 클론 위치 | `/srv/apps/Woo-MoMo-Project` (모든 프로젝트가 `/srv/apps/` 아래) |
+| 클론 주소 | `git@github.com:4thIS/Woo-MoMo-Project.git` (private 리포, 파이 SSH 키가 GitHub `ssenu`로 인증됨) |
+| 호스트 포트 | **8006** (8000~8005는 다른 프로젝트가 사용) → `deploy/.env`에 `WEB_BIND=127.0.0.1:8006` |
+| 모델 볼륨 | `/srv/momo/models` (admin 소유) |
+| cloudflared | 호스트 프로세스, 터널 `web`, **로컬 관리** `~/.cloudflared/config-web.yml` |
+| 도메인 | `momo.ssenu.cloud` → `http://localhost:8006` |
+
+### 배포
+```
+ssh admin@webPi
+cd /srv/apps/Woo-MoMo-Project && git pull
+cd deploy
+docker compose up -d --build
+curl -s http://127.0.0.1:8006/api/health
+curl -I -H "Range: bytes=0-1023" http://127.0.0.1:8006/models/gemma4-e4b-it-web.litertlm   # 206
+```
+
+### 도메인 라우트 (대시보드 Public Hostname 사용 금지)
+터널이 설정 파일로 로컬 관리되므로 Cloudflare 대시보드의 Public Hostname을 쓰면 원격 관리와 충돌한다.
+라우트는 파이의 `cloudflare-gui-tool` "라우트 추가"로 넣는다(`config-web.yml` ingress + DNS CNAME을 함께 생성).
+수동으로 넣을 때는 `~/.cloudflared/config-web.yml`의 ingress에서 **마지막 catch-all(`service: http_status:404`) 앞에** 추가한다.
+```yaml
+  - hostname: momo.ssenu.cloud
+    service: http://localhost:8006
+```
+cloudflared는 설정 파일을 다시 읽지 않으므로 **재시작이 필요**하다(sudo).
+```
+cloudflared tunnel ingress validate --config ~/.cloudflared/config-web.yml   # 문법 검증 먼저
+sudo systemctl restart cloudflared
+curl -s https://momo.ssenu.cloud/api/health
+curl -I -H "Range: bytes=0-1023" https://momo.ssenu.cloud/models/gemma4-e4b-it-web.litertlm   # 206
+```
+
+### 기타
+- Cloudflare 존 설정(Rocket Loader·Auto Minify OFF)은 `ssenu.cloud` 존 전체에 적용된다. 다른 서브도메인 서비스에도 영향이 가지만 끄는 방향이라 해는 없다.
+- GUI 앱의 `HOST_PORT` 자동 채움은 `WEB_BIND`가 주소:포트 한 변수라 동작하지 않는다. 실행/정지/상태/배포는 정상. 변수를 나누려면 compose 변경이라 공동 리뷰 후 별도 PR.
+- 모델 파일은 `.done` 표시만 믿지 말고 크기를 확인한다: E4B 2,969,059,328 / E2B 2,008,432,640 bytes.
+
+## 최초 1회 (일반 절차)
 ```
 sudo mkdir -p /srv/momo/models
 # 모델 파일을 /srv/momo/models/ 에 넣는다. 파일명은 backend/data/manifest.json 의 url 과 같아야 한다.
