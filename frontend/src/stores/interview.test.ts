@@ -53,6 +53,7 @@ describe('interview store', () => {
     ['downloaded', 'it', '백엔드', false, '면접관이 자리에 앉으면 열립니다'],
     ['ready', null, '백엔드', false, '위 항목을 채우면 열립니다'],
     ['ready', 'it', '', false, '위 항목을 채우면 열립니다'],
+    ['downloaded', null, '', false, '면접관이 자리에 앉으면 열립니다'],
   ] as const)(
     'canStart: model=%s field=%s job=%s → %s',
     async (status, field, job, expected, reason) => {

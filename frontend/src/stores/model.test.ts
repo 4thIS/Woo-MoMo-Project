@@ -89,4 +89,11 @@ describe('model store', () => {
     await s.loadManifest()
     expect(s.manifestError).toContain('500')
   })
+
+  it('active 없이 download를 호출하면 error 상태로 남는다', async () => {
+    const s = useModelStore()
+    await s.download()
+    expect(s.status).toBe('error')
+    expect(s.error).toContain('manifest')
+  })
 })

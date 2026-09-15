@@ -38,7 +38,11 @@ export const useModelStore = defineStore('model', {
       this.received = 0
     },
     async download() {
-      if (!this.active) throw new Error('manifest not loaded')
+      if (!this.active) {
+        this.status = 'error'
+        this.error = 'manifest not loaded'
+        return
+      }
       const { id, url, size } = this.active
       this.status = 'downloading'
       this.error = null
@@ -66,6 +70,7 @@ export const useModelStore = defineStore('model', {
       await clearModels()
       this.received = 0
       this.status = 'idle'
+      this.error = null
     },
   },
 })

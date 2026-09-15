@@ -5,11 +5,16 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 export async function extractPdfText(file: File): Promise<string> {
-  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
+  const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() })
   const pages: string[] = []
-  for (let i = 1; i <= doc.numPages; i++) {
-    const content = await (await doc.getPage(i)).getTextContent()
-    pages.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '))
+  try {
+    const doc = await loadingTask.promise
+    for (let i = 1; i <= doc.numPages; i++) {
+      const content = await (await doc.getPage(i)).getTextContent()
+      pages.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '))
+    }
+  } finally {
+    await loadingTask.destroy()
   }
   return pages.join('\n')
 }
