@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # dorny/paths-filter가 PR 변경 파일을 API로 읽는 데 필요
   packages: write
 
 jobs:
