@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MODELS_PREFIX = "/models/"
 
@@ -12,12 +12,16 @@ def _validate_model_url(url: str) -> str:
 
 
 class ChatTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     turnStart: str
     turnEnd: str
     roles: dict[str, str]
 
 
 class ModelRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str = Field(min_length=1)
     url: str
     size: Annotated[int, Field(gt=0)]
@@ -35,6 +39,8 @@ class Manifest(ModelRef):
 
 
 class QuestionSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     field: str = Field(min_length=1)
     questions: Annotated[list[str], Field(min_length=5, max_length=5)]
 

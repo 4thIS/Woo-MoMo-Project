@@ -72,3 +72,15 @@ def test_question_set_requires_exactly_five():
 def test_question_set_rejects_blank_question():
     with pytest.raises(ValidationError):
         QuestionSet(field="it", questions=["q1", " ", "q3", "q4", "q5"])
+
+
+def test_manifest_rejects_unknown_keys():
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(sytemPromptOverride="typo"))
+
+
+def test_question_set_rejects_unknown_keys():
+    with pytest.raises(ValidationError):
+        QuestionSet.model_validate(
+            {"field": "it", "questions": ["q1", "q2", "q3", "q4", "q5"], "extra": "nope"}
+        )

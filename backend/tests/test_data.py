@@ -36,7 +36,21 @@ def test_load_manifest_raises_on_invalid_json(tmp_path: Path):
 
 def test_load_manifest_raises_on_schema_violation(tmp_path: Path):
     bad = tmp_path / "manifest.json"
-    bad.write_text(json.dumps({"id": "x", "url": "/models/x", "size": -1}), encoding="utf-8")
+    bad.write_text(
+        json.dumps(
+            {
+                "id": "x",
+                "url": "/models/x",
+                "size": -1,
+                "template": {
+                    "turnStart": "<|turn>",
+                    "turnEnd": "<turn|>",
+                    "roles": {"system": "system", "user": "user", "model": "model"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValidationError):
         load_manifest(bad)
 

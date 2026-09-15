@@ -1,6 +1,6 @@
 # 백엔드 계약 (API)
 
-> 소유: backend (@ssenu). 이 문서와 `backend/app/schemas/`는 항상 일치해야 한다.
+> 소유: backend (@ssenu). 이 문서와 `backend/app/schemas.py`는 항상 일치해야 한다.
 > 변경은 additive만. 변경 PR을 먼저 머지·배포한 뒤 frontend가 새 필드를 사용한다(lockstep).
 
 ## GET /api/manifest
@@ -38,7 +38,7 @@
 ## GET /api/questions/{field}
 
 분야별 폴백 질문 5개. 모델이 질문 생성에 실패했을 때 시스템 프롬프트에 참고용으로 끼워 넣는다.
-미등록 `field`는 `general` 세트를 반환한다 (404 아님).
+미등록 `field`는 `general` 세트를 반환한다 (404 아님). `field`는 대소문자를 구분하지 않는다(소문자로 정규화).
 
 ```json
 {
