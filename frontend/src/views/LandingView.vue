@@ -25,11 +25,19 @@ const onScroll = () => {
   const h = hero.value?.offsetHeight ?? 1
   fade.value = Math.min(1, Math.max(0, window.scrollY / (h * 0.6)))
 }
+/* 매니페스트 로드 실패 안내는 5초 지연 후에만 보여준다(spec §5: "확인 중" 유지) */
+const manifestTimedOut = ref(false)
+let manifestTimer: ReturnType<typeof setTimeout> | null = null
+
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   if (!model.manifest) model.loadManifest()
+  manifestTimer = setTimeout(() => (manifestTimedOut.value = true), 5000)
 })
-onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  if (manifestTimer) clearTimeout(manifestTimer)
+})
 
 /* 동의 */
 type Consent = 'yes' | 'no'
@@ -45,7 +53,8 @@ const envEl = ref<HTMLElement | null>(null)
 const env = ref<EnvCheck | null>(null)
 const envBusy = ref(false)
 const need = computed(() => model.active?.size ?? 0)
-const result = computed(() => (env.value ? verdict(env.value, need.value) : null))
+/* 매니페스트를 아직 못 받았으면(model.active 없음) 판정을 내리지 않는다 */
+const result = computed(() => (env.value && model.active ? verdict(env.value, need.value) : null))
 
 async function onConsent(v: Consent) {
   consent.value = v
@@ -120,7 +129,7 @@ function startDownload() {
       <!-- 3. 동의 -->
       <PixelWindow title="모델 다운로드에 동의하시겠습니까?">
         <KeyValueGrid :items="kv" />
-        <p v-if="model.manifestError" class="mono meta danger">
+        <p v-if="manifestTimedOut && !model.manifest" class="mono meta danger">
           서버에 연결할 수 없습니다 — 새로고침해 주세요.
         </p>
         <ChoiceMenu :items="consentItems" :model-value="consent" @update:model-value="onConsent" />
@@ -145,7 +154,7 @@ function startDownload() {
             <StatCard
               label="GPU"
               :value="env ? (env.gpuName ?? '이름 확인 불가') : '확인 중'"
-              :state="env ? (env.webgpu ? 'partial' : 'fail') : 'pending'"
+              :state="!env ? 'pending' : !env.webgpu ? 'fail' : env.gpuName ? 'ok' : 'partial'"
             />
             <StatCard
               label="저장 공간"
@@ -174,7 +183,7 @@ function startDownload() {
           </p>
           <PixelButton
             data-test="start-download"
-            :disabled="result !== 'ok' || envBusy"
+            :disabled="result !== 'ok' || envBusy || !model.active"
             @click="startDownload"
           >
             확인했습니다. 내려받기 시작

@@ -59,6 +59,17 @@ describe('PrepareView', () => {
     expect(w.find('[data-test=paste]').exists()).toBe(true)
   })
 
+  it('붙여넣기는 blur 없이 입력만으로도 즉시 반영된다', async () => {
+    vi.mocked(extractPdfText).mockResolvedValue('짧음')
+    const w = mountView()
+    const input = w.find('[data-test=file]')
+    Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'scan.pdf')] })
+    await input.trigger('change')
+    await flushPromises()
+    await w.find('[data-test=paste]').setValue('가'.repeat(60))
+    expect(useInterviewStore().resumeDone).toBe(true)
+  })
+
   it('모델 ready + 입력 완료면 버튼 활성, 클릭하면 interview로', async () => {
     const w = mountView()
     const m = useModelStore()

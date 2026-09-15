@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
@@ -30,19 +30,29 @@ const phase = computed(() =>
 )
 const fileName = computed(() => model.active?.url.split('/').pop() ?? '')
 /* 남은 시간: 최근 표본 속도로 추정 */
+const eta = ref('')
 const samples: { t: number; r: number }[] = []
-const eta = computed(() => {
-  const now = Date.now()
-  // eslint-disable-next-line vue/no-side-effects-in-computed-properties -- 모듈 스코프 표본 버퍼 갱신, 컴포넌트 상태 아님(brief 결정 유지)
-  samples.push({ t: now, r: model.received })
-  // eslint-disable-next-line vue/no-side-effects-in-computed-properties -- 위와 동일
-  while (samples.length > 2 && now - samples[0].t > 5000) samples.shift()
-  const a = samples[0]
-  const rate = (model.received - a.r) / Math.max(1, (now - a.t) / 1000)
-  if (rate <= 0 || model.status !== 'downloading') return ''
-  const s = Math.round((model.total - model.received) / rate)
-  return s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
-})
+watch(
+  () => [model.received, model.status] as const,
+  ([r, status]) => {
+    if (status !== 'downloading') {
+      eta.value = ''
+      return
+    }
+    const now = Date.now()
+    samples.push({ t: now, r })
+    while (samples.length > 2 && now - samples[0].t > 5000) samples.shift()
+    const a = samples[0]
+    const rate = (r - a.r) / Math.max(1, (now - a.t) / 1000)
+    if (rate <= 0) {
+      eta.value = ''
+      return
+    }
+    const s = Math.round((model.total - r) / rate)
+    eta.value = s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
+  },
+  { immediate: true },
+)
 
 /* 이력서 */
 const extracting = ref(false)
@@ -176,6 +186,7 @@ function start() {
             class="input paste"
             rows="6"
             placeholder="이력서 내용을 붙여넣기"
+            @input="usePasted"
             @blur="usePasted"
           />
         </template>

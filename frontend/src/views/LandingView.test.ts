@@ -78,6 +78,17 @@ describe('LandingView', () => {
     expect((w.find('[data-test=start-download]').element as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('매니페스트 로드 실패 시 판정 없음 + 버튼 비활성, 5초 전엔 안내 없음', async () => {
+    vi.mocked(getManifest).mockRejectedValue(new Error('network'))
+    const w = mountView()
+    await flushPromises()
+    expect(w.text()).not.toContain('서버에 연결할 수 없습니다')
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises()
+    expect(w.text()).not.toContain('출전 가능')
+    expect((w.find('[data-test=start-download]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('내려받기 시작 → 다운로드 시작 + prepare로 이동', async () => {
     const w = mountView()
     await flushPromises()
