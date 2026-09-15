@@ -44,12 +44,27 @@ Woo-MoMo-Project/
 └── docs/       ← 사람·AI 공용 문서 (specs/·plans/·API.md 포함)
 ```
 
+## 문서 체계 — 전체 설계서 1개 + 영역별 spec/plan
+
+프론트와 백엔드는 **완전히 분리해서 개발**한다. 문서도 영역 단위로 분리한다.
+
+| 층 | 문서 | 담당 | 역할 |
+|---|---|---|---|
+| 전체 | `docs/superpowers/specs/2026-09-15-mock-interview-design.md` | 공동 | 아키텍처·화면·LLM 흐름·배포·일정. 두 영역이 공유하는 기준 |
+| 영역 spec | `docs/specs/backend/`, `docs/specs/frontend/` | 각 영역 담당 | 전체 설계서에서 자기 영역 몫만 떼어 "무엇을·왜" 확정 |
+| 영역 plan | `docs/plans/backend/`, `docs/plans/frontend/` | 각 영역 담당 | 자기 영역 spec을 Task 단위 작업지시서로 |
+
+- 파일명: `docs/specs/{area}/YYYY-MM-DD-{slug}-design.md`, `docs/plans/{area}/YYYY-MM-DD-{slug}.md`
+- 영역 spec은 전체 설계서와 어긋나면 안 된다. 어긋나야 하면 전체 설계서를 먼저 고치고(공동 리뷰) 영역 spec을 따라간다.
+- 두 영역이 만나는 지점(`/api` 계약)은 `docs/API.md` 하나로만 정의한다. 각 영역 spec은 이를 참조만 한다.
+- 다른 영역의 spec/plan을 대신 쓰지 않는다. 필요하면 이슈로 요청한다.
+
 ## 작업 흐름
 
 ### 새 기능
 
-1. brainstorming → `docs/specs/`에 spec 작성·커밋
-2. writing-plans → `docs/plans/`에 plan 작성·커밋 (Task 단위)
+1. brainstorming → `docs/specs/{area}/`에 spec 작성·커밋
+2. writing-plans → `docs/plans/{area}/`에 plan 작성·커밋 (Task 단위)
 3. `main`에서 `feature/` 브랜치 생성 → plan대로 구현
 4. 매 작업 TDD (실패 테스트 먼저)
 5. 변경 제안 전 검증 + 리뷰 요청
@@ -102,7 +117,7 @@ finetune: ...           # 파인튜닝 트랙
 |------|------|
 | `docs/superpowers/specs/2026-09-15-mock-interview-design.md` | 전체 설계서 (아키텍처·화면·LLM·배포·일정) |
 | `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크 응답 형식 (백엔드 담당이 소유) |
-| `docs/specs/`·`docs/plans/` | 기능별 설계서·작업지시서 (템플릿 포함) |
+| `docs/specs/{area}/`·`docs/plans/{area}/` | 영역별 설계서·작업지시서 (템플릿: `docs/specs/spec.template.md`, `docs/plans/plan.template.md`) |
 | `docs/demo-checklist.md` | 데모 리허설 수동 시나리오 |
 | `frontend/CLAUDE.md` | frontend 영역 규칙 |
 | `backend/CLAUDE.md` | backend 영역 규칙 |
