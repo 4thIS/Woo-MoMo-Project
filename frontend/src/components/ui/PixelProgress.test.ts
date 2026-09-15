@@ -51,7 +51,7 @@ describe('PixelProgress', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 41, phase: 'download' } })
     const el = w.find('canvas').element as HTMLElement
     expect(el.style.width).toBe('960px')
-    expect(el.style.height).toBe('240px')
+    expect(el.style.height).toBe('192px')
   })
   it('다운로드 중에는 actions 슬롯이 렌더되지 않는다', () => {
     const w = mount(PixelProgress, {

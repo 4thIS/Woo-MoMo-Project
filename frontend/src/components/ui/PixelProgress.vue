@@ -42,7 +42,7 @@ const right = computed(() =>
 type SheetMeta = { file: string; frames: number; w: number; h: number; img?: HTMLImageElement }
 const canvas = ref<HTMLCanvasElement | null>(null)
 const W = 320
-const H = 80
+const H = 64 // 하늘 여백을 줄인 높이. 회사(64px)는 윗부분 6px만 잘린다
 const GROUND = H - 8
 const CHAR_X = 60
 const FPS = 10
@@ -192,12 +192,14 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
       />
     </div>
     <div class="mono meta">
-      <span>{{ formatBytes(received) }} / {{ formatBytes(total) }}</span>
+      <span
+        >{{ formatBytes(received) }} / {{ formatBytes(total) }}
+        <span class="file">· {{ fileName }}</span></span
+      >
       <span class="caption" :class="{ danger: phase === 'error' }">{{ caption }}</span>
       <span>{{ right }}</span>
     </div>
     <div v-if="phase === 'error'" class="actions"><slot name="actions" /></div>
-    <div class="mono file">{{ fileName }}</div>
   </div>
 </template>
 
@@ -205,7 +207,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .progress {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
 }
 .scene {
   display: block;
@@ -248,6 +250,5 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .file {
   font-size: var(--fs-meta);
   color: var(--text-3);
-  text-align: right;
 }
 </style>
