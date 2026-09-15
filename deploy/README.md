@@ -40,6 +40,33 @@ docker compose up -d --build
 WEB_BIND=0.0.0.0:80
 ```
 
+## 도메인 연결 (Cloudflare Tunnel)
+
+파이는 Tailscale SSH로 접속하고, 도메인은 Cloudflare Tunnel로 연결한다. TLS는 Cloudflare가 종료하므로 파이에 인증서는 필요 없다.
+**HTTPS는 필수다.** WebGPU와 마이크(Web Speech API)는 보안 컨텍스트에서만 동작한다.
+
+1. `cloudflared` 실행 방식 확인
+   ```
+   systemctl is-active cloudflared                                   # active → 호스트 서비스
+   docker ps --format '{{.Names}} {{.Image}}' | grep -i cloudflared  # 출력 → 도커 컨테이너
+   ```
+2. Cloudflare Zero Trust → Networks → Tunnels → 터널 선택 → Public Hostname → Add
+   - Subdomain: `momo` (예), Domain: 보유 도메인
+   - Service Type: `HTTP`
+   - URL: 호스트 서비스면 `127.0.0.1:8080`.
+     도커 컨테이너면 `deploy/.env`에 `WEB_BIND=0.0.0.0:8080`을 두고 `docker compose up -d` 후, URL을 `<파이 LAN IP 또는 Tailscale IP>:8080`으로. (컨테이너 안의 127.0.0.1은 파이 호스트가 아니다)
+3. Cloudflare 대시보드 → Speed → Optimization: **Rocket Loader 끔, Auto Minify(JS) 끔**. ES module·WASM 로드를 깨뜨릴 수 있다.
+   `/models/`에 "Cache Everything" 규칙을 걸지 않는다. 3GB 파일은 Cloudflare가 캐시하지 않고 통과시키며 Range 요청도 통과한다.
+4. 확인
+   ```
+   curl -s https://momo.<도메인>/api/health
+   curl -I -H "Range: bytes=0-1023" https://momo.<도메인>/models/gemma4-e4b-it-web.litertlm   # 206 기대
+   ```
+   브라우저에서 열면 플레이스홀더 페이지가 뜬다.
+
+- 터널 대역폭은 파이 업링크가 한계다. 데모 노트북은 리허설 때 모델을 미리 받아 캐시해 둔다.
+- Tailscale IP로 직접 열려면 `WEB_BIND=0.0.0.0:8080`이 필요하다(기본은 127.0.0.1). 외부 노출은 터널로만 되므로 0.0.0.0 바인딩도 안전하다.
+
 ## GHCR 이미지 사용 (선택)
 CI(`.github/workflows/ci.yml`)가 main push마다 arm64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
 파이에서 빌드하지 않고 받아 쓰려면:
