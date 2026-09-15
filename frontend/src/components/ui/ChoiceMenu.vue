@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T extends string">
+import { nextTick } from 'vue'
 import CursorIcon from './icons/CursorIcon.vue'
 
 const props = withDefaults(
@@ -15,6 +16,10 @@ const emit = defineEmits<{ 'update:modelValue': [T] }>()
 const pick = (v: T) => {
   if (!props.disabled) emit('update:modelValue', v)
 }
+const isTabbable = (v: T) => {
+  if (props.modelValue === null) return props.items[0]?.value === v
+  return v === props.modelValue
+}
 const onKey = (e: KeyboardEvent) => {
   const next = props.direction === 'vertical' ? 'ArrowDown' : 'ArrowRight'
   const prev = props.direction === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
@@ -22,13 +27,15 @@ const onKey = (e: KeyboardEvent) => {
   e.preventDefault()
   const i = props.items.findIndex((it) => it.value === props.modelValue)
   const n = props.items.length
-  const j = e.key === next ? (i + 1) % n : (i - 1 + n) % n
+  const j = i === -1 ? (e.key === next ? 0 : n - 1) : e.key === next ? (i + 1) % n : (i - 1 + n) % n
   pick(props.items[j].value)
+  const group = e.currentTarget as HTMLElement
+  void nextTick(() => group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus())
 }
 </script>
 
 <template>
-  <div class="menu" :class="direction" role="radiogroup" tabindex="0" @keydown="onKey">
+  <div class="menu" :class="direction" role="radiogroup" @keydown="onKey">
     <button
       v-for="it in items"
       :key="it.value"
@@ -37,6 +44,7 @@ const onKey = (e: KeyboardEvent) => {
       class="item"
       :class="{ on: it.value === modelValue }"
       :aria-checked="it.value === modelValue"
+      :tabindex="isTabbable(it.value) ? 0 : -1"
       :disabled="disabled"
       @click="pick(it.value)"
     >

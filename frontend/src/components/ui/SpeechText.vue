@@ -52,7 +52,11 @@ function run(text: string) {
   timer = setTimeout(step, 30)
 }
 
-watch(() => props.text, run, { immediate: true })
+watch(
+  () => [props.text, props.typing] as const,
+  ([text]) => run(text),
+  { immediate: true },
+)
 onBeforeUnmount(stop)
 </script>
 
