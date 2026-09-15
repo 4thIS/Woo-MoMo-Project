@@ -1,5 +1,5 @@
 # 1단계: 프론트 빌드. frontend/package.json이 없으면 플레이스홀더만 복사한다.
-FROM --platform=$BUILDPLATFORM node:20-alpine AS build
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /src
 COPY deploy/placeholder /out
 COPY frontend* /src/frontend/
