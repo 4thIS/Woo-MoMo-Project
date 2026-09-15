@@ -89,6 +89,21 @@ describe('PrepareView', () => {
     expect(useInterviewStore().resumeDone).toBe(true)
   })
 
+  it('간단 이력서 작성을 열어 완성하면 이력서 입력이 끝난다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    await w.find('[data-test=form-open]').trigger('click')
+    expect(w.find('[data-test=form-open]').exists()).toBe(false)
+    w.findComponent({ name: 'ResumeForm' }).vm.$emit(
+      'done',
+      '이름: 홍길동 ' + '지원동기: 가 '.repeat(20),
+    )
+    await flushPromises()
+    expect(useInterviewStore().resumeDone).toBe(true)
+    expect(useInterviewStore().resumeName).toBe('직접 작성')
+    expect(w.find('[data-test=form-open]').text()).toContain('간단 이력서 수정')
+  })
+
   it('처음엔 지원 정보만 보이고 이력서 폼은 없다; 다음 화살표는 비활성', () => {
     const w = mountView()
     expect(w.find('[data-test=step-profile]').exists()).toBe(true)

@@ -9,6 +9,7 @@ import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
+import ResumeForm from '@/components/ResumeForm.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
@@ -97,6 +98,14 @@ async function onFile(e: Event) {
     extracting.value = false
     input.value = ''
   }
+}
+/* PDF 대신 항목별로 답하는 간단 이력서 */
+const FORM_NAME = '직접 작성'
+const formOpen = ref(false)
+function onFormDone(text: string) {
+  interview.setResume(FORM_NAME, text)
+  tooShort.value = false
+  formOpen.value = false
 }
 function usePasted() {
   interview.setResume(interview.resumeName ?? '직접 입력', pasted.value)
@@ -234,11 +243,24 @@ async function clearAndRetry() {
                   @change="onFile"
                 />
               </label>
+              <PixelButton
+                v-if="!formOpen"
+                data-test="form-open"
+                variant="secondary"
+                @click="formOpen = true"
+              >
+                {{
+                  interview.resumeName === FORM_NAME
+                    ? '간단 이력서 수정'
+                    : 'PDF가 없다면 간단 이력서 작성'
+                }}
+              </PixelButton>
+              <ResumeForm v-show="formOpen" @done="onFormDone" />
               <p v-if="extracting" class="mono hint">읽는 중…</p>
-              <div v-if="interview.resumeText && !tooShort" class="preview">
+              <div v-if="interview.resumeText && !tooShort && !formOpen" class="preview">
                 {{ interview.resumeText }}
               </div>
-              <template v-if="tooShort">
+              <template v-if="tooShort && !formOpen">
                 <p class="mono warn">
                   글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 이력서 내용을 직접
                   붙여넣어 주세요.
@@ -347,22 +369,6 @@ async function clearAndRetry() {
   font-size: var(--fs-meta);
   color: var(--text-2);
 }
-.arrow {
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--raise);
-  color: var(--accent);
-  border: 0;
-  cursor: pointer;
-}
-.arrow:disabled {
-  color: var(--text-3);
-  background: var(--bg);
-  cursor: default;
-}
 .flip {
   transform: scaleX(-1);
 }
@@ -387,17 +393,6 @@ async function clearAndRetry() {
 .warn {
   font-size: var(--fs-label);
   color: var(--accent);
-}
-.input {
-  height: 52px;
-  background: var(--bg);
-  border: 2px solid var(--raise);
-  padding: 0 var(--sp-4);
-  color: var(--text);
-}
-.input:focus {
-  border-color: var(--accent);
-  outline: none;
 }
 .paste {
   height: auto;

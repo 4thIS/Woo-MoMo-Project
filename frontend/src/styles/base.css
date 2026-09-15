@@ -92,6 +92,35 @@ a:hover {
   animation: blink 0.9s steps(1) infinite;
 }
 
+/* 입력 상자 · 화살표 버튼 (준비 화면과 간단 이력서 공용) */
+.input {
+  height: 52px;
+  background: var(--bg);
+  border: 2px solid var(--raise);
+  padding: 0 var(--sp-4);
+  color: var(--text);
+}
+.input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.arrow {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--raise);
+  color: var(--accent);
+  border: 0;
+  cursor: pointer;
+}
+.arrow:disabled {
+  color: var(--text-3);
+  background: var(--bg);
+  cursor: default;
+}
+
 /* 등장: 아래에서 계단식으로 올라오며 나타남 */
 @keyframes rise {
   from {
