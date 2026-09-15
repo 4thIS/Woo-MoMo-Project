@@ -11,7 +11,7 @@
 {
   "id": "gemma4-e4b-it",
   "url": "/models/gemma4-e4b-it-web.litertlm",
-  "size": 4400000000,
+  "size": 2969059328,
   "template": {
     "turnStart": "<|turn>",
     "turnEnd": "<turn|>",
@@ -21,7 +21,7 @@
   "fallback": {
     "id": "gemma4-e2b-it",
     "url": "/models/gemma4-e2b-it-web.litertlm",
-    "size": 2000000000
+    "size": 2008432640
   }
 }
 ```

@@ -1,9 +1,33 @@
 # 배포 (라즈베리파이, docker-compose)
 
+파이에는 리포를 **git clone**해서 올리고, 이미지는 파이에서 직접 빌드한다(GHCR 불필요).
+프론트 빌드 산출물이 없어도 `web` 이미지는 플레이스홀더 페이지로 기동한다.
+
 ## 최초 1회
-1. 모델 파일을 `/srv/momo/models/`에 복사한다 (`backend/data/manifest.json`의 `url` 파일명과 일치).
-2. `deploy/` 디렉터리를 파이로 복사한다.
-3. `docker login ghcr.io` (읽기 토큰).
+```
+sudo mkdir -p /srv/momo/models
+# 모델 파일을 /srv/momo/models/ 에 넣는다. 파일명은 backend/data/manifest.json 의 url 과 같아야 한다.
+#   예: gemma4-e4b-it-web.litertlm, gemma4-e2b-it-web.litertlm (fallback)
+git clone https://github.com/4thIS/Woo-MoMo-Project.git ~/Woo-MoMo-Project
+cd ~/Woo-MoMo-Project/deploy
+docker compose up -d --build
+```
+- `docker compose`는 반드시 `deploy/` 디렉터리에서 실행한다 (빌드 context가 `..`, `../backend` 상대 경로).
+- 첫 빌드는 파이에서 수 분 걸린다 (python:3.12-slim + uv sync). 이후 갱신은 변경된 레이어만 다시 빌드한다.
+- 기존 리버스 프록시가 `http://127.0.0.1:8080`을 upstream으로 보게 설정한다 (아래 "바인딩").
+
+## 갱신 (main 머지 후)
+```
+cd ~/Woo-MoMo-Project
+git pull
+cd deploy
+docker compose up -d --build
+```
+`--build`를 빼면 이전에 빌드한 이미지를 그대로 쓴다. `docker compose pull`은 GHCR에 이미지가 있을 때만 쓴다(아래 "GHCR 이미지 사용" 참고).
+
+## 모델·질문 파일만 바꿀 때
+- 모델 교체: `/srv/momo/models/`에 파일 추가 → `backend/data/manifest.json` 수정(PR) → `git pull` → `docker compose up -d --build` (api 이미지에 data/가 들어가므로 재빌드 필요, 수 초).
+- 코드 변경 없이 매니페스트만 바꾸는 것이므로 프론트 재배포는 없다.
 
 ## 바인딩 (`WEB_BIND`)
 
@@ -16,12 +40,16 @@
 WEB_BIND=0.0.0.0:80
 ```
 
-## 배포/갱신
+## GHCR 이미지 사용 (선택)
+CI(`.github/workflows/ci.yml`)가 main push마다 arm64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
+파이에서 빌드하지 않고 받아 쓰려면:
 ```
-cd deploy
+docker login ghcr.io          # read:packages 토큰
+cd ~/Woo-MoMo-Project/deploy
 docker compose pull
 docker compose up -d
 ```
+CI가 돌지 않거나 조직 패키지 권한이 없으면 이 방법은 실패한다. 그때는 위의 `--build` 방식을 쓴다.
 
 ## 확인
 ```
