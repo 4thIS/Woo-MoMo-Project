@@ -132,7 +132,7 @@ export default defineConfig({
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] }
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts", "eslint.config.js"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
 }
 ```
 
@@ -465,11 +465,11 @@ import { formatBytes, formatGB } from './format'
 
 describe('format', () => {
   it('formatGB는 소수 첫째 자리 GB', () => {
-    expect(formatGB(2969059328)).toBe('약 3.0GB')
-    expect(formatGB(2008432640)).toBe('약 2.0GB')
+    expect(formatGB(2969059328)).toBe('약 2.8GB') // 1024 기준(GiB)
+    expect(formatGB(2008432640)).toBe('약 1.9GB')
   })
   it('formatBytes는 단위 자동', () => {
-    expect(formatBytes(1_220_000_000)).toBe('1.22 GB')
+    expect(formatBytes(1_220_000_000)).toBe('1.14 GB')
     expect(formatBytes(512 * 1024)).toBe('512.0 KB')
   })
 })
@@ -1867,6 +1867,11 @@ function run(text: string) {
     }
     const ch = text[i++]
     shown.value += ch
+    if (i >= text.length) {
+      stop()
+      emit('done')
+      return
+    }
     timer = setTimeout(step, /[.,?!]/.test(ch) ? 150 : 30)
   }
   timer = setTimeout(step, 30)
@@ -2157,7 +2162,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 <template>
   <div class="progress">
     <canvas ref="canvas" class="px scene" :width="W" :height="H" />
-    <div class="bar"><div class="fill" :class="phase" :style="{ width: `${progress}%` }" /></div>
+    <div class="bar"><div class="fill" :class="{ ok: phase === 'ready', danger: phase === 'error' }" :style="{ width: `${progress}%` }" /></div>
     <div class="mono meta">
       <span>{{ formatBytes(received) }} / {{ formatBytes(total) }}</span>
       <span class="caption" :class="{ danger: phase === 'error' }">{{ caption }}</span>
@@ -2173,8 +2178,8 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .scene { width: 100%; height: auto; background: var(--bg); display: block; }
 .bar { height: 22px; border: 3px solid var(--line); background: var(--bg); padding: 2px; }
 .fill { height: 100%; background: var(--accent); }
-.fill.ready, .fill.ok { background: var(--ok); }
-.fill.error, .fill.danger { background: var(--danger); }
+.fill.ok { background: var(--ok); }
+.fill.danger { background: var(--danger); }
 .meta { display: flex; justify-content: space-between; gap: var(--sp-4); font-size: var(--fs-body-sm); color: var(--text-2); }
 .caption { color: var(--text); }
 .caption.danger { color: var(--danger); }
@@ -2182,8 +2187,6 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .file { font-size: var(--fs-meta); color: var(--text-3); text-align: right; }
 </style>
 ```
-
-> 테스트가 `.fill`에 `ok`/`danger` 클래스를 기대한다. 위 구현은 `phase` 값을 클래스로 붙이므로 `ready`/`error`가 된다 — 테스트를 통과시키려면 클래스 바인딩을 `:class="{ ok: phase === 'ready', danger: phase === 'error' }"`로 쓴다(스타일의 `.fill.ok`/`.fill.danger`만 남기고 `.ready`/`.error` 선택자는 지운다).
 
 - [ ] **Step 3: 통과 + 커밋**
 
