@@ -1,0 +1,4 @@
+services:
+  web:
+    volumes:
+      - ./models:/usr/share/nginx/models:ro
