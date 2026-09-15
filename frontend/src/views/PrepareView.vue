@@ -233,7 +233,9 @@ async function clearAndRetry() {
                   interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
                 }}</span>
                 <span class="mono pick">{{
-                  interview.resumeName ? '다른 파일' : '파일 선택'
+                  interview.resumeName && interview.resumeName !== FORM_NAME
+                    ? '다른 파일'
+                    : '파일 선택'
                 }}</span>
                 <input
                   data-test="file"
@@ -432,6 +434,7 @@ async function clearAndRetry() {
   opacity: 0;
 }
 .preview {
+  white-space: pre-line; /* 간단 이력서의 항목 줄바꿈 유지 */
   background: var(--bg);
   padding: 14px var(--sp-4);
   font-size: var(--fs-label);
