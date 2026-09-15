@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 const props = defineProps<{
   label: string
   value: string
   state: 'ok' | 'partial' | 'fail' | 'pending'
 }>()
-const filled = { ok: 3, partial: 2, fail: 1, pending: 0 }[props.state]
+const filled = computed(() => ({ ok: 3, partial: 2, fail: 1, pending: 0 })[props.state])
 </script>
 
 <template>

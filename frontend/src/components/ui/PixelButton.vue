@@ -34,6 +34,7 @@ const onClick = (e: MouseEvent) => {
   padding: 0 28px;
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: var(--sp-3);
   font-size: var(--fs-button);
   line-height: 1;

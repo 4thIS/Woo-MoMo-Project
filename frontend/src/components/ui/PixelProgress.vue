@@ -32,7 +32,7 @@ const caption = computed(() => {
 })
 const right = computed(() =>
   props.phase === 'download'
-    ? `${props.progress}% · ${props.eta}`
+    ? [`${props.progress}%`, props.eta].filter(Boolean).join(' · ')
     : props.phase === 'init'
       ? '초기화 중'
       : '',

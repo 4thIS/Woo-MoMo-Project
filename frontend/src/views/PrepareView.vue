@@ -37,6 +37,7 @@ watch(
   ([r, status]) => {
     if (status !== 'downloading') {
       eta.value = ''
+      samples.length = 0
       return
     }
     const now = Date.now()
@@ -59,7 +60,8 @@ const extracting = ref(false)
 const tooShort = ref(false)
 const pasted = ref('')
 async function onFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
   extracting.value = true
   try {
@@ -71,6 +73,7 @@ async function onFile(e: Event) {
     tooShort.value = true
   } finally {
     extracting.value = false
+    input.value = ''
   }
 }
 function usePasted() {
@@ -83,6 +86,10 @@ const startLabel = computed(() =>
 )
 function start() {
   if (interview.canStart) interview.goto('interview')
+}
+async function clearAndRetry() {
+  await model.clearCache()
+  await model.download()
 }
 </script>
 
@@ -114,7 +121,7 @@ function start() {
             >
               경량 모델로 시도
             </PixelButton>
-            <PixelButton variant="secondary" @click="model.clearCache()">캐시 지우기</PixelButton>
+            <PixelButton variant="secondary" @click="clearAndRetry">캐시 지우기</PixelButton>
           </template>
         </PixelProgress>
       </PixelWindow>
@@ -130,6 +137,7 @@ function start() {
             :items="fieldItems"
             :model-value="interview.profile.field"
             direction="horizontal"
+            aria-label="기업 분야"
             @update:model-value="interview.setField"
           />
         </div>
@@ -208,8 +216,11 @@ function start() {
           </li>
           <li>
             <i
-              :class="{ ok: model.status === 'ready', wait: model.status !== 'ready' }"
-              class="blink-when-wait"
+              :class="{
+                ok: model.status === 'ready',
+                wait: model.status !== 'ready',
+                blink: model.status !== 'ready',
+              }"
             />
             면접관 출근 ({{
               model.status === 'ready' ? '완료' : `다운로드 ${model.progress}% → 초기화`
@@ -294,6 +305,10 @@ function start() {
   cursor: pointer;
   color: var(--text-2);
 }
+.file-row:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .name {
   flex: 1;
   color: var(--text);
@@ -347,8 +362,7 @@ function start() {
 .checklist i.ok {
   background: var(--ok);
 }
-.checklist i.wait.blink-when-wait {
+.checklist i.wait {
   background: var(--accent);
-  animation: blink 0.9s steps(1) infinite;
 }
 </style>

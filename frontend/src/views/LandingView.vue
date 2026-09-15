@@ -132,7 +132,12 @@ function startDownload() {
         <p v-if="manifestTimedOut && !model.manifest" class="mono meta danger">
           서버에 연결할 수 없습니다 — 새로고침해 주세요.
         </p>
-        <ChoiceMenu :items="consentItems" :model-value="consent" @update:model-value="onConsent" />
+        <ChoiceMenu
+          :items="consentItems"
+          :model-value="consent"
+          aria-label="다운로드 동의"
+          @update:model-value="onConsent"
+        />
         <p class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
       </PixelWindow>
 
@@ -160,7 +165,7 @@ function startDownload() {
               label="저장 공간"
               :value="storageText"
               :state="
-                !env
+                !env || !model.active
                   ? 'pending'
                   : result === 'no-space'
                     ? 'fail'
@@ -171,8 +176,12 @@ function startDownload() {
             />
           </div>
           <p class="body2">
-            하드웨어 성능에 따라 응답 속도와 면접 품질이 달라질 수 있습니다. GPU 메모리가 부족하면
-            경량 모델(E2B, 약 2.0GB)로 자동 전환되며, 그 경우 질문의 깊이가 얕아질 수 있습니다.
+            하드웨어 성능에 따라 응답 속도와 면접 품질이 달라질 수 있습니다.
+            <template v-if="model.manifest?.fallback">
+              GPU 메모리가 부족하면 경량 모델({{ model.manifest.fallback.id }},
+              {{ formatGB(model.manifest.fallback.size) }})로 자동 전환되며, 그 경우 질문의 깊이가
+              얕아질 수 있습니다.
+            </template>
           </p>
           <p v-if="result === 'no-webgpu'" class="body2 danger">
             이 브라우저에서는 WebGPU를 쓸 수 없습니다. 최신 Chrome(데스크톱)과 전용 GPU가

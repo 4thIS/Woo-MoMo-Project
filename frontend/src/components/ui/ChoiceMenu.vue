@@ -81,6 +81,7 @@ const onKey = (e: KeyboardEvent) => {
 }
 .vertical .item {
   padding: 14px var(--sp-5);
+  align-self: flex-start;
 }
 .item.on {
   background: var(--raise);

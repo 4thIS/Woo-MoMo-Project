@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -7,8 +7,18 @@ vi.mock('@/services/api', () => ({
   getQuestions: vi.fn(async () => ({ field: 'it', questions: [] })),
 }))
 vi.mock('@/services/pdf', () => ({ extractPdfText: vi.fn() }))
+vi.mock('@/services/modelCache', () => ({
+  clearModels: vi.fn(async () => {}),
+  hasModel: vi.fn(async () => false),
+  downloadModel: vi.fn(
+    async (_id: string, _url: string, size: number, onProgress: (r: number) => void) => {
+      onProgress(size)
+    },
+  ),
+}))
 
 import { extractPdfText } from '@/services/pdf'
+import { clearModels } from '@/services/modelCache'
 import { useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import PrepareView from './PrepareView.vue'
@@ -83,5 +93,46 @@ describe('PrepareView', () => {
     expect((btn.element as HTMLButtonElement).disabled).toBe(false)
     await btn.trigger('click')
     expect(s.phase).toBe('interview')
+  })
+})
+
+describe('PrepareView — 캐시 지우기 후 재다운로드', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({}) })),
+    )
+    vi.stubGlobal('requestAnimationFrame', vi.fn())
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('캐시 지우기를 누르면 지운 뒤 다시 내려받는다', async () => {
+    const m = useModelStore()
+    m.manifest = {
+      id: 'e4b',
+      url: '/models/e4b.litertlm',
+      size: 100,
+      template: { turnStart: '', turnEnd: '', roles: {} },
+      systemPromptOverride: null,
+      fallback: { id: 'e2b', url: '/models/e2b.litertlm', size: 50 },
+    }
+    m.active = { id: 'e4b', url: '/models/e4b.litertlm', size: 100 }
+    m.status = 'error'
+    m.error = '연결이 끊겼습니다'
+
+    const w = mount(PrepareView)
+    const actions = w.findAll('button').map((b) => b.text())
+    expect(actions).toContain('다시 시도')
+    expect(actions).toContain('경량 모델로 시도')
+    expect(actions).toContain('캐시 지우기')
+
+    const clearBtn = w.findAll('button').find((b) => b.text() === '캐시 지우기')!
+    await clearBtn.trigger('click')
+    await flushPromises()
+
+    expect(clearModels).toHaveBeenCalled()
+    expect(useModelStore().status).toBe('downloaded')
   })
 })
