@@ -19,8 +19,9 @@ const props = withDefaults(
     fileName: string
     eta?: string
     errorText?: string
+    scale?: number
   }>(),
-  { eta: '', errorText: '' },
+  { eta: '', errorText: '', scale: 3 },
 )
 
 const caption = computed(() => {
@@ -56,13 +57,28 @@ let raf = 0
 let colors = { ink: '', sky: '' }
 
 async function loadSheets() {
-  const res = await fetch('/sprites/manifest.json')
-  const m = (await res.json()) as Record<string, SheetMeta>
-  for (const [k, v] of Object.entries(m)) {
-    const img = new Image()
-    img.src = `/sprites/${v.file.split('/').pop()}`
-    sheets[k] = { ...v, img }
+  try {
+    const res = await fetch('/sprites/manifest.json')
+    const m = (await res.json()) as Record<string, SheetMeta>
+    for (const [k, v] of Object.entries(m)) {
+      const img = new Image()
+      img.src = `/sprites/${v.file.split('/').pop()}`
+      sheets[k] = { ...v, img }
+    }
+  } catch {
+    sheets = {}
   }
+}
+
+/** 깨진 이미지(404 등)는 complete === true여도 naturalWidth === 0이라 drawImage가 던진다. */
+function ready(s?: SheetMeta): s is SheetMeta & { img: HTMLImageElement } {
+  return !!s?.img && s.img.complete && s.img.naturalWidth > 0
+}
+
+function resetScene() {
+  state = { stage: 0, queue: [] }
+  once = null
+  scroll = 0
 }
 
 function frame(now: number) {
@@ -110,7 +126,7 @@ function frame(now: number) {
   const approachX = (at: number, gap: number) =>
     CHAR_X + gap + Math.max(0, at - props.progress) * APPROACH
   const b = sheets.company2
-  if (b?.img?.complete) {
+  if (ready(b)) {
     const bx = approachX(90, 40)
     if (bx < W) ctx.drawImage(b.img, bx, GROUND - b.h + 2)
   }
@@ -120,9 +136,9 @@ function frame(now: number) {
     if (i <= state.stage && !(picking && idx < 4)) return
     const it = sheets[s.item]
     const x = approachX(s.at, 18)
-    if (it?.img?.complete && x < W) ctx.drawImage(it.img, x, GROUND - it.h + 2)
+    if (ready(it) && x < W) ctx.drawImage(it.img, x, GROUND - it.h + 2)
   })
-  if (sheet?.img?.complete)
+  if (ready(sheet))
     ctx.drawImage(
       sheet.img,
       idx * sheet.w,
@@ -140,7 +156,7 @@ function frame(now: number) {
 watch(
   () => props.progress,
   (p, prev) => {
-    if (p < (prev ?? 0)) state = { stage: 0, queue: [] }
+    if (p < (prev ?? 0)) resetScene()
     state = advance(state, p)
   },
   { immediate: true },
@@ -161,7 +177,13 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 
 <template>
   <div class="progress">
-    <canvas ref="canvas" class="px scene" :width="W" :height="H" />
+    <canvas
+      ref="canvas"
+      class="px scene"
+      :width="W"
+      :height="H"
+      :style="{ width: `${W * scale}px`, height: `${H * scale}px` }"
+    />
     <div class="bar">
       <div
         class="fill"
@@ -186,10 +208,9 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
   gap: var(--sp-4);
 }
 .scene {
-  width: 100%;
-  height: auto;
-  background: var(--bg);
   display: block;
+  margin: 0 auto;
+  background: var(--bg);
 }
 .bar {
   height: 22px;
