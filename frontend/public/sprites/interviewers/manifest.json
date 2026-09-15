@@ -1,0 +1,92 @@
+{
+ "center_idle": {
+  "file": "sheets/center_idle.png",
+  "frames": 5,
+  "w": 32,
+  "h": 32
+ },
+ "center_nod": {
+  "file": "sheets/center_nod.png",
+  "frames": 5,
+  "w": 32,
+  "h": 32
+ },
+ "center_react": {
+  "file": "sheets/center_react.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "center_talk": {
+  "file": "sheets/center_talk.png",
+  "frames": 7,
+  "w": 32,
+  "h": 32
+ },
+ "center_watch": {
+  "file": "sheets/center_watch.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "clerk_idle": {
+  "file": "sheets/clerk_idle.png",
+  "frames": 5,
+  "w": 32,
+  "h": 32
+ },
+ "clerk_write": {
+  "file": "sheets/clerk_write.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "left_idle": {
+  "file": "sheets/left_idle.png",
+  "frames": 5,
+  "w": 32,
+  "h": 32
+ },
+ "left_nod": {
+  "file": "sheets/left_nod.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "left_react": {
+  "file": "sheets/left_react.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "left_watch": {
+  "file": "sheets/left_watch.png",
+  "frames": 9,
+  "w": 32,
+  "h": 32
+ },
+ "candidate_back": {
+  "file": "sheets/candidate_back.png",
+  "frames": 1,
+  "w": 48,
+  "h": 32
+ },
+ "center": {
+  "file": "sheets/center.png",
+  "frames": 1,
+  "w": 32,
+  "h": 32
+ },
+ "clerk": {
+  "file": "sheets/clerk.png",
+  "frames": 1,
+  "w": 32,
+  "h": 32
+ },
+ "left": {
+  "file": "sheets/left.png",
+  "frames": 1,
+  "w": 32,
+  "h": 32
+ }
+}
