@@ -1,0 +1,16 @@
+{
+  "id": "gemma4-e4b-it",
+  "url": "/models/gemma4-e4b-it-web.litertlm",
+  "size": 4400000000,
+  "template": {
+    "turnStart": "<|turn>",
+    "turnEnd": "<turn|>",
+    "roles": { "system": "system", "user": "user", "model": "model" }
+  },
+  "systemPromptOverride": null,
+  "fallback": {
+    "id": "gemma4-e2b-it",
+    "url": "/models/gemma4-e2b-it-web.litertlm",
+    "size": 2000000000
+  }
+}

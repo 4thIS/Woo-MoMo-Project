@@ -32,3 +32,4 @@ finetune/**/*.ipynb_checkpoints/
 Thumbs.db
 .vscode/
 .idea/
+.superpowers/

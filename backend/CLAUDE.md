@@ -14,14 +14,14 @@
 
 ```
 backend/
-├── app/          # FastAPI 앱: main.py, routers/, schemas/(pydantic 응답 모델)
+├── app/          # FastAPI 앱: main.py, routers/, schemas.py(pydantic 응답 모델)
 ├── data/         # 정적 계약 데이터: manifest.json, questions/{field}.json (계층 규율 경로)
 └── tests/        # pytest
 ```
 
 ## 계층 책임
 
-- `app/schemas/`가 `/api` 응답 형태의 단일 정의다. `docs/API.md`는 이 스키마를 사람이 읽는 버전이며 둘은 항상 일치해야 한다.
+- `app/schemas.py`가 `/api` 응답 형태의 단일 정의다. `docs/API.md`는 이 스키마를 사람이 읽는 버전이며 둘은 항상 일치해야 한다.
 - `data/`는 코드가 아니라 계약 데이터다. 코드 배포 없이 파일 교체만으로 모델·질문을 바꿀 수 있어야 한다.
 - 데이터베이스·인증·세션 저장 없음. 이력서·대화·리포트를 받는 엔드포인트를 만들지 않는다.
 - RAG 확장 시에도 사용자 개인 데이터는 서버에 저장하지 않는다. 공개 지식(직무·기업 정보)만 색인한다.
@@ -42,7 +42,7 @@ backend/
 
 - 이 영역이 `/api` 응답 계약을 **제공**한다. 형태의 소유자는 이 영역이다.
 - 변경은 additive 우선: 기존 필드는 불변, 신규 필드만 추가. 프론트가 아직 안 써도 깨지지 않게.
-- 변경 순서(lockstep): `docs/API.md` + `schemas/` + `data/` 변경 제안을 **먼저** 머지·배포 → 그 뒤 프론트가 새 필드를 사용.
+- 변경 순서(lockstep): `docs/API.md` + `schemas.py` + `data/` 변경 제안을 **먼저** 머지·배포 → 그 뒤 프론트가 새 필드를 사용.
 - 파인튜닝 모델 반영은 `data/manifest.json`의 `id`·`url`·`template`·`systemPromptOverride` 수정과 모델 파일 볼륨 복사로 끝난다. 코드 변경 없음.
 
 ## 절대 하지 말 것

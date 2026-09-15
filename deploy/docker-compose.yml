@@ -1,0 +1,29 @@
+services:
+  web:
+    image: ghcr.io/4this/woo-momo-web:latest
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    ports:
+      - "${WEB_BIND:-127.0.0.1:8080}:80"
+    volumes:
+      - /srv/momo/models:/usr/share/nginx/models:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/4this/woo-momo-api:latest
+    build:
+      context: ../backend
+      dockerfile: ../deploy/api.Dockerfile
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
