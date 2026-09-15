@@ -5,6 +5,7 @@ import { useInterviewStore } from '@/stores/interview'
 import { checkEnvironment, type EnvCheck } from '@/services/gpuCheck'
 import { verdict } from '@/utils/envVerdict'
 import { formatGB } from '@/utils/format'
+import { useSectionWheel } from '@/composables/useSectionWheel'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
@@ -18,24 +19,26 @@ import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 const model = useModelStore()
 const interview = useInterviewStore()
 
-/* 히어로 페이드: 스크롤 진행률 0→1 */
+/* 히어로 페이드: 스크롤 진행률 0→1 (스크롤 컨테이너는 .snap-root인 루트 요소) */
+const root = ref<HTMLElement | null>(null)
 const hero = ref<HTMLElement | null>(null)
 const fade = ref(0)
+useSectionWheel(root)
 const onScroll = () => {
   const h = hero.value?.offsetHeight ?? 1
-  fade.value = Math.min(1, Math.max(0, window.scrollY / (h * 0.6)))
+  fade.value = Math.min(1, Math.max(0, (root.value?.scrollTop ?? 0) / (h * 0.6)))
 }
 /* 매니페스트 로드 실패 안내는 5초 지연 후에만 보여준다(spec §5: "확인 중" 유지) */
 const manifestTimedOut = ref(false)
 let manifestTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
-  window.addEventListener('scroll', onScroll, { passive: true })
+  root.value?.addEventListener('scroll', onScroll, { passive: true })
   if (!model.manifest) model.loadManifest()
   manifestTimer = setTimeout(() => (manifestTimedOut.value = true), 5000)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', onScroll)
+  root.value?.removeEventListener('scroll', onScroll)
   if (manifestTimer) clearTimeout(manifestTimer)
 })
 
@@ -91,24 +94,26 @@ function startDownload() {
 </script>
 
 <template>
-  <div class="landing stars">
+  <div ref="root" class="landing stars snap-root">
     <!-- 1. 타이틀 -->
     <section
       ref="hero"
-      class="hero"
+      class="hero snap"
       :style="{ opacity: 1 - fade, transform: `translateY(${-40 * fade}px)` }"
     >
-      <PixelWindow padding="md" class="title-win">
+      <PixelWindow padding="md" class="title-win rise">
         <template #header><PixelTag>브라우저에서 실행 · 서버 전송 없음</PixelTag></template>
-        <h1 class="display logo">모두의<br />모의면접</h1>
-        <p class="sub">이력서를 읽는 AI 면접관이 이 컴퓨터 안에서 기다립니다.</p>
+        <h1 class="display logo rise">모두의<br />모의면접</h1>
+        <p class="sub rise">이력서를 읽는 AI 면접관이 이 컴퓨터 안에서 기다립니다.</p>
       </PixelWindow>
-      <div class="hint blink"><CursorIcon /> 아래로 내려서 시작</div>
+      <div class="hint rise">
+        <span class="blink"><CursorIcon /> 아래로 내려서 시작</span>
+      </div>
     </section>
 
-    <div class="content">
-      <!-- 2. 면접관 소개 -->
-      <section ref="introEl">
+    <!-- 2. 면접관 소개 -->
+    <section ref="introEl" class="snap">
+      <div class="content">
         <PixelWindow>
           <div class="intro">
             <Avatar src="/sprites/interviewers/center_talk.png" :frames="7" />
@@ -124,25 +129,31 @@ function startDownload() {
             </div>
           </div>
         </PixelWindow>
-      </section>
+      </div>
+    </section>
 
-      <!-- 3. 동의 -->
-      <PixelWindow title="모델 다운로드에 동의하시겠습니까?">
-        <KeyValueGrid :items="kv" />
-        <p v-if="manifestTimedOut && !model.manifest" class="mono meta danger">
-          서버에 연결할 수 없습니다 — 새로고침해 주세요.
-        </p>
-        <ChoiceMenu
-          :items="consentItems"
-          :model-value="consent"
-          aria-label="다운로드 동의"
-          @update:model-value="onConsent"
-        />
-        <p class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
-      </PixelWindow>
+    <!-- 3. 동의 -->
+    <section class="snap">
+      <div class="content">
+        <PixelWindow title="모델 다운로드에 동의하시겠습니까?">
+          <KeyValueGrid :items="kv" />
+          <p v-if="manifestTimedOut && !model.manifest" class="mono meta danger">
+            서버에 연결할 수 없습니다 — 새로고침해 주세요.
+          </p>
+          <ChoiceMenu
+            :items="consentItems"
+            :model-value="consent"
+            aria-label="다운로드 동의"
+            @update:model-value="onConsent"
+          />
+          <p class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
+        </PixelWindow>
+      </div>
+    </section>
 
-      <!-- 4. 장비 확인 -->
-      <section v-if="consent === 'yes'" ref="envEl" data-test="env">
+    <!-- 4. 장비 확인 -->
+    <section v-if="consent === 'yes'" ref="envEl" class="snap" data-test="env">
+      <div class="content">
         <PixelWindow title="장비 확인">
           <template #tag>
             <PixelTag v-if="result === 'ok'" tone="ok">출전 가능</PixelTag>
@@ -198,23 +209,25 @@ function startDownload() {
             확인했습니다. 내려받기 시작
           </PixelButton>
         </PixelWindow>
-      </section>
-    </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.landing {
-  min-height: 100vh;
-  padding-bottom: 120px;
-}
 .hero {
-  height: 780px;
-  display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: var(--sp-10);
+}
+/* 창 → 로고 → 부제 → 안내 순으로 계단식 등장 */
+.logo.rise {
+  animation-delay: 0.3s;
+}
+.sub.rise {
+  animation-delay: 0.6s;
+}
+.hint.rise {
+  animation-delay: 0.9s;
 }
 .title-win {
   align-items: center;
@@ -234,19 +247,13 @@ function startDownload() {
   color: var(--text-2);
 }
 .hint {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
   font-size: var(--fs-button);
   color: var(--accent);
 }
-.content {
-  max-width: var(--content-w);
-  margin: 0 auto;
+.hint > span {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-10);
-  padding: 0 var(--sp-4);
+  align-items: center;
+  gap: var(--sp-3);
 }
 .intro {
   display: flex;
@@ -280,10 +287,5 @@ function startDownload() {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--sp-4);
-}
-@media (max-width: 1280px) {
-  .content {
-    padding: 0 var(--sp-10);
-  }
 }
 </style>
