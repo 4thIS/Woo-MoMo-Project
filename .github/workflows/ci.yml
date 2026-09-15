@@ -1,0 +1,145 @@
+# GitHub Actions — 경로 기반 다층 게이트
+# 원리: paths 필터로 바뀐 영역의 job만 실행. main 브랜치 보호에서 frontend/backend/docs 체크를 "required"로.
+# 배포: main push 시 linux/arm64 이미지를 GHCR에 푸시한다. 라즈베리파이는 외부에서 접근 불가하므로
+#       실제 반영은 파이에서 `docker compose pull && docker compose up -d`로 한다 (루트 CLAUDE.md "작업 흐름" 참조).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ===== 어떤 영역이 바뀌었는지 판별 =====
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      deploy: ${{ steps.filter.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+              - 'backend/data/**'
+              - 'docs/API.md'
+            backend:
+              - 'backend/**'
+              - 'docs/API.md'
+            deploy:
+              - 'deploy/**'
+
+  # ===== docs-only 변경이 "체크 없음"으로 머지 막히지 않게 하는 더미 =====
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "docs/config change — no further validation"
+
+  # ===== frontend: lint + typecheck + test + build =====
+  frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: setup
+        run: pnpm install --frozen-lockfile
+      - name: lint
+        run: pnpm lint
+      - name: format check
+        run: pnpm exec prettier --check .
+      - name: typecheck
+        run: pnpm exec vue-tsc --noEmit
+      - name: test
+        run: pnpm test
+      - name: build
+        run: pnpm build
+
+  # ===== backend: lint + format + test =====
+  backend:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: setup
+        run: pip install uv && uv sync --frozen
+      - name: lint
+        run: uv run ruff check .
+      - name: format check
+        run: uv run ruff format --check .
+      - name: test
+        run: uv run pytest -q
+
+  # ===== deploy 설정 검증 =====
+  deploy-config:
+    needs: changes
+    if: ${{ needs.changes.outputs.deploy == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compose config
+        run: docker compose -f deploy/docker-compose.yml config -q
+
+  # ===== 이미지 빌드·푸시 (main push 시, linux/arm64) =====
+  publish:
+    # 바뀌지 않은 영역의 job은 skipped이므로 always()로 진입하되, 실패·취소가 하나라도 있으면 중단
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    needs: [frontend, backend, deploy-config]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build & push web (nginx + frontend build)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/web.Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/4this/woo-momo-web:latest
+      - name: build & push api (FastAPI)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: deploy/api.Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/4this/woo-momo-api:latest
