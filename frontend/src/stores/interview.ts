@@ -5,7 +5,7 @@ import { useModelStore, MAX_NUM_TOKENS } from './model'
 import { startSession, type LlmSession } from '@/services/llm'
 import { buildSystemPrompt, KICKOFF } from '@/prompts/interviewer'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
-import { ThoughtFilter } from '@/utils/thoughts'
+import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
@@ -162,6 +162,8 @@ export const useInterviewStore = defineStore('interview', {
             abortCtl.signal,
           )
           this.streaming += filter.flush()
+          // 태그 쌍이 통째로 버퍼링되어 필터를 통과했을 수 있는 잔여 thought를 최종 텍스트에서 제거
+          this.streaming = stripThoughts(this.streaming)
           // 공백만 남은 턴(thought만 오고 끝난 경우 등)은 기록하지 않는다 — 빈 말풍선 방지
           const text = this.streaming.trim()
           if (text) this.messages.push({ role: 'model', text: this.streaming })
@@ -210,9 +212,7 @@ export const useInterviewStore = defineStore('interview', {
     async refreshTokens() {
       const n = session ? await session.tokenCount() : -1
       this.tokenCount =
-        n >= 0
-          ? n
-          : approxTokens(systemPrompt + '\n' + this.messages.map((m) => m.text).join('\n'))
+        n >= 0 ? n : approxTokens(systemPrompt + '\n' + this.messages.map((m) => m.text).join('\n'))
     },
 
     async finish() {

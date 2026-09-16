@@ -46,6 +46,20 @@ describe('AnswerInput', () => {
     const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
     expect(w.find('[data-test="mic"]').attributes('disabled')).toBeDefined()
   })
+  it('말하기 ON이면 typing true를 emit한다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    vi.mocked(startSpeech).mockImplementation(() => {})
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    expect(w.emitted('typing')?.at(-1)).toEqual([true])
+  })
+  it('마이크 권한 거부(not-allowed) 후 말하기 버튼이 비활성된다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    vi.mocked(startSpeech).mockImplementation((_i, _f, onError) => onError('not-allowed'))
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    expect(w.find('[data-test="mic"]').attributes('disabled')).toBeDefined()
+  })
   it('말하기 ON이면 확정 결과를 덧붙이고 자동 전송하지 않는다', async () => {
     vi.mocked(speechSupported).mockReturnValue(true)
     vi.mocked(startSpeech).mockImplementation((_i, onFinal) => onFinal('안녕하세요'))

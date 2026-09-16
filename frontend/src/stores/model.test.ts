@@ -48,21 +48,26 @@ describe('model store', () => {
   it('download는 진행률을 반영하고 downloaded로 끝난다', async () => {
     const s = useModelStore()
     await s.loadManifest()
+    const statuses: string[] = []
+    s.$subscribe((_m, state) => statuses.push(state.status), { detached: true })
     const p = s.download()
-    expect(s.status).toBe('downloading')
     await p
     expect(s.received).toBe(100)
     expect(s.progress).toBe(100)
     expect(s.status).toBe('ready')
+    expect(statuses).toContain('downloading')
   })
 
-  it('캐시에 있으면 다운로드를 건너뛴다', async () => {
+  it('캐시에 있으면 다운로드를 건너뛰고 downloading 상태를 거치지 않는다', async () => {
     vi.mocked(hasModel).mockResolvedValue(true)
     const s = useModelStore()
     await s.loadManifest()
+    const statuses: string[] = []
+    s.$subscribe((_m, state) => statuses.push(state.status), { detached: true })
     await s.download()
     expect(downloadModel).not.toHaveBeenCalled()
     expect(s.status).toBe('ready')
+    expect(statuses).not.toContain('downloading')
   })
 
   it('실패하면 error와 메시지', async () => {

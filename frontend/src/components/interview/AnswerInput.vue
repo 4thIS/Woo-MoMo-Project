@@ -37,10 +37,12 @@ function toggleMic() {
     stopSpeech()
     listening.value = false
     interim.value = ''
+    emit('typing', text.value.trim().length > 0)
     return
   }
   micError.value = ''
   listening.value = true
+  emit('typing', true)
   startSpeech(
     (t) => {
       if (listening.value) interim.value = t
@@ -94,6 +96,7 @@ const micTitle = computed(() =>
         placeholder="답변을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"
         :disabled="generating || disabled"
         @keydown="onKey"
+        @focus="micError = ''"
       />
       <div v-if="interim" class="interim mono" aria-live="polite">{{ interim }}</div>
     </div>
@@ -104,7 +107,7 @@ const micTitle = computed(() =>
         :class="{ on: listening }"
         data-test="mic"
         :title="micTitle"
-        :disabled="!supported || generating || disabled"
+        :disabled="!supported || generating || disabled || !!micError"
         @click="toggleMic"
       >
         <span v-if="listening" class="dot blink" />{{ listening ? '듣는 중' : '말하기' }}

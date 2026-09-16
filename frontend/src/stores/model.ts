@@ -48,13 +48,14 @@ export const useModelStore = defineStore('model', {
         return
       }
       const { id, url, size } = this.active
-      this.status = 'downloading'
       this.error = null
       this.initFailed = false
       try {
         if (await hasModel(id, url)) {
+          // 캐시 히트: downloading 단계를 거치지 않고 바로 초기화로 넘어간다
           this.received = size
         } else {
+          this.status = 'downloading'
           await downloadModel(id, url, size, (r) => (this.received = r), undefined)
         }
         this.status = 'downloaded'
