@@ -1,0 +1,176 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import PixelButton from '@/components/ui/PixelButton.vue'
+import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
+
+const props = defineProps<{ generating: boolean; disabled: boolean }>()
+const emit = defineEmits<{ send: [text: string]; abort: []; typing: [hasText: boolean] }>()
+
+const text = ref('')
+const interim = ref('')
+const listening = ref(false)
+const micError = ref('')
+const supported = speechSupported()
+
+watch(text, (v) => emit('typing', v.trim().length > 0))
+
+function submit() {
+  if (props.generating) {
+    emit('abort')
+    return
+  }
+  const t = text.value.trim()
+  if (!t || props.disabled) return
+  emit('send', t)
+  text.value = ''
+  interim.value = ''
+}
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault()
+    submit()
+  }
+}
+function toggleMic() {
+  if (!supported || props.disabled || props.generating) return
+  if (listening.value) {
+    stopSpeech()
+    listening.value = false
+    interim.value = ''
+    return
+  }
+  micError.value = ''
+  listening.value = true
+  startSpeech(
+    (t) => (interim.value = t),
+    (t) => {
+      text.value += t
+      interim.value = ''
+    },
+    (err) => {
+      micError.value =
+        err === 'not-allowed' ? '마이크 권한이 거부되었습니다' : `음성 인식 오류: ${err}`
+      listening.value = false
+      interim.value = ''
+    },
+    () => {
+      // 브라우저가 무음 등으로 스스로 끝냄 — 토글 표시를 내린다
+      listening.value = false
+      interim.value = ''
+    },
+  )
+}
+watch(
+  () => props.generating,
+  (g) => {
+    if (g && listening.value) {
+      stopSpeech()
+      listening.value = false
+      interim.value = ''
+    }
+  },
+)
+onBeforeUnmount(() => listening.value && stopSpeech())
+
+const micTitle = computed(() =>
+  !supported
+    ? '이 브라우저는 음성 인식을 지원하지 않습니다'
+    : micError.value || (listening.value ? '듣는 중 — 다시 누르면 종료' : '말하기'),
+)
+</script>
+
+<template>
+  <div class="input-panel">
+    <div class="ta-wrap" :class="{ listening }">
+      <textarea
+        v-model="text"
+        class="input mono"
+        rows="4"
+        placeholder="답변을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"
+        :disabled="generating || disabled"
+        @keydown="onKey"
+      />
+      <div v-if="interim" class="interim mono" aria-live="polite">{{ interim }}</div>
+    </div>
+    <div class="actions">
+      <button
+        type="button"
+        class="mic display"
+        :class="{ on: listening }"
+        data-test="mic"
+        :title="micTitle"
+        :disabled="!supported || generating || disabled"
+        @click="toggleMic"
+      >
+        <span v-if="listening" class="dot blink" />{{ listening ? '듣는 중' : '말하기' }}
+      </button>
+      <PixelButton data-test="send" :disabled="disabled && !generating" @click="submit">
+        {{ generating ? '중단' : '전송' }}
+      </PixelButton>
+    </div>
+    <p v-if="micError" class="mono err">{{ micError }}</p>
+  </div>
+</template>
+
+<style scoped>
+.input-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  height: 100%;
+}
+.ta-wrap {
+  position: relative;
+  flex: 1;
+}
+.ta-wrap textarea {
+  width: 100%;
+  height: 100%;
+  resize: none;
+}
+.ta-wrap.listening textarea {
+  border-color: var(--accent);
+}
+.interim {
+  position: absolute;
+  left: var(--sp-3);
+  bottom: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  pointer-events: none;
+}
+.actions {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: flex-end;
+}
+.mic {
+  background: var(--raise);
+  color: var(--text);
+  border: var(--win-border);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-button);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.mic.on {
+  background: var(--accent);
+  color: var(--bg);
+}
+.mic:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+}
+.err {
+  color: var(--danger);
+  font-size: var(--fs-meta);
+  margin: 0;
+}
+</style>
