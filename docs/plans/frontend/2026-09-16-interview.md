@@ -341,7 +341,7 @@ it('공백 변형도 감지한다', () => expect(hasEndPhrase('면접을  마치
 import { expect, it } from 'vitest'
 import { isGoodAnswer } from './goodAnswer'
 
-const long = '저는 백엔드 개발자로 3년간 일했습니다. '.repeat(6) // 150자 이상, 문장 여러 개
+const long = '저는 백엔드 개발자로 3년간 일했습니다. '.repeat(7) // 161자, 문장 7개
 it('150자 이상 + 문장 2개 이상이면 true', () => expect(isGoodAnswer(long)).toBe(true))
 it('짧으면 false', () => expect(isGoodAnswer('네. 그렇습니다.')).toBe(false))
 it('길어도 문장 1개면 false', () => expect(isGoodAnswer('가'.repeat(200))).toBe(false))
@@ -1891,6 +1891,11 @@ function toggleMic() {
     },
     (err) => {
       micError.value = err === 'not-allowed' ? '마이크 권한이 거부되었습니다' : `음성 인식 오류: ${err}`
+      listening.value = false
+      interim.value = ''
+    },
+    () => {
+      // 브라우저가 무음 등으로 스스로 끝냄 — 토글 표시를 내린다
       listening.value = false
       interim.value = ''
     },
