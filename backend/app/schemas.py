@@ -43,6 +43,7 @@ class TtsFile(BaseModel):
     def _relative_and_safe(cls, v: str) -> str:
         if v.startswith("/"):
             raise ValueError("tts file path must be relative")
+        # 세그먼트 단위 검사: "onnx/../x"는 거부, "a..b.onnx" 같은 파일명은 허용
         if ".." in v.split("/"):
             raise ValueError("tts file path must not contain '..'")
         return v

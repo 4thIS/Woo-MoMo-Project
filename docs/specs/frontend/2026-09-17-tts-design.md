@@ -159,4 +159,4 @@ warmUpAudio(): void   // 사용자 제스처 안에서 AudioContext.resume()
 
 - 모델 로드(세션 4개): wasm 3.7s, webgpu 3.8s.
 - 결정: **WebGPU, 스텝 4**. WASM은 스텝 2에서도 실시간(RTF 0.9)에 가까워 "동시 출력" 대기가 7~11초가 되므로 부적합. WASM 멀티스레드(COOP/COEP)로도 3~4배 이상 빨라지기 어렵다.
-- 남은 확인: Gemma E4B(3GB)가 GPU에 올라간 상태에서 TTS WebGPU 세션이 함께 동작하는지(메모리). 프론트 #12 완료 기준에 포함.
+- GPU 동시 사용 확인(같은 기기, 두 탭): Gemma E4B를 LiteRT-LM으로 GPU에 올린 상태에서 TTS WebGPU 로드 3.3s, 합성 0.39/0.34/0.32s(스텝 4, 46자). 그 뒤 Gemma 생성도 정상(7.7s, 세션 생성 포함). 메모리 경합 없음. 프론트 #12에서는 워커 안에서 한 번 더 확인.
