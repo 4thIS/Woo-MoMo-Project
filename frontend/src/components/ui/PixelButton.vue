@@ -29,6 +29,7 @@ const onClick = (e: MouseEvent) => {
 </template>
 
 <style scoped>
+/* 누를 수 있는 것은 "떠 있게": 테두리 + 오른쪽 아래 픽셀 그림자. hover면 반전, 누르면 그림자만큼 내려앉는다 */
 .btn {
   height: 52px;
   padding: 0 28px;
@@ -38,22 +39,38 @@ const onClick = (e: MouseEvent) => {
   gap: var(--sp-3);
   font-size: var(--fs-button);
   line-height: 1;
-  border: 0;
+  border: 2px solid var(--line);
+  box-shadow: 4px 4px 0 var(--line);
   cursor: pointer;
   background: var(--raise);
   color: var(--accent);
 }
+.btn:hover:not(.disabled) {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.btn:active:not(.disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: none;
+}
 .secondary {
   background: transparent;
   color: var(--text);
-  border: 2px solid var(--line);
+  box-shadow: 4px 4px 0 var(--raise);
   font-size: var(--fs-body);
   padding: 0 18px;
 }
+.secondary:hover:not(.disabled) {
+  background: var(--raise);
+  color: var(--accent);
+  border-color: var(--line);
+}
 .disabled {
   color: var(--text-3);
-  cursor: default;
-  background: var(--win);
-  border: 2px solid var(--raise);
+  cursor: not-allowed;
+  background: transparent;
+  border: 2px dashed var(--raise);
+  box-shadow: none;
 }
 </style>

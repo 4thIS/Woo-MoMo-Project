@@ -44,11 +44,18 @@ describe('InterviewView', () => {
     expect(w.text()).toContain('면접관이 마무리하려 합니다')
     expect(w.find('textarea').attributes('disabled')).toBeDefined()
   })
-  it('종료 문장이 나오면 자동으로 finish', async () => {
-    const s = useInterviewStore()
+  it('종료 문장이 나오면 바로 넘기지 않고 마무리 창을 띄우고, 리포트 받기를 눌러야 finish', async () => {
+    const { w, s } = mountWith({
+      messages: [{ role: 'model', text: '면접을 마치겠습니다.' }],
+      ended: true,
+    })
     const finish = vi.spyOn(s, 'finish').mockResolvedValue()
-    mountWith({ messages: [{ role: 'model', text: '면접을 마치겠습니다.' }], ended: true })
     await Promise.resolve()
+    expect(finish).not.toHaveBeenCalled()
+    expect(w.find('[data-test="closing"]').exists()).toBe(true)
+    expect(w.text()).toContain('면접이 끝났습니다')
+    expect(w.text()).toContain('면접을 마치겠습니다.') // 면접관의 마지막 말은 그대로 보인다
+    await w.find('[data-test="get-report"]').trigger('click')
     expect(finish).toHaveBeenCalled()
   })
   it('생성 오류면 다시 물어보기 버튼', async () => {

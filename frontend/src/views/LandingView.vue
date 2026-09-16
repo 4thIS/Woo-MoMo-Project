@@ -59,15 +59,18 @@ const need = computed(() => model.active?.size ?? 0)
 /* 매니페스트를 아직 못 받았으면(model.active 없음) 판정을 내리지 않는다 */
 const result = computed(() => (env.value && model.active ? verdict(env.value, need.value) : null))
 
+async function runCheck() {
+  envBusy.value = true
+  env.value = await checkEnvironment()
+  envBusy.value = false
+}
 async function onConsent(v: Consent) {
   consent.value = v
   if (v === 'no') {
     introEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     return
   }
-  envBusy.value = true
-  env.value = await checkEnvironment()
-  envBusy.value = false
+  await runCheck()
   await nextTick()
   envEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -103,7 +106,7 @@ function startDownload() {
     >
       <PixelWindow padding="md" class="title-win rise">
         <template #header><PixelTag>브라우저에서 실행 · 서버 전송 없음</PixelTag></template>
-        <h1 class="display logo rise">모두의<br />모의면접</h1>
+        <h1 class="display logo rise"><b class="mo">모</b>두의<br /><b class="mo">모</b>의면접</h1>
         <p class="sub rise">이력서를 읽는 AI 면접관이 이 컴퓨터 안에서 기다립니다.</p>
       </PixelWindow>
       <div class="hint rise">
@@ -137,7 +140,7 @@ function startDownload() {
       <div class="content">
         <PixelWindow title="모델 다운로드에 동의하시겠습니까?">
           <KeyValueGrid :items="kv" />
-          <p v-if="manifestTimedOut && !model.manifest" class="mono meta danger">
+          <p v-if="manifestTimedOut && !model.manifest" class="mono meta err">
             서버에 연결할 수 없습니다 — 새로고침해 주세요.
           </p>
           <ChoiceMenu
@@ -194,20 +197,60 @@ function startDownload() {
               얕아질 수 있습니다.
             </template>
           </p>
-          <p v-if="result === 'no-webgpu'" class="body2 danger">
-            이 브라우저에서는 WebGPU를 쓸 수 없습니다. 최신 Chrome(데스크톱)과 전용 GPU가
-            필요합니다.
+          <!-- 실패 시 원인별 조치. 막다른 길을 만들지 않는다 -->
+          <div v-if="result === 'no-webgpu'" class="fix" data-test="fix-webgpu">
+            <template v-if="env?.webgpuReason === 'no-adapter'">
+              <p class="body2 err">
+                WebGPU는 있지만 GPU를 잡지 못했습니다. 대부분 Chrome의 그래픽 가속이 꺼져 있는
+                경우입니다.
+              </p>
+              <ol class="body2 steps">
+                <li>
+                  주소창에 <code class="mono">chrome://settings/system</code> 입력 → "가능한 경우
+                  그래픽 가속 사용"(또는 "하드웨어 가속 사용") 켜기
+                </li>
+                <li>"다시 시작" 버튼으로 Chrome을 재시작한 뒤 이 페이지로 돌아오기</li>
+                <li>
+                  그래도 안 되면 <code class="mono">chrome://gpu</code>에서 WebGPU 항목이 "Hardware
+                  accelerated"인지 확인 (노트북은 전원 연결·고성능 GPU 선택)
+                </li>
+              </ol>
+            </template>
+            <template v-else>
+              <p class="body2 err">이 브라우저에는 WebGPU가 없습니다.</p>
+              <ol class="body2 steps">
+                <li>
+                  데스크톱 <b>Chrome</b> 또는 <b>Edge</b> 최신 버전으로 열어 주세요 (Chrome 113+)
+                </li>
+                <li>
+                  이미 Chrome이라면 <code class="mono">chrome://settings/help</code>에서 업데이트 후
+                  재시작
+                </li>
+              </ol>
+            </template>
+          </div>
+          <p v-else-if="result === 'no-space'" class="body2 err">
+            브라우저 저장 공간이 부족합니다. {{ sizeText }} 이상 비워 주세요. 다른 사이트 데이터를
+            지우거나 디스크 여유를 만든 뒤 다시 확인해 주세요.
           </p>
-          <p v-else-if="result === 'no-space'" class="body2 danger">
-            브라우저 저장 공간이 부족합니다. {{ sizeText }} 이상 비워 주세요.
-          </p>
-          <PixelButton
-            data-test="start-download"
-            :disabled="result !== 'ok' || envBusy || !model.active"
-            @click="startDownload"
-          >
-            확인했습니다. 내려받기 시작
-          </PixelButton>
+          <div class="btn-row">
+            <PixelButton
+              data-test="start-download"
+              :disabled="result !== 'ok' || envBusy || !model.active"
+              @click="startDownload"
+            >
+              확인했습니다. 내려받기 시작
+            </PixelButton>
+            <PixelButton
+              v-if="result && result !== 'ok'"
+              data-test="recheck"
+              variant="secondary"
+              :disabled="envBusy"
+              @click="runCheck"
+            >
+              {{ envBusy ? '확인 중…' : '다시 확인' }}
+            </PixelButton>
+          </div>
         </PixelWindow>
       </div>
     </section>
@@ -240,6 +283,11 @@ function startDownload() {
   line-height: 0.95;
   letter-spacing: -2px;
   text-shadow: 8px 8px 0 var(--raise);
+}
+/* MoMo — 두 "모"만 노랑 */
+.mo {
+  font-weight: inherit;
+  color: var(--accent);
 }
 .sub {
   margin: 0;
@@ -280,8 +328,29 @@ function startDownload() {
   color: var(--text-2);
   line-height: 1.75;
 }
-.danger {
+.err {
   color: var(--danger);
+}
+.fix {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.steps code {
+  color: var(--accent);
+  font-size: var(--fs-label);
+}
+.btn-row {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
 }
 .stats {
   display: grid;

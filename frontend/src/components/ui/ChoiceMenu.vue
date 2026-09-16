@@ -48,7 +48,7 @@ const onKey = (e: KeyboardEvent) => {
       :disabled="disabled"
       @click="pick(it.value)"
     >
-      <span class="slot"><CursorIcon v-if="it.value === modelValue" /></span>
+      <span class="slot"><CursorIcon /></span>
       {{ it.label }}
     </button>
   </div>
@@ -83,13 +83,26 @@ const onKey = (e: KeyboardEvent) => {
   padding: 14px var(--sp-5);
   align-self: flex-start;
 }
-.item.on {
+/* 고를 수 있는 것임을 알리는 흐린 커서. 올리면 밝아지고, 고르면 노란 커서 + 올라온 배경 */
+.item:hover:not(:disabled) {
+  background: var(--win);
+  color: var(--text);
+}
+.item.on,
+.item.on:hover {
   background: var(--raise);
   color: var(--accent);
 }
 .slot {
   width: 14px;
   display: inline-flex;
+  opacity: 0.3;
+}
+.item:hover .slot {
+  opacity: 0.7;
+}
+.item.on .slot {
+  opacity: 1;
 }
 .item:disabled {
   cursor: default;

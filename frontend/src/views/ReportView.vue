@@ -24,7 +24,7 @@ async function copy() {
 </script>
 
 <template>
-  <main class="report stars">
+  <main class="report stars rise">
     <header class="head">
       <h1 class="display">면접 리포트</h1>
       <div class="meta">
@@ -79,7 +79,8 @@ async function copy() {
       <pre class="mono raw">{{ s.reportRaw }}</pre>
     </PixelWindow>
 
-    <div class="btns bottom">
+    <!-- 긴 리포트를 다 읽은 뒤를 위한 하단 버튼. 쓰는 중엔 상단과 중복이라 숨긴다 -->
+    <div v-if="s.reportStatus === 'done'" class="btns bottom">
       <PixelButton variant="secondary" :disabled="s.reportStatus !== 'done'" @click="copy">{{
         copied ? '복사됨' : '텍스트 복사'
       }}</PixelButton>
