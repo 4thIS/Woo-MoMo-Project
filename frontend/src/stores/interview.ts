@@ -33,6 +33,7 @@ export const TOKEN_LIMIT = 6500
 
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
 let abortCtl: AbortController | null = null
+let inflight: Promise<void> | null = null // 진행 중 generate — abort()/finish()가 정리 완료를 기다리는 데 쓴다
 
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
@@ -119,44 +120,55 @@ export const useInterviewStore = defineStore('interview', {
     /** 내부: user 턴을 보내고 응답을 스트리밍해 messages에 확정한다 */
     async generate(userText: string) {
       if (!session) return
-      this.generating = true
-      this.genError = null
-      this.streaming = ''
-      this.stage = 'thinking'
-      abortCtl = new AbortController()
-      const filter = new ThoughtFilter()
-      let first = true
+      const run = async () => {
+        if (!session) return
+        this.generating = true
+        this.genError = null
+        this.streaming = ''
+        this.stage = 'thinking'
+        abortCtl = new AbortController()
+        const filter = new ThoughtFilter()
+        let first = true
+        try {
+          await session.send(
+            userText,
+            (delta) => {
+              const shown = filter.push(delta)
+              if (!shown) return
+              if (first) {
+                first = false
+                this.stage = 'asking'
+              }
+              this.streaming += shown
+            },
+            abortCtl.signal,
+          )
+          this.streaming += filter.flush()
+          // 공백만 남은 턴(thought만 오고 끝난 경우 등)은 기록하지 않는다 — 빈 말풍선 방지
+          const text = this.streaming.trim()
+          if (text) this.messages.push({ role: 'model', text: this.streaming })
+          if (hasEndPhrase(text)) this.ended = true
+        } catch (e) {
+          this.genError = e instanceof Error ? e.message : String(e)
+        } finally {
+          this.generating = false
+          this.stage = 'waiting'
+          abortCtl = null
+          await this.refreshTokens()
+        }
+      }
+      inflight = run()
       try {
-        await session.send(
-          userText,
-          (delta) => {
-            const shown = filter.push(delta)
-            if (!shown) return
-            if (first) {
-              first = false
-              this.stage = 'asking'
-            }
-            this.streaming += shown
-          },
-          abortCtl.signal,
-        )
-        this.streaming += filter.flush()
-        // 트림한 값이 아니라 원본으로 판단한다: 공백만 온 턴도 실제로 응답이 온 것이므로 기록한다.
-        // (thought만 오고 화면에 보일 텍스트가 전혀 없었던 경우에만 진짜 빈 문자열이 되어 걸러진다.)
-        if (this.streaming) this.messages.push({ role: 'model', text: this.streaming })
-        if (hasEndPhrase(this.streaming.trim())) this.ended = true
-      } catch (e) {
-        this.genError = e instanceof Error ? e.message : String(e)
+        await inflight
       } finally {
-        this.generating = false
-        this.stage = 'waiting'
-        abortCtl = null
-        await this.refreshTokens()
+        inflight = null
       }
     },
 
-    abort() {
+    /** 진행 중 생성을 중단한다. 반환 Promise는 중단된 generate가 완전히 정리된 뒤 resolve한다. */
+    async abort() {
       abortCtl?.abort()
+      await inflight
     },
 
     async retryLast() {
@@ -182,7 +194,8 @@ export const useInterviewStore = defineStore('interview', {
 
     async finish() {
       if (!session || this.reportStatus === 'writing') return
-      if (this.generating) this.abort()
+      // 중단된 generate가 세션을 정리(대화 재생성)하기 전에 리포트 send를 겹치면 런타임 BUSY/취소 오류가 난다
+      if (this.generating) await this.abort()
       this.phase = 'report'
       this.reportStatus = 'writing'
       this.reportRaw = ''

@@ -167,7 +167,7 @@ describe('interview flow', () => {
   })
 
   it('생성 실패는 genError + 마지막 user 턴을 retryLast로 재전송', async () => {
-    const sess = fakeSession(['q'])
+    const sess = fakeSession(['q', '다시 질문']) // 킥오프가 'q'를 쓰고, 재전송이 '다시 질문'을 받는다
     let fail = true
     const origSend = sess.send
     sess.send = async (t, on, sig) => {
@@ -214,6 +214,41 @@ describe('interview flow', () => {
     const s = await readyStore()
     await s.start()
     expect(s.tokenCount).toBeGreaterThan(0)
+  })
+
+  it('공백만 온 응답은 기록하지 않는다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q', '']))
+    const s = await readyStore()
+    await s.start()
+    await s.send('답')
+    expect(s.messages.map((m) => m.role)).toEqual(['model', 'user'])
+  })
+
+  it('finish는 진행 중 생성의 중단 정리를 기다린 뒤 리포트를 요청한다', async () => {
+    const order: string[] = []
+    const sess = fakeSession(['q'])
+    sess.send = async (t, on, signal) => {
+      if (t === '긴 답') {
+        order.push('gen-start')
+        await new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
+        order.push('gen-aborted')
+        return 'partial '
+      }
+      order.push('send:' + t.slice(0, 6))
+      on(t === '면접을 시작해 주세요.' ? 'q ' : '[] ')
+      return t === '면접을 시작해 주세요.' ? 'q ' : '[] '
+    }
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    const sending = s.send('긴 답')
+    await Promise.resolve()
+    await s.finish()
+    await sending
+    expect(order.indexOf('gen-aborted')).toBeLessThan(
+      order.findIndex((o) => o.startsWith('send:면접이')),
+    )
+    expect(s.reportStatus).toBe('done')
   })
 
   it('reset은 대화·리포트를 비우고 prepare로 간다', async () => {
