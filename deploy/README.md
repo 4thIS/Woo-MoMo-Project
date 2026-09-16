@@ -27,6 +27,20 @@ curl -s http://127.0.0.1:8006/api/health
 curl -I -H "Range: bytes=0-1023" http://127.0.0.1:8006/models/gemma4-e4b-it-web.litertlm   # 206
 ```
 
+### TTS 모델 파일 배치 (Supertonic 3, 약 398MB)
+`backend/data/manifest.json`의 `tts.baseUrl`·`files[].path`와 경로가 일치해야 한다.
+```
+mkdir -p /srv/momo/models/tts/supertonic-3/onnx /srv/momo/models/tts/supertonic-3/voice_styles
+cd /srv/momo/models/tts/supertonic-3
+B=https://huggingface.co/Supertone/supertonic-3/resolve/main
+for f in onnx/text_encoder.onnx onnx/duration_predictor.onnx onnx/vector_estimator.onnx onnx/vocoder.onnx onnx/tts.json onnx/unicode_indexer.json voice_styles/M2.json; do
+  curl -L -o "$f" "$B/$f"
+done
+ls -l onnx voice_styles
+curl -I -H "Range: bytes=0-1023" http://127.0.0.1:8006/models/tts/supertonic-3/onnx/vocoder.onnx   # 206
+```
+크기는 매니페스트 값과 같아야 한다(프론트가 수신 바이트를 대조한다). nginx 변경 없음 — 기존 `/models/` 규칙이 하위 디렉터리를 그대로 서빙한다.
+
 ### 도메인 라우트 (대시보드 Public Hostname 사용 금지)
 터널이 설정 파일로 로컬 관리되므로 Cloudflare 대시보드의 Public Hostname을 쓰면 원격 관리와 충돌한다.
 라우트는 파이의 `cloudflare-gui-tool` "라우트 추가"로 넣는다(`config-web.yml` ingress + DNS CNAME을 함께 생성).
