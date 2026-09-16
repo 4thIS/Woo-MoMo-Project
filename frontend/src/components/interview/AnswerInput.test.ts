@@ -7,7 +7,7 @@ vi.mock('@/services/speech', () => ({
   stopSpeech: vi.fn(),
   isSpeechActive: vi.fn(() => false),
 }))
-import { speechSupported, startSpeech } from '@/services/speech'
+import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
 import AnswerInput from './AnswerInput.vue'
 
 beforeEach(() => vi.mocked(speechSupported).mockReturnValue(false))
@@ -54,5 +54,35 @@ describe('AnswerInput', () => {
     await w.find('[data-test="mic"]').trigger('click')
     expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('기존 안녕하세요')
     expect(w.emitted('send')).toBeUndefined()
+  })
+})
+
+describe('AnswerInput 듣기 잠금·늦은 결과', () => {
+  it('disabled가 되면 듣기를 멈춘다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    vi.mocked(startSpeech).mockImplementation(() => {})
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
+    await w.setProps({ disabled: true })
+    expect(stopSpeech).toHaveBeenCalled()
+    expect(w.find('[data-test="mic"]').text()).toContain('말하기')
+  })
+  it('토글을 끈 뒤 늦게 온 확정 결과는 버린다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    let late: ((t: string) => void) | null = null
+    vi.mocked(startSpeech).mockImplementation((_i, onFinal) => {
+      late = onFinal
+    })
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    await w.find('[data-test="mic"]').trigger('click') // 끔
+    late!('늦은 결과')
+    await w.vm.$nextTick()
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
+  })
+  it('미지원이면 툴팁이 이유를 말한다', () => {
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    expect(w.find('[data-test="mic"]').attributes('title')).toContain('지원하지 않습니다')
   })
 })

@@ -42,8 +42,12 @@ function toggleMic() {
   micError.value = ''
   listening.value = true
   startSpeech(
-    (t) => (interim.value = t),
     (t) => {
+      if (listening.value) interim.value = t
+    },
+    (t) => {
+      // 토글을 끈 뒤 늦게 도착한 결과는 버린다 ("다시 누르면 종료")
+      if (!listening.value) return
       text.value += t
       interim.value = ''
     },
@@ -60,10 +64,11 @@ function toggleMic() {
     },
   )
 }
+// 생성이 시작되거나 입력이 잠기면(종료·토큰 한도) 듣기도 멈춘다
 watch(
-  () => props.generating,
-  (g) => {
-    if (g && listening.value) {
+  () => props.generating || props.disabled,
+  (locked) => {
+    if (locked && listening.value) {
       stopSpeech()
       listening.value = false
       interim.value = ''
