@@ -84,3 +84,50 @@ def test_question_set_rejects_unknown_keys():
         QuestionSet.model_validate(
             {"field": "it", "questions": ["q1", "q2", "q3", "q4", "q5"], "extra": "nope"}
         )
+
+
+TTS = {
+    "id": "supertonic-3",
+    "baseUrl": "/models/tts/supertonic-3/",
+    "files": [
+        {"path": "onnx/text_encoder.onnx", "size": 36416150},
+        {"path": "voice_styles/M2.json", "size": 292055},
+    ],
+    "voice": "M2",
+    "lang": "ko",
+}
+
+
+def test_manifest_tts_defaults_to_none():
+    assert Manifest.model_validate(_manifest()).tts is None
+
+
+def test_manifest_parses_tts():
+    m = Manifest.model_validate(_manifest(tts=TTS))
+    assert m.tts is not None
+    assert m.tts.voice == "M2"
+    assert [f.path for f in m.tts.files] == ["onnx/text_encoder.onnx", "voice_styles/M2.json"]
+
+
+@pytest.mark.parametrize("base", ["/static/tts/", "/models/tts", "https://x/models/tts/"])
+def test_tts_base_url_must_be_models_dir(base):
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "baseUrl": base}))
+
+
+@pytest.mark.parametrize("path", ["../secret.json", "onnx/../x.onnx", "/onnx/a.onnx", ""])
+def test_tts_file_path_rejects_traversal_and_absolute(path):
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "files": [{"path": path, "size": 1}]}))
+
+
+def test_tts_requires_at_least_one_file_and_positive_size():
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "files": []}))
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "files": [{"path": "a.onnx", "size": 0}]}))
+
+
+def test_tts_rejects_unknown_keys():
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "steps": 8}))
