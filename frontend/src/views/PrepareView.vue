@@ -115,8 +115,20 @@ function usePasted() {
 const startLabel = computed(() =>
   interview.canStart ? '면접 시작' : `면접 시작 — ${interview.startBlockReason}`,
 )
+const busy = ref(false)
+const startError = ref('')
 function start() {
-  if (interview.canStart) interview.goto('interview')
+  if (interview.canStart && !busy.value) {
+    busy.value = true
+    startError.value = ''
+    void interview
+      .start()
+      .catch((e: unknown) => {
+        // 세션 생성 실패(GPU 메모리 등)를 조용히 삼키지 않고 버튼 옆에 보여준다
+        startError.value = `면접관을 부르지 못했습니다: ${e instanceof Error ? e.message : String(e)}`
+      })
+      .finally(() => (busy.value = false))
+  }
 }
 async function clearAndRetry() {
   await model.clearCache()
@@ -308,9 +320,10 @@ async function clearAndRetry() {
               }})
             </li>
           </ul>
-          <PixelButton data-test="start" :disabled="!interview.canStart" @click="start">{{
+          <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
             startLabel
           }}</PixelButton>
+          <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
         </div>
       </div>
     </section>
@@ -471,5 +484,10 @@ async function clearAndRetry() {
 }
 .checklist i.wait {
   background: var(--accent);
+}
+.start-error {
+  color: var(--danger);
+  font-size: var(--fs-meta);
+  margin: var(--sp-2) 0 0;
 }
 </style>

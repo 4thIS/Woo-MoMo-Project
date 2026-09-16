@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@litert-lm/core':
+        specifier: ^0.17.1
+        version: 0.17.1
       pdfjs-dist:
         specifier: ^6.3.289
         version: 6.3.289
@@ -226,6 +229,12 @@ packages:
 
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
+
+  '@litert-lm/core@0.17.1':
+    resolution: {integrity: sha512-eUxw6ggqZrvNA8Uk/w0TwglRWryn/clrjqHYyfxQWRl0uz5Txmte+qss0u3Dt+X6W/io4G8ADk97LmjMxVRHUg==}
+
+  '@litertjs/wasm-utils@2.5.3':
+    resolution: {integrity: sha512-4fJiw6tBQnIs+0jH/OQ16nYOiSl8/+zZnn5h2ul8aTKHi05sVqZW580Tmk78pC2kT39A9OYBVdFawteZ/sI1kQ==}
 
   '@napi-rs/canvas-android-arm64@1.0.9':
     resolution: {integrity: sha512-4LGXk2/0HVzE29K8SzML5WubgCp++B1FH3qgl35XmSZE+lLdr6P9VRQEnZ0MCLZMTSuJP41yyhtoiVNEuvrTIA==}
@@ -1488,6 +1497,12 @@ snapshots:
       keyv: 5.6.0
 
   '@keyv/serialize@1.1.1': {}
+
+  '@litert-lm/core@0.17.1':
+    dependencies:
+      '@litertjs/wasm-utils': 2.5.3
+
+  '@litertjs/wasm-utils@2.5.3': {}
 
   '@napi-rs/canvas-android-arm64@1.0.9':
     optional: true

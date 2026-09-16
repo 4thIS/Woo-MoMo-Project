@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.27.0",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
@@ -10,9 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "postinstall": "node scripts/copy-litert-wasm.mjs",
+    "prebuild": "node scripts/copy-litert-wasm.mjs"
   },
   "dependencies": {
+    "@litert-lm/core": "^0.17.1",
     "pdfjs-dist": "^6.3.289",
     "pinia": "^4.0.3",
     "vue": "^3.5.42"

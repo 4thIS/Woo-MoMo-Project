@@ -15,6 +15,12 @@ vi.mock('@/services/modelCache', () => ({
       onProgress(size)
     },
   ),
+  getModelBlob: vi.fn(async () => new Blob(['x'])),
+}))
+vi.mock('@/services/llm', () => ({
+  initEngine: vi.fn(async () => {}),
+  disposeEngine: vi.fn(async () => {}),
+  startSession: vi.fn(),
 }))
 
 import { extractPdfText } from '@/services/pdf'
@@ -140,7 +146,7 @@ describe('PrepareView', () => {
     expect(useInterviewStore().profile.job).toBe('프론트엔드 개발자')
   })
 
-  it('모델 ready + 입력 완료면 버튼 활성, 클릭하면 interview로', async () => {
+  it('모델 ready + 입력 완료면 버튼 활성, 클릭하면 세션을 시작한다', async () => {
     const w = mountView()
     const m = useModelStore()
     m.status = 'ready'
@@ -149,10 +155,11 @@ describe('PrepareView', () => {
     s.setJob('백엔드')
     s.setResume('cv.pdf', '가'.repeat(60))
     await flushPromises()
+    const startSpy = vi.spyOn(s, 'start').mockResolvedValue()
     const btn = w.find('[data-test=start]')
     expect((btn.element as HTMLButtonElement).disabled).toBe(false)
     await btn.trigger('click')
-    expect(s.phase).toBe('interview')
+    expect(startSpy).toHaveBeenCalled()
   })
 })
 
@@ -193,6 +200,6 @@ describe('PrepareView — 캐시 지우기 후 재다운로드', () => {
     await flushPromises()
 
     expect(clearModels).toHaveBeenCalled()
-    expect(useModelStore().status).toBe('downloaded')
+    expect(useModelStore().status).toBe('ready')
   })
 })
