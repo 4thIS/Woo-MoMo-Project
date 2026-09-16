@@ -136,6 +136,11 @@ const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'i
 .closing .confirm-backdrop {
   opacity: 0.6;
 }
+/* 말풍선·면접관은 그대로 보이게, 창은 지원자 자리(아래쪽)에 */
+.closing {
+  align-items: end;
+  padding-bottom: var(--sp-8);
+}
 .closing .confirm-win {
   animation-delay: 0.8s;
 }
