@@ -14,7 +14,7 @@
 
 | 항목 | 결정 |
 |---|---|
-| 엔진 | **Supertonic 3** (Supertone 공개, ONNX 4개 약 398MB), `onnxruntime-web` **WASM(CPU) 실행 프로바이더**(GPU는 Gemma가 사용). 목소리 프리셋 **M2**, 언어 `ko` |
+| 엔진 | **Supertonic 3** (Supertone 공개, ONNX 4개 약 398MB), `onnxruntime-web` **WebGPU 실행 프로바이더**(스파이크 결과 WASM은 실시간보다 느려 부적합 — 아래 6절 측정). 스텝 수 **4**. 목소리 프리셋 **M2**, 언어 `ko`. Gemma 생성이 끝난 뒤에만 합성하므로 GPU 연산은 겹치지 않는다 |
 | 실행 위치 | **Web Worker**. 메인 스레드는 얇은 프록시. 합성 중에도 애니·입력이 멈추지 않는다 |
 | 타이밍 | 생성 완료 → 합성 완료 뒤 **텍스트와 음성을 동시에 시작**. 대기 중 말풍선은 "…" + 면접관 nod, 재생 중 talk 애니 + 음성 길이에 맞춘 타이핑 |
 | 마이크 | 재생 중 말하기 토글·전송 비활성. 재생이 끝나면 **사용자가 직접** 다시 켠다 |
@@ -65,9 +65,9 @@ onnxruntime-web은 이 파일에서만 import한다. 스토어를 모른다.
 | `{ type: 'synthesize', id, text }` | `{ type: 'audio', id, samples: Float32Array(transfer), sampleRate }` / `{ type: 'error', id, message }` |
 | `{ type: 'cancel', id }` | 없음 (해당 id 결과를 폐기. ONNX run은 중단 불가) |
 
-- 로드: `files`를 `caches.match(url)` 우선, 없으면 `fetch` → 세션 4개 생성(`executionProviders: ['wasm']`, `wasm.numThreads: 1`, `wasm.wasmPaths = wasmPaths`) → `tts.json`·`unicode_indexer.json`·스타일 JSON 로드.
+- 로드: `files`를 `caches.match(url)` 우선, 없으면 `fetch` → 세션 4개 생성(`executionProviders: ['webgpu']`, `wasm.wasmPaths = wasmPaths` — onnxruntime-web의 WebGPU 백엔드도 WASM 글루 파일을 쓴다) → `tts.json`·`unicode_indexer.json`·스타일 JSON 로드. WebGPU가 없으면 `error`(Gemma도 WebGPU 필수라 새 요구사항은 아님). 워커 안에서 `navigator.gpu`가 있어야 하므로 dedicated worker에서 WebGPU를 쓴다(Chrome 지원).
 - 합성 파이프라인(예제 `helper.js` 이식): 텍스트 정규화 → `<ko>…</ko>` 태그 + 유니코드 인덱싱 → `duration_predictor` → `text_encoder` → `vector_estimator` 반복 → `vocoder` → Float32 파형. 120자 넘는 텍스트는 문장 단위로 나눠 합성 후 이어 붙인다.
-- 스텝 수는 예제 기본값으로 시작하고, 스파이크 측정 결과에 따라 spec 6절 기준을 만족하는 최소값으로 고정한다.
+- 스텝 수(`totalStep`)는 **4**로 고정(6절 측정). `speed` 1.05, `silenceDuration` 0.3(예제 기본값).
 
 ### `services/tts.ts` (메인 스레드 프록시)
 ```ts
@@ -127,7 +127,7 @@ warmUpAudio(): void   // 사용자 제스처 안에서 AudioContext.resume()
 
 ## 6. 성공 기준 (스파이크에서 먼저 측정)
 
-- 데모 노트북에서 한국어 60자 합성 **3초 이내**(WASM 단일 스레드). 미달이면 스텝 수를 줄여 재측정, 그래도 미달이면 이 spec을 재논의한다.
+- 데모 노트북에서 한국어 60자 합성 **3초 이내**(WebGPU, 스텝 4). 첫 합성은 워밍업으로 더 걸릴 수 있으므로 준비 단계에서 짧은 문장을 한 번 미리 합성해 둔다(워밍업).
 - 첫 질문의 "생각 중" 대기(생성+합성) **8초 이내**, 이후 턴 **6초 이내**.
 - 합성 중 메인 스레드 애니가 끊기지 않는다.
 - 재방문(캐시 히트) 시 TTS 초기화 3초 이내.
@@ -144,5 +144,19 @@ warmUpAudio(): void   // 사용자 제스처 안에서 AudioContext.resume()
 
 ## 8. 열린 결정 (plan 단계에서 확정)
 
-- `vector_estimator` 스텝 수: 스파이크 결과로 고정.
 - 타이핑 속도 계산: `revealed`를 글자 수 / `durationMs`로 균등 배분(문장부호 가중치 없음). 어색하면 plan에서 조정.
+
+## 9. 스파이크 측정 (2026-09-17, Chrome, Intel 내장 GPU xe-3lpg, 예제 `web/` 그대로, 목소리 M2, ko)
+
+| 실행 프로바이더 | 스텝 | 51자 합성 | 85자 합성 | 오디오 길이 | RTF |
+|---|---|---|---|---|---|
+| wasm (단일 스레드) | 8 | 19.88s | 37.17s | 7.5s / 11.9s | 2.6 / 3.1 |
+| wasm | 4 | 10.73s | 17.31s | | 1.4 |
+| wasm | 2 | 6.85s | 10.76s | | 0.9 |
+| **webgpu** | 8 | 3.58s(첫 호출, 워밍업 포함) | 0.86s | | 0.48 / 0.07 |
+| **webgpu** | 4 | **0.30s** | **0.39s** | | 0.04 / 0.03 |
+| webgpu | 2 | 0.22s | | | 0.03 |
+
+- 모델 로드(세션 4개): wasm 3.7s, webgpu 3.8s.
+- 결정: **WebGPU, 스텝 4**. WASM은 스텝 2에서도 실시간(RTF 0.9)에 가까워 "동시 출력" 대기가 7~11초가 되므로 부적합. WASM 멀티스레드(COOP/COEP)로도 3~4배 이상 빨라지기 어렵다.
+- 남은 확인: Gemma E4B(3GB)가 GPU에 올라간 상태에서 TTS WebGPU 세션이 함께 동작하는지(메모리). 프론트 #12 완료 기준에 포함.
