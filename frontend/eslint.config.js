@@ -14,6 +14,7 @@ export default tseslint.config(
     languageOptions: { parserOptions: { parser: tseslint.parser }, globals: globals.browser },
   },
   { files: ['**/*.ts'], languageOptions: { globals: { ...globals.browser, ...globals.node } } },
+  { files: ['scripts/**/*.mjs'], languageOptions: { globals: globals.node } },
   { rules: { 'vue/multi-word-component-names': 'off' } },
   prettier,
 )

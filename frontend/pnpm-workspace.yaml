@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@litert-lm/core@0.17.1'
