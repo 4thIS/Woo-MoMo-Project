@@ -108,6 +108,45 @@ describe('ReportView', () => {
     const w = mount(ReportView)
     expect(w.find('[data-test="timing"]').exists()).toBe(false)
   })
+  it('자연 종료면 마지막 인사 턴은 시간 표에 0초 행으로 남지 않는다', () => {
+    const t0 = 1_000_000
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+      startedAt: t0,
+      endedAt: t0 + 200_000,
+      ended: true,
+      messages: [
+        { role: 'model', text: '자기소개 해주세요', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 },
+        { role: 'model', text: '수고하셨습니다. 면접을 마치겠습니다.', at: t0 + 200_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    const rows = w.findAll('[data-test="turn-row"]')
+    expect(rows).toHaveLength(1)
+    // 부분 문자열 '0초'는 "1분 30초"처럼 정상 시간에도 나타나므로 표시된 시간 값 자체로 비교한다.
+    expect(rows[0].find('.dur').text()).not.toBe('0초')
+  })
+  it('면접 종료 버튼으로 중간에 끝냈으면(ended=false) 답 없는 마지막 질문은 endedAt까지 센다', () => {
+    const t0 = 1_000_000
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+      startedAt: t0,
+      endedAt: t0 + 65_000,
+      ended: false,
+      messages: [{ role: 'model', text: '자기소개 해주세요', at: t0 + 5_000 }],
+    })
+    const w = mount(ReportView)
+    const rows = w.findAll('[data-test="turn-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].text()).toContain('1분 0초')
+  })
   it('다시 면접 보기는 reset', async () => {
     const s = useInterviewStore()
     s.$patch({

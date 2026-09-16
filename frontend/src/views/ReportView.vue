@@ -14,7 +14,9 @@ const nQ = computed(() => s.report?.length ?? 0)
 const nFollow = computed(() => Math.max(0, modelTurns.value - nQ.value))
 
 const total = computed(() => totalDuration(s.startedAt, s.endedAt))
-const turns = computed(() => turnDurations(s.messages, s.endedAt))
+// 자연 종료(ended)면 마지막 모델 턴은 항상 인사말(store.send()가 ended 이후 거부)이라
+// endAt을 주지 않아 표에서 제외한다. 진행 중 종료면 답 없는 마지막 질문이니 endedAt까지 센다.
+const turns = computed(() => turnDurations(s.messages, s.ended ? null : s.endedAt))
 const timing = computed(() =>
   total.value > 0 || turns.value.length ? { total: total.value, turns: turns.value } : undefined,
 )
@@ -206,7 +208,7 @@ function printReport() {
 @media print {
   .report {
     max-width: none;
-    padding: 0;
+    padding: 0 var(--sp-4);
     gap: var(--sp-4);
   }
   .btns,

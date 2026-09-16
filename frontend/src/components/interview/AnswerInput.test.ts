@@ -174,6 +174,7 @@ describe('AnswerInput 침묵 자동 전송', () => {
     await w.setProps({ generating: true })
     vi.advanceTimersByTime(SILENCE_MS)
     expect(w.emitted('send')).toBeUndefined()
+    expect(w.emitted('abort')).toBeUndefined()
   })
 
   it('인식이 스스로 끝난 뒤 잠기면 남은 타이머도 취소된다', async () => {
