@@ -14,19 +14,36 @@ function isItem(v: unknown): v is ReportItem {
   )
 }
 
-export function parseReport(raw: string): ReportItem[] | null {
-  let s = raw.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '')
-  const start = s.indexOf('[')
-  const end = s.lastIndexOf(']')
-  if (start < 0 || end <= start) return null
-  s = s.slice(start, end + 1)
+function tryParseItems(s: string): ReportItem[] | null {
   try {
     const v: unknown = JSON.parse(s)
-    if (!Array.isArray(v) || v.length === 0 || !v.every(isItem)) return null
-    return v
+    return Array.isArray(v) && v.length > 0 && v.every(isItem) ? v : null
   } catch {
     return null
   }
+}
+
+/**
+ * 모델 출력에서 리포트 배열을 찾는다. 앞뒤 잡담에 `[`·`]`가 섞여 있어도(예: "참고 [1]")
+ * 각 `[` 후보에서 시작해 뒤쪽 `]` 후보를 차례로 시도하므로 첫 번째로 파싱되는 배열을 얻는다.
+ */
+export function parseReport(raw: string): ReportItem[] | null {
+  const s = raw.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '')
+  const opens: number[] = []
+  const closes: number[] = []
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '[') opens.push(i)
+    else if (s[i] === ']') closes.push(i)
+  }
+  for (const start of opens) {
+    for (let j = closes.length - 1; j >= 0; j--) {
+      const end = closes[j]
+      if (end <= start) break
+      const found = tryParseItems(s.slice(start, end + 1))
+      if (found) return found
+    }
+  }
+  return null
 }
 
 export function splitEmphasis(text: string): { text: string; strong: boolean }[] {

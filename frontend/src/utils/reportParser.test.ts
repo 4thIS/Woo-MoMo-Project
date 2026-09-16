@@ -19,6 +19,14 @@ describe('parseReport', () => {
   it('배열이 아니면 null', () => expect(parseReport('{"a":1}')).toBeNull())
   it('빈 배열은 null', () => expect(parseReport('[]')).toBeNull())
   it('깨진 JSON은 null', () => expect(parseReport('[{')).toBeNull())
+  it('앞뒤 잡담에 대괄호가 있어도 배열을 찾는다', () => {
+    const raw = '참고 [1]: 아래와 같습니다.\n' + JSON.stringify([item]) + '\n이상입니다 (출처 [2]).'
+    expect(parseReport(raw)).toEqual([item])
+  })
+  it('문자열 안의 대괄호는 그대로 보존한다', () => {
+    const it2 = { ...item, feedback: '[참고] 근거가 필요합니다.' }
+    expect(parseReport(JSON.stringify([it2]))).toEqual([it2])
+  })
 })
 
 describe('splitEmphasis', () => {
