@@ -40,6 +40,7 @@ beforeEach(() => {
   vi.mocked(getManifest).mockResolvedValue(manifest)
   vi.mocked(checkEnvironment).mockResolvedValue({
     webgpu: true,
+    webgpuReason: null,
     gpuName: 'Test GPU',
     storageFree: 10e9,
   })
@@ -69,9 +70,10 @@ describe('LandingView', () => {
     expect(w.text()).toContain('출전 가능')
   })
 
-  it('WebGPU가 없으면 실행 불가 + 버튼 비활성', async () => {
+  it('WebGPU가 없으면 실행 불가 + 버튼 비활성 + 브라우저 안내', async () => {
     vi.mocked(checkEnvironment).mockResolvedValue({
       webgpu: false,
+      webgpuReason: 'no-api',
       gpuName: null,
       storageFree: null,
     })
@@ -80,7 +82,33 @@ describe('LandingView', () => {
     await w.findAll('[role=radio]')[0].trigger('click')
     await flushPromises()
     expect(w.text()).toContain('실행 불가')
+    expect(w.text()).toContain('Chrome')
     expect((w.find('[data-test=start-download]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('어댑터를 못 잡으면 그래픽 가속 켜는 순서를 안내하고, 다시 확인으로 재검사한다', async () => {
+    vi.mocked(checkEnvironment).mockResolvedValue({
+      webgpu: false,
+      webgpuReason: 'no-adapter',
+      gpuName: null,
+      storageFree: null,
+    })
+    const w = mountView()
+    await flushPromises()
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('그래픽 가속')
+    expect(w.text()).toContain('chrome://settings/system')
+    vi.mocked(checkEnvironment).mockResolvedValue({
+      webgpu: true,
+      webgpuReason: null,
+      gpuName: 'Test GPU',
+      storageFree: 50 * 1024 ** 3,
+    })
+    await w.find('[data-test=recheck]').trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('출전 가능')
+    expect(w.find('[data-test=recheck]').exists()).toBe(false)
   })
 
   it('매니페스트 로드 실패 시 판정 없음 + 버튼 비활성, 5초 전엔 안내 없음', async () => {

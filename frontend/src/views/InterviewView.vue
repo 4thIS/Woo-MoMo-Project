@@ -38,13 +38,9 @@ watch(
 )
 onBeforeUnmount(() => idleTimer && clearTimeout(idleTimer))
 
-/* 종료 */
+/* 종료: 면접관의 마지막 인사가 끝나면 바로 넘기지 않고 마무리 창을 띄운다. 리포트는 버튼으로 */
 const confirming = ref(false)
-watch(
-  () => s.ended,
-  (e) => e && !s.generating && void s.finish(),
-  { immediate: true },
-)
+const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'idle')
 </script>
 
 <template>
@@ -68,6 +64,16 @@ watch(
           <div class="btns">
             <PixelButton variant="secondary" @click="confirming = false">계속 진행</PixelButton>
             <PixelButton data-test="end-confirm" @click="s.finish()">리포트 만들기</PixelButton>
+          </div>
+        </PixelWindow>
+      </div>
+      <div v-else-if="closing" class="confirm closing" role="dialog" data-test="closing">
+        <div class="confirm-backdrop" />
+        <PixelWindow padding="sm" class="confirm-win rise" title="면접이 끝났습니다">
+          <p class="mono">수고하셨습니다. 면접관이 답변을 정리해 피드백을 드리겠습니다.</p>
+          <p class="mono dim">대화 기록은 아래에서 다시 볼 수 있습니다.</p>
+          <div class="btns">
+            <PixelButton data-test="get-report" @click="s.finish()">리포트 받기</PixelButton>
           </div>
         </PixelWindow>
       </div>
@@ -125,6 +131,17 @@ watch(
   inset: 0;
   background: var(--bg);
   opacity: 0.85;
+}
+/* 마무리 창은 면접관의 마지막 말이 잠깐 보이도록 반투명이 옅고, 한 박자 뒤에 올라온다 */
+.closing .confirm-backdrop {
+  opacity: 0.6;
+}
+.closing .confirm-win {
+  animation-delay: 0.8s;
+}
+.dim {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
 }
 .confirm-win {
   position: relative;
