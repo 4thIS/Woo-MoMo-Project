@@ -38,6 +38,12 @@ watch(
 )
 onBeforeUnmount(() => idleTimer && clearTimeout(idleTimer))
 
+/* 경과 시계: 1초마다 now를 갱신. 언마운트 시 정리 */
+const now = ref(Date.now())
+const clock = setInterval(() => (now.value = Date.now()), 1000)
+onBeforeUnmount(() => clearInterval(clock))
+const elapsedMs = computed(() => (s.startedAt ? now.value - s.startedAt : 0))
+
 /* 종료: 면접관의 마지막 인사가 끝나면 바로 넘기지 않고 마무리 창을 띄운다. 리포트는 버튼으로 */
 const confirming = ref(false)
 const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'idle')
@@ -54,6 +60,7 @@ const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'i
         :watch-tick="watchTick"
         :field-label="fieldLabel"
         :job="s.profile.job"
+        :elapsed-ms="elapsedMs"
         @react-done="s.consumeReact()"
         @end="confirming = true"
       />
