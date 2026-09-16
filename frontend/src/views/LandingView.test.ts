@@ -8,6 +8,11 @@ vi.mock('@/services/modelCache', () => ({
   hasModel: vi.fn(async () => false),
   downloadModel: vi.fn(async () => {}),
   clearModels: vi.fn(),
+  getModelBlob: vi.fn(async () => new Blob(['x'])),
+}))
+vi.mock('@/services/llm', () => ({
+  initEngine: vi.fn(async () => {}),
+  disposeEngine: vi.fn(async () => {}),
 }))
 
 import { checkEnvironment } from '@/services/gpuCheck'
@@ -97,6 +102,6 @@ describe('LandingView', () => {
     await w.find('[data-test=start-download]').trigger('click')
     await flushPromises()
     expect(useInterviewStore().phase).toBe('prepare')
-    expect(['downloading', 'downloaded']).toContain(useModelStore().status)
+    expect(['downloading', 'downloaded', 'initializing', 'ready']).toContain(useModelStore().status)
   })
 })

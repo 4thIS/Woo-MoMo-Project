@@ -15,6 +15,11 @@ vi.mock('@/services/modelCache', () => ({
       onProgress(size)
     },
   ),
+  getModelBlob: vi.fn(async () => new Blob(['x'])),
+}))
+vi.mock('@/services/llm', () => ({
+  initEngine: vi.fn(async () => {}),
+  disposeEngine: vi.fn(async () => {}),
 }))
 
 import { extractPdfText } from '@/services/pdf'
@@ -193,6 +198,6 @@ describe('PrepareView — 캐시 지우기 후 재다운로드', () => {
     await flushPromises()
 
     expect(clearModels).toHaveBeenCalled()
-    expect(useModelStore().status).toBe('downloaded')
+    expect(useModelStore().status).toBe('ready')
   })
 })

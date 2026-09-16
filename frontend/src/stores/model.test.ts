@@ -6,10 +6,13 @@ vi.mock('@/services/modelCache', () => ({
   hasModel: vi.fn(),
   downloadModel: vi.fn(),
   clearModels: vi.fn(),
+  getModelBlob: vi.fn(),
 }))
+vi.mock('@/services/llm', () => ({ initEngine: vi.fn(), disposeEngine: vi.fn() }))
 
 import { getManifest } from '@/services/api'
-import { downloadModel, hasModel } from '@/services/modelCache'
+import { downloadModel, getModelBlob, hasModel } from '@/services/modelCache'
+import { initEngine } from '@/services/llm'
 import { useModelStore } from './model'
 
 const manifest = {
@@ -29,6 +32,8 @@ beforeEach(() => {
     onProgress(50)
     onProgress(100)
   })
+  vi.mocked(getModelBlob).mockResolvedValue(new Blob(['x']))
+  vi.mocked(initEngine).mockResolvedValue(undefined)
 })
 
 describe('model store', () => {
@@ -48,7 +53,7 @@ describe('model store', () => {
     await p
     expect(s.received).toBe(100)
     expect(s.progress).toBe(100)
-    expect(s.status).toBe('downloaded')
+    expect(s.status).toBe('ready')
   })
 
   it('캐시에 있으면 다운로드를 건너뛴다', async () => {
@@ -57,7 +62,7 @@ describe('model store', () => {
     await s.loadManifest()
     await s.download()
     expect(downloadModel).not.toHaveBeenCalled()
-    expect(s.status).toBe('downloaded')
+    expect(s.status).toBe('ready')
   })
 
   it('실패하면 error와 메시지', async () => {
@@ -95,5 +100,31 @@ describe('model store', () => {
     await s.download()
     expect(s.status).toBe('error')
     expect(s.error).toContain('manifest')
+  })
+
+  it('download 후 init이 이어져 ready가 된다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(initEngine).toHaveBeenCalledWith(expect.any(Blob), { maxNumTokens: 8192 })
+    expect(s.status).toBe('ready')
+  })
+
+  it('init 실패는 error + initFailed', async () => {
+    vi.mocked(initEngine).mockRejectedValue(new Error('gpu oom'))
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.status).toBe('error')
+    expect(s.error).toBe('gpu oom')
+    expect(s.initFailed).toBe(true)
+  })
+
+  it('캐시에 Blob이 없으면 error', async () => {
+    vi.mocked(getModelBlob).mockResolvedValue(null)
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.status).toBe('error')
   })
 })

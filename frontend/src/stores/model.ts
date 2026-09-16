@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { getManifest } from '@/services/api'
-import { clearModels, downloadModel, hasModel } from '@/services/modelCache'
+import { clearModels, downloadModel, getModelBlob, hasModel } from '@/services/modelCache'
+import { disposeEngine, initEngine } from '@/services/llm'
 import type { Manifest, ModelRef } from '@/types/api'
+
+export const MAX_NUM_TOKENS = 8192
 
 export type ModelStatus =
   'idle' | 'loading-manifest' | 'downloading' | 'downloaded' | 'initializing' | 'ready' | 'error'
@@ -15,6 +18,7 @@ export const useModelStore = defineStore('model', {
     total: 0,
     error: null as string | null,
     manifestError: null as string | null,
+    initFailed: false,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
@@ -46,6 +50,7 @@ export const useModelStore = defineStore('model', {
       const { id, url, size } = this.active
       this.status = 'downloading'
       this.error = null
+      this.initFailed = false
       try {
         if (await hasModel(id, url)) {
           this.received = size
@@ -56,6 +61,23 @@ export const useModelStore = defineStore('model', {
       } catch (e) {
         this.status = 'error'
         this.error = e instanceof Error ? e.message : String(e)
+        return
+      }
+      await this.init()
+    },
+    async init() {
+      if (!this.active) return
+      this.status = 'initializing'
+      this.error = null
+      try {
+        const blob = await getModelBlob(this.active.id, this.active.url)
+        if (!blob) throw new Error('cached model not found')
+        await initEngine(blob, { maxNumTokens: MAX_NUM_TOKENS })
+        this.status = 'ready'
+      } catch (e) {
+        this.status = 'error'
+        this.initFailed = true
+        this.error = e instanceof Error ? e.message : String(e)
       }
     },
     retry() {
@@ -63,14 +85,17 @@ export const useModelStore = defineStore('model', {
     },
     async useFallback() {
       if (!this.manifest?.fallback) return
+      await disposeEngine()
       this.setActive(this.manifest.fallback)
       await this.download()
     },
     async clearCache() {
+      await disposeEngine()
       await clearModels()
       this.received = 0
       this.status = 'idle'
       this.error = null
+      this.initFailed = false
     },
   },
 })
