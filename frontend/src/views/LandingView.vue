@@ -106,7 +106,7 @@ function startDownload() {
     >
       <PixelWindow padding="md" class="title-win rise">
         <template #header><PixelTag>브라우저에서 실행 · 서버 전송 없음</PixelTag></template>
-        <h1 class="display logo rise">모두의<br />모의면접</h1>
+        <h1 class="display logo rise"><b class="mo">모</b>두의<br /><b class="mo">모</b>의면접</h1>
         <p class="sub rise">이력서를 읽는 AI 면접관이 이 컴퓨터 안에서 기다립니다.</p>
       </PixelWindow>
       <div class="hint rise">
@@ -283,6 +283,11 @@ function startDownload() {
   line-height: 0.95;
   letter-spacing: -2px;
   text-shadow: 8px 8px 0 var(--raise);
+}
+/* MoMo — 두 "모"만 노랑 */
+.mo {
+  font-weight: inherit;
+  color: var(--accent);
 }
 .sub {
   margin: 0;
