@@ -73,11 +73,9 @@ describe('InterviewView', () => {
       messages: [{ role: 'model', text: 'q' }],
     })
     expect(w.find('[data-test="clock"]').text()).toBe('01:01')
-    vi.setSystemTime(1_000_000 + 2_000)
     vi.advanceTimersByTime(2_000)
     await w.vm.$nextTick()
-    // setSystemTime(+2s)와 advanceTimersByTime(2s)가 함께 시계를 4s 전진시킨다(61s + 4s = 65s)
-    expect(w.find('[data-test="clock"]').text()).toBe('01:05')
+    expect(w.find('[data-test="clock"]').text()).toBe('01:03')
     w.unmount()
     vi.useRealTimers()
   })
