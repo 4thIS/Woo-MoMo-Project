@@ -175,4 +175,16 @@ describe('AnswerInput 침묵 자동 전송', () => {
     vi.advanceTimersByTime(SILENCE_MS)
     expect(w.emitted('send')).toBeUndefined()
   })
+
+  it('인식이 스스로 끝난 뒤 잠기면 남은 타이머도 취소된다', async () => {
+    const cbs = armSpeech()
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    cbs.final('답')
+    cbs.end?.()
+    await w.setProps({ generating: true })
+    vi.advanceTimersByTime(SILENCE_MS)
+    expect(w.emitted('send')).toBeUndefined()
+    expect(w.emitted('abort')).toBeUndefined()
+  })
 })

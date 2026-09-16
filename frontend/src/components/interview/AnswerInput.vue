@@ -104,8 +104,9 @@ function toggleMic() {
 watch(
   () => props.generating || props.disabled,
   (locked) => {
-    if (locked && listening.value) {
-      disarmSilence()
+    if (!locked) return
+    disarmSilence()
+    if (listening.value) {
       stopSpeech()
       listening.value = false
       interim.value = ''
@@ -138,13 +139,7 @@ const micTitle = computed(() =>
       />
       <div v-if="interim" class="interim mono" aria-live="polite">{{ interim }}</div>
     </div>
-    <div
-      v-if="silenceArmed"
-      :key="silenceArmed"
-      class="silence mono"
-      data-test="silence"
-      aria-live="polite"
-    >
+    <div v-if="silenceArmed" :key="silenceArmed" class="silence mono" data-test="silence">
       <span class="bar" :style="{ animationDuration: `${SILENCE_MS}ms` }" />
       <span>말을 멈추면 {{ SILENCE_MS / 1000 }}초 뒤 전송</span>
     </div>
