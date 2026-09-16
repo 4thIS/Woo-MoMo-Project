@@ -1,3 +1,7 @@
+import { formatDuration, type TurnDuration } from './timing'
+
+const QUESTION_MAX = 41
+
 export interface ReportItem {
   question: string
   answerSummary: string
@@ -65,7 +69,12 @@ export function reportHeader(fieldLabel: string, job: string): string {
   return `모두의 모의면접 리포트 · ${fieldLabel} · ${job}`
 }
 
-export function reportToText(items: ReportItem[], fieldLabel: string, job: string): string {
+export function reportToText(
+  items: ReportItem[],
+  fieldLabel: string,
+  job: string,
+  timing?: { total: number; turns: TurnDuration[] },
+): string {
   const strip = (s: string) => s.replace(/\*\*/g, '')
   const body = items
     .map(
@@ -73,5 +82,15 @@ export function reportToText(items: ReportItem[], fieldLabel: string, job: strin
         `Q${i + 1}. ${strip(it.question)}\n답변 요약: ${strip(it.answerSummary)}\n피드백: ${strip(it.feedback)}`,
     )
     .join('\n\n')
-  return `${reportHeader(fieldLabel, job)}\n\n${body}`
+  const time = timing
+    ? `\n\n소요 시간: 총 ${formatDuration(timing.total)}\n` +
+      timing.turns.map((t) => `- ${formatDuration(t.ms)} · ${clip(t.question)}`).join('\n')
+    : ''
+  return `${reportHeader(fieldLabel, job)}\n\n${body}${time}`
+}
+
+/** 질문 앞 {@link QUESTION_MAX}자 + … (리포트 시간 표와 복사 텍스트 공용) */
+export function clip(s: string, max = QUESTION_MAX): string {
+  const t = s.replace(/\s+/g, ' ').trim()
+  return t.length > max ? t.slice(0, max) + '…' : t
 }

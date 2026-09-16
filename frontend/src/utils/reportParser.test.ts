@@ -48,4 +48,25 @@ describe('reportToText', () => {
       '모두의 모의면접 리포트 · IT · 백엔드\n\nQ1. Q\n답변 요약: A\n피드백: 좋았지만 근거가 필요합니다.',
     )
   })
+  it('timing이 있으면 끝에 소요 시간 절을 붙인다', () => {
+    const text = reportToText([item], 'IT', '백엔드', {
+      total: 754_000,
+      turns: [
+        { question: '자기소개 해주세요', ms: 90_000 },
+        {
+          question:
+            '어려웠던 문제는 무엇이었나요? 아주 긴 질문 문장이 여기에 계속 이어집니다 정말로',
+          ms: 65_000,
+        },
+      ],
+    })
+    expect(text).toContain('\n\n소요 시간: 총 12분 34초\n')
+    expect(text).toContain('- 1분 30초 · 자기소개 해주세요')
+    expect(text).toContain(
+      '- 1분 5초 · 어려웠던 문제는 무엇이었나요? 아주 긴 질문 문장이 여기에 계속 이어집니다…',
+    )
+  })
+  it('timing이 없으면 기존 형식 그대로', () => {
+    expect(reportToText([item], 'IT', '백엔드')).not.toContain('소요 시간')
+  })
 })

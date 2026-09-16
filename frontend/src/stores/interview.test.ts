@@ -123,7 +123,9 @@ describe('interview flow', () => {
     expect(startSession).toHaveBeenCalledWith(expect.stringContaining('IT 분야'))
     expect(sess.sent[0]).toBe('면접을 시작해 주세요.')
     expect(s.phase).toBe('interview')
-    expect(s.messages).toEqual([{ role: 'model', text: '자기소개를 해주세요. ' }])
+    expect(s.messages).toEqual([
+      expect.objectContaining({ role: 'model', text: '자기소개를 해주세요. ' }),
+    ])
     expect(s.stage).toBe('waiting')
     expect(s.tokenCount).toBe(100)
   })
@@ -184,7 +186,7 @@ describe('interview flow', () => {
     await s.start()
     await s.send('답')
     expect(s.genError).toBe('boom')
-    expect(s.messages.at(-1)).toEqual({ role: 'user', text: '답' })
+    expect(s.messages.at(-1)).toEqual(expect.objectContaining({ role: 'user', text: '답' }))
     await s.retryLast()
     expect(s.genError).toBeNull()
     expect(s.messages.at(-1)?.role).toBe('model')
@@ -330,5 +332,38 @@ describe('interview flow', () => {
     expect(s.messages).toEqual([])
     expect(s.report).toBeNull()
     expect(s.profile.job).toBe('')
+  })
+
+  it('start·send·종료 시각을 기록한다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['자기소개를 해주세요.']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.startedAt).toBe(1_000_000)
+    expect(s.messages.at(-1)?.role).toBe('model')
+    expect(s.messages.at(-1)?.at).toBe(1_000_000)
+    vi.setSystemTime(1_090_000)
+    await s.send('답변입니다')
+    expect(s.messages.find((m) => m.role === 'user')?.at).toBe(1_090_000)
+    expect(s.endedAt).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('종료 문장이 오면 endedAt이 찍히고, finish가 먼저 불려도 endedAt은 한 번만', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(2_000_000)
+    vi.mocked(startSession).mockResolvedValue(
+      fakeSession(['q', '수고하셨습니다. 면접을 마치겠습니다.']),
+    )
+    const s = await readyStore()
+    await s.start()
+    await s.send('마지막 답')
+    expect(s.ended).toBe(true)
+    expect(s.endedAt).toBe(2_000_000)
+    vi.setSystemTime(2_005_000)
+    await s.finish()
+    expect(s.endedAt).toBe(2_000_000)
+    vi.useRealTimers()
   })
 })
