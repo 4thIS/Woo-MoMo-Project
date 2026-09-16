@@ -50,9 +50,11 @@ export const useModelStore = defineStore('model', {
       const { id, url, size } = this.active
       this.error = null
       this.initFailed = false
+      // 캐시 조회 동안에도 준비 화면이 look_up(초기화) 장면을 보이도록 먼저 initializing으로 둔다.
+      // 캐시 미스면 downloading으로 내려간다 (spec 4.2: 캐시 히트면 downloading을 건너뛴다)
+      this.status = 'initializing'
       try {
         if (await hasModel(id, url)) {
-          // 캐시 히트: downloading 단계를 거치지 않고 바로 초기화로 넘어간다
           this.received = size
         } else {
           this.status = 'downloading'
