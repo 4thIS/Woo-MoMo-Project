@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import InterviewStage from './InterviewStage.vue'
 
@@ -28,5 +28,31 @@ describe('InterviewStage', () => {
   it('스프라이트 3장 + 지원자 정수리', () => {
     const w = mount(InterviewStage, { props: base })
     expect(w.findAll('.sprite').length).toBe(4)
+  })
+})
+
+describe('InterviewStage 1회 재생', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('watch 중에 react가 와도 둘 다 끝나고 react-done이 나간다', async () => {
+    const w = mount(InterviewStage, { props: base })
+    await w.setProps({ watchTick: 1 })
+    await w.setProps({ reactPending: true })
+    vi.advanceTimersByTime(2000)
+    await w.vm.$nextTick()
+    expect(w.emitted('react-done')).toHaveLength(1)
+    // 둘 다 끝났으면 기본 idle 시트로 돌아온다
+    const srcs = w.findAll('.sprite').map((el) => (el.element as HTMLElement).style.backgroundImage)
+    expect(srcs.some((s) => s.includes('center_react') || s.includes('center_watch'))).toBe(false)
+  })
+
+  it('react 중에 watch가 와도 react-done은 나간다', async () => {
+    const w = mount(InterviewStage, { props: base })
+    await w.setProps({ reactPending: true })
+    await w.setProps({ watchTick: 1 })
+    vi.advanceTimersByTime(2000)
+    await w.vm.$nextTick()
+    expect(w.emitted('react-done')).toHaveLength(1)
   })
 })

@@ -19,14 +19,21 @@ const emit = defineEmits<{ 'react-done': []; end: [] }>()
 
 const reacting = ref(false)
 const watching = ref(false)
-let timer: ReturnType<typeof setTimeout> | null = null
+// react와 watch는 독립된 1회 재생이므로 타이머를 따로 둔다. 하나로 합치면 서로의 종료를 지워
+// 애니가 멈추거나 react-done이 영영 안 나간다.
+const timers: Record<'react' | 'watch', ReturnType<typeof setTimeout> | null> = {
+  react: null,
+  watch: null,
+}
 function playOnce(kind: 'react' | 'watch') {
-  if (timer) clearTimeout(timer)
+  const t = timers[kind]
+  if (t) clearTimeout(t)
   const flag = kind === 'react' ? reacting : watching
   flag.value = true
   const frames = ANIMS[kind === 'react' ? 'center_react' : 'center_watch'].frames
-  timer = setTimeout(
+  timers[kind] = setTimeout(
     () => {
+      timers[kind] = null
       flag.value = false
       if (kind === 'react') emit('react-done')
     },
@@ -41,7 +48,9 @@ watch(
   () => props.watchTick,
   (v) => v > 0 && playOnce('watch'),
 )
-onBeforeUnmount(() => timer && clearTimeout(timer))
+onBeforeUnmount(() => {
+  for (const t of Object.values(timers)) if (t) clearTimeout(t)
+})
 
 const anims = computed(() =>
   animsFor(props.stage, { react: reacting.value, watch: watching.value }),
