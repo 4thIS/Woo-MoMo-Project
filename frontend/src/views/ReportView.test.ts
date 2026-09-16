@@ -82,3 +82,29 @@ describe('ReportView', () => {
     expect(reset).toHaveBeenCalled()
   })
 })
+
+describe('ReportView — PDF 저장', () => {
+  it('완료 전엔 비활성, 완료 후 클릭하면 제목을 바꿔 print하고 afterprint에 복원한다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-16T10:00:00'))
+    const print = vi.fn()
+    vi.stubGlobal('print', print)
+    document.title = '모두의 모의면접'
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'writing',
+      profile: { field: 'it', job: '백엔드 개발자' },
+    })
+    const w = mount(ReportView)
+    expect((w.find('[data-test="print"]').element as HTMLButtonElement).disabled).toBe(true)
+    useInterviewStore().$patch({ reportStatus: 'done', report: items })
+    await w.vm.$nextTick()
+    await w.find('[data-test="print"]').trigger('click')
+    expect(document.title).toBe('모의면접 리포트 - 백엔드 개발자 - 2026-09-16')
+    expect(print).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event('afterprint'))
+    expect(document.title).toBe('모두의 모의면접')
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+})

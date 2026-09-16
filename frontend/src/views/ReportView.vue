@@ -21,6 +21,16 @@ async function copy() {
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
 }
+
+/** Chrome "PDF로 저장" 대화상자. 탭 제목이 기본 파일명이 되므로 잠깐 바꿨다가 afterprint에 복원 */
+function printReport() {
+  const prev = document.title
+  const d = new Date()
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  document.title = `모의면접 리포트 - ${s.profile.job} - ${ymd}`
+  window.addEventListener('afterprint', () => (document.title = prev), { once: true })
+  window.print()
+}
 </script>
 
 <template>
@@ -41,6 +51,13 @@ async function copy() {
           :disabled="s.reportStatus !== 'done'"
           @click="copy"
           >{{ copied ? '복사됨' : '텍스트 복사' }}</PixelButton
+        >
+        <PixelButton
+          variant="secondary"
+          data-test="print"
+          :disabled="s.reportStatus !== 'done'"
+          @click="printReport"
+          >PDF로 저장</PixelButton
         >
         <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
       </div>
@@ -84,6 +101,9 @@ async function copy() {
       <PixelButton variant="secondary" :disabled="s.reportStatus !== 'done'" @click="copy">{{
         copied ? '복사됨' : '텍스트 복사'
       }}</PixelButton>
+      <PixelButton variant="secondary" :disabled="s.reportStatus !== 'done'" @click="printReport"
+        >PDF로 저장</PixelButton
+      >
       <PixelButton @click="s.reset()">다시 면접 보기</PixelButton>
     </div>
   </main>
@@ -138,5 +158,28 @@ async function copy() {
 .raw {
   white-space: pre-wrap;
   margin: 0;
+}
+
+@media print {
+  .report {
+    max-width: none;
+    padding: 0;
+    gap: var(--sp-4);
+  }
+  .btns,
+  .note {
+    display: none;
+  }
+  .head h1 {
+    font-size: var(--fs-h2);
+  }
+  .strong {
+    font-weight: 700;
+    text-decoration: underline;
+  }
+  /* 카드가 페이지 중간에서 잘리지 않게 */
+  .report > * {
+    break-inside: avoid;
+  }
 }
 </style>

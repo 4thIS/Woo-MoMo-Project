@@ -196,3 +196,17 @@ a:hover {
     scroll-snap-type: none;
   }
 }
+
+@media print {
+  .stars {
+    background-image: none;
+  }
+  .blink,
+  .snap:not(:last-of-type)::after {
+    display: none;
+  }
+  .rise,
+  .snap > .content {
+    animation: none;
+  }
+}

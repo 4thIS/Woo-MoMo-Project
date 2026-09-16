@@ -47,3 +47,23 @@
   --win-inner: inset 0 0 0 3px var(--win), inset 0 0 0 5px var(--line);
   --rule: 2px solid var(--raise);
 }
+
+/* 인쇄(PDF 저장): 흰 종이용으로 토큰만 바꾼다. 화면 색 리터럴과 마찬가지로 여기서만 정의 */
+@media print {
+  :root {
+    --bg: #ffffff;
+    --win: #ffffff;
+    --raise: #e6e8f5;
+    --line: #111111;
+    --text: #111111;
+    --text-2: #333333;
+    --text-3: #666666;
+    --accent: #8a5a00;
+    --ok: #1f7a3a;
+    --danger: #b3261e;
+    --star-1: transparent;
+    --star-2: transparent;
+    --win-border: 2px solid var(--line);
+    --win-inner: none;
+  }
+}
