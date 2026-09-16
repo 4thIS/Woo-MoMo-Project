@@ -1,6 +1,6 @@
 import { formatDuration, type TurnDuration } from './timing'
 
-const QUESTION_MAX = 41
+const QUESTION_MAX = 40
 
 export interface ReportItem {
   question: string
@@ -89,7 +89,7 @@ export function reportToText(
   return `${reportHeader(fieldLabel, job)}\n\n${body}${time}`
 }
 
-/** 질문 앞 {@link QUESTION_MAX}자 + … (리포트 시간 표와 복사 텍스트 공용) */
+/** 질문 앞 40자 + … (리포트 시간 표와 복사 텍스트 공용) */
 export function clip(s: string, max = QUESTION_MAX): string {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > max ? t.slice(0, max) + '…' : t
