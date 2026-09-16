@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { getQuestions } from '@/services/api'
 import { truncateResume } from '@/utils/truncate'
-import { useModelStore } from './model'
+import { useModelStore, MAX_NUM_TOKENS } from './model'
 import { startSession, type LlmSession } from '@/services/llm'
 import { buildSystemPrompt, KICKOFF } from '@/prompts/interviewer'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
@@ -29,13 +29,15 @@ export interface ChatMessage {
   role: 'user' | 'model'
   text: string
 }
-export const TOKEN_LIMIT = 6500
+// 엔진 컨텍스트 상한 − maxOutputTokens(리포트/응답 최대 생성량) − 여유
+export const TOKEN_LIMIT = MAX_NUM_TOKENS - 1024 - 512
 
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
 let abortCtl: AbortController | null = null
 let inflight: Promise<void> | null = null // 진행 중 generate — abort()/finish()가 정리 완료를 기다리는 데 쓴다
 let starting = false // start() 중복 클릭 가드
 let lastSent = '' // retryLast가 재전송할 마지막 요청 텍스트(user 턴이 없을 때 — 킥오프 실패 등)
+let systemPrompt = '' // 근사치 계산에 프리필(시스템 프롬프트) 분량을 포함시키기 위해 보관
 
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
@@ -109,6 +111,7 @@ export const useInterviewStore = defineStore('interview', {
           override: model.manifest?.systemPromptOverride,
         })
         if (session) await session.dispose().catch(() => undefined)
+        systemPrompt = prompt
         session = await startSession(prompt)
         this.messages = []
         this.ended = false
@@ -206,7 +209,10 @@ export const useInterviewStore = defineStore('interview', {
 
     async refreshTokens() {
       const n = session ? await session.tokenCount() : -1
-      this.tokenCount = n >= 0 ? n : approxTokens(this.messages.map((m) => m.text).join('\n'))
+      this.tokenCount =
+        n >= 0
+          ? n
+          : approxTokens(systemPrompt + '\n' + this.messages.map((m) => m.text).join('\n'))
     },
 
     async finish() {
@@ -234,6 +240,7 @@ export const useInterviewStore = defineStore('interview', {
       if (session) await session.dispose().catch(() => undefined)
       session = null
       lastSent = ''
+      systemPrompt = ''
       this.messages = []
       this.stage = 'idle'
       this.streaming = ''

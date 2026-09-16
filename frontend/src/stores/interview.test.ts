@@ -9,6 +9,7 @@ import type { LlmSession } from '@/services/llm'
 import { useModelStore } from './model'
 import { useInterviewStore } from './interview'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
+import { approxTokens } from '@/utils/tokens'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -215,6 +216,13 @@ describe('interview flow', () => {
     const s = await readyStore()
     await s.start()
     expect(s.tokenCount).toBeGreaterThan(0)
+  })
+
+  it('근사치는 시스템 프롬프트를 포함한다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['가나다'], -1))
+    const s = await readyStore()
+    await s.start()
+    expect(s.tokenCount).toBeGreaterThan(approxTokens(s.messages.map((m) => m.text).join('\n')))
   })
 
   it('공백만 온 응답은 기록하지 않는다', async () => {
