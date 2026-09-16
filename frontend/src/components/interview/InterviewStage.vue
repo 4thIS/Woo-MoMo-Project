@@ -4,6 +4,7 @@ import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import type { Stage } from '@/stores/interview'
+import { formatClock } from '@/utils/timing'
 import { ANIMS, CANDIDATE_BACK, FPS, SCALE, animsFor } from './interviewerAnims'
 
 const props = defineProps<{
@@ -14,6 +15,7 @@ const props = defineProps<{
   watchTick: number
   fieldLabel: string
   job: string
+  elapsedMs?: number
 }>()
 const emit = defineEmits<{ 'react-done': []; end: [] }>()
 
@@ -61,7 +63,12 @@ const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
 <template>
   <section class="stage" aria-label="면접실">
     <div class="topbar">
-      <PixelTag tone="muted">{{ fieldLabel }} · {{ job }}</PixelTag>
+      <div class="left">
+        <PixelTag tone="muted">{{ fieldLabel }} · {{ job }}</PixelTag>
+        <span class="mono clock" data-test="clock" aria-label="경과 시간">{{
+          formatClock(elapsedMs ?? 0)
+        }}</span>
+      </div>
       <PixelButton variant="secondary" data-test="end" @click="emit('end')">면접 종료</PixelButton>
     </div>
 
@@ -135,6 +142,16 @@ const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
   justify-content: space-between;
   align-items: center;
   z-index: 2;
+}
+.left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.clock {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 .bubble {
   margin-top: 72px;

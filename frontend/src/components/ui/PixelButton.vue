@@ -18,7 +18,7 @@ const onClick = (e: MouseEvent) => {
 <template>
   <button
     type="button"
-    class="btn display"
+    class="btn display press"
     :class="[variant, { disabled }]"
     :disabled="disabled"
     @click="onClick"
@@ -40,7 +40,8 @@ const onClick = (e: MouseEvent) => {
   font-size: var(--fs-button);
   line-height: 1;
   border: 2px solid var(--line);
-  box-shadow: 4px 4px 0 var(--line);
+  --press-shadow: var(--line);
+  box-shadow: 4px 4px 0 var(--press-shadow);
   cursor: pointer;
   background: var(--raise);
   color: var(--accent);
@@ -50,14 +51,10 @@ const onClick = (e: MouseEvent) => {
   color: var(--bg);
   border-color: var(--accent);
 }
-.btn:active:not(.disabled) {
-  transform: translate(4px, 4px);
-  box-shadow: none;
-}
 .secondary {
   background: transparent;
   color: var(--text);
-  box-shadow: 4px 4px 0 var(--raise);
+  --press-shadow: var(--raise);
   font-size: var(--fs-body);
   padding: 0 18px;
 }

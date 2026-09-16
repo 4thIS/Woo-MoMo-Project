@@ -65,4 +65,47 @@ describe('InterviewView', () => {
     await w.find('[data-test="retry"]').trigger('click')
     expect(retry).toHaveBeenCalled()
   })
+  it('시작 시각부터 1초마다 시계가 오른다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { w } = mountWith({
+      startedAt: 1_000_000 - 61_000,
+      messages: [{ role: 'model', text: 'q' }],
+    })
+    expect(w.find('[data-test="clock"]').text()).toBe('01:01')
+    vi.advanceTimersByTime(2_000)
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="clock"]').text()).toBe('01:03')
+    w.unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('InterviewView 답변 타이머', () => {
+  it('마지막 면접관 질문이 끝난 시각부터 60초 카운트다운을 입력창에 넘긴다', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { w } = mountWith({
+      messages: [{ role: 'model', text: 'q', at: 1_000_000 - 13_000 }],
+    })
+    expect(w.find('[data-test="answer-timer"]').text()).toContain('00:47')
+    vi.advanceTimersByTime(60_000)
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="answer-timer"]').text()).toContain('-00:13')
+    w.unmount()
+    vi.useRealTimers()
+  })
+  it('생성 중이거나 마지막이 지원자 턴이면 타이머가 없다', () => {
+    const a = mountWith({ generating: true, messages: [{ role: 'model', text: 'q', at: 1 }] })
+    expect(a.w.find('[data-test="answer-timer"]').exists()).toBe(false)
+    a.w.unmount()
+    const b = mountWith({
+      messages: [
+        { role: 'model', text: 'q', at: 1 },
+        { role: 'user', text: 'a', at: 2 },
+      ],
+    })
+    expect(b.w.find('[data-test="answer-timer"]').exists()).toBe(false)
+    b.w.unmount()
+  })
 })

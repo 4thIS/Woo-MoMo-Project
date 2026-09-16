@@ -112,13 +112,48 @@ a:hover {
   justify-content: center;
   background: var(--raise);
   color: var(--accent);
-  border: 0;
+  border: 2px solid var(--line);
+  box-shadow: 4px 4px 0 var(--raise);
   cursor: pointer;
 }
 .arrow:disabled {
   color: var(--text-3);
-  background: var(--bg);
-  cursor: default;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--raise);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* 누를 수 있는 것의 공통 모션(.press): hover면 2px 떠오르며 그림자가 6px로, 누르면 그림자만큼 내려앉음.
+   그림자 색은 --press-shadow(기본 --line). 앞의 ▶ 커서(svg)는 hover 중 RPG 메뉴 커서처럼 좌우로 깜빡 이동 */
+.press {
+  transition:
+    transform 0.12s steps(2),
+    box-shadow 0.12s steps(2);
+}
+.press:hover:not(:disabled):not(.disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--press-shadow, var(--line));
+}
+.press:active:not(:disabled):not(.disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: none;
+  transition: none;
+}
+@keyframes nudge {
+  0%,
+  49% {
+    transform: translateX(0);
+  }
+  50%,
+  100% {
+    transform: translateX(4px);
+  }
+}
+.press:hover:not(:disabled):not(.disabled) > svg:first-child,
+.item:hover:not(:disabled) .slot > svg {
+  animation: nudge 0.5s steps(1) infinite;
 }
 
 /* 등장: 아래에서 계단식으로 올라오며 나타남 */
@@ -189,10 +224,32 @@ a:hover {
   .blink,
   .rise,
   .snap > .content,
-  .snap:not(:last-of-type)::after {
+  .snap:not(:last-of-type)::after,
+  .press:hover > svg:first-child,
+  .item:hover .slot > svg {
     animation: none;
+  }
+  .press {
+    transition: none;
+  }
+  .press:hover:not(:disabled):not(.disabled) {
+    transform: none;
   }
   .snap-root {
     scroll-snap-type: none;
+  }
+}
+
+@media print {
+  .stars {
+    background-image: none;
+  }
+  .blink,
+  .snap:not(:last-of-type)::after {
+    display: none;
+  }
+  .rise,
+  .snap > .content {
+    animation: none;
   }
 }

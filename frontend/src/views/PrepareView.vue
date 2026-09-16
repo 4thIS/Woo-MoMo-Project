@@ -184,7 +184,7 @@ async function clearAndRetry() {
               </PixelTag>
               <button
                 type="button"
-                class="arrow"
+                class="arrow press"
                 data-test="step-prev"
                 aria-label="이전: 지원 정보"
                 :disabled="step === 1"
@@ -195,7 +195,7 @@ async function clearAndRetry() {
               <span class="mono stepnum">{{ step }} / 2</span>
               <button
                 type="button"
-                class="arrow"
+                class="arrow press"
                 data-test="step-next"
                 aria-label="다음: 이력서"
                 :disabled="step === 2 || !interview.profileDone"
@@ -239,7 +239,7 @@ async function clearAndRetry() {
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
-              <label class="file-row">
+              <label class="file-row press">
                 <DocIcon />
                 <span class="mono name">{{
                   interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
@@ -420,6 +420,7 @@ async function clearAndRetry() {
   gap: var(--sp-3);
   background: var(--bg);
   border: 2px solid var(--raise);
+  --press-shadow: var(--raise);
   padding: 14px var(--sp-4);
   cursor: pointer;
   color: var(--text-2);

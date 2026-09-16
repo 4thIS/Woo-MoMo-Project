@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseReport, reportToText, splitEmphasis } from './reportParser'
+import { clip, parseReport, reportToText, splitEmphasis } from './reportParser'
 
 const item = { question: 'Q', answerSummary: 'A', feedback: '좋았지만 **근거**가 필요합니다.' }
 
@@ -47,5 +47,31 @@ describe('reportToText', () => {
     expect(reportToText([item], 'IT', '백엔드')).toBe(
       '모두의 모의면접 리포트 · IT · 백엔드\n\nQ1. Q\n답변 요약: A\n피드백: 좋았지만 근거가 필요합니다.',
     )
+  })
+  it('timing이 있으면 끝에 소요 시간 절을 붙인다', () => {
+    const longQuestion =
+      '어려웠던 문제는 무엇이었나요? 아주 긴 질문 문장이 여기에 계속 이어집니다 정말로'
+    const text = reportToText([item], 'IT', '백엔드', {
+      total: 754_000,
+      turns: [
+        { question: '자기소개 해주세요', ms: 90_000 },
+        { question: longQuestion, ms: 65_000 },
+      ],
+    })
+    expect(text).toContain('\n\n소요 시간: 총 12분 34초\n')
+    expect(text).toContain('- 1분 30초 · 자기소개 해주세요')
+    expect(text).toContain(`- 1분 5초 · ${longQuestion.slice(0, 40)}…`)
+  })
+  it('timing이 없으면 기존 형식 그대로', () => {
+    expect(reportToText([item], 'IT', '백엔드')).not.toContain('소요 시간')
+  })
+})
+
+describe('clip', () => {
+  it('40자는 그대로, 41자부터 잘린다', () => {
+    expect(clip('가'.repeat(40))).not.toContain('…')
+    const clipped = clip('가'.repeat(41))
+    expect(clipped.endsWith('…')).toBe(true)
+    expect(clipped.length).toBe(41)
   })
 })

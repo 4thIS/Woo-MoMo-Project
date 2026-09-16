@@ -28,6 +28,8 @@ export type Stage = 'idle' | 'asking' | 'waiting' | 'listening' | 'thinking'
 export interface ChatMessage {
   role: 'user' | 'model'
   text: string
+  /** epoch ms. 면접관 턴은 말이 끝난 시각, 지원자 턴은 전송 시각. 스토어가 만드는 메시지는 항상 찍는다 */
+  at?: number
 }
 // 엔진 컨텍스트 상한 − maxOutputTokens(리포트/응답 최대 생성량) − 여유
 export const TOKEN_LIMIT = MAX_NUM_TOKENS - 1024 - 512
@@ -57,6 +59,8 @@ export const useInterviewStore = defineStore('interview', {
     report: null as ReportItem[] | null,
     reportRaw: '',
     reportStatus: 'idle' as 'idle' | 'writing' | 'done' | 'error',
+    startedAt: null as number | null,
+    endedAt: null as number | null,
   }),
   getters: {
     profileDone: (s) => s.profile.field !== null && s.profile.job.trim().length > 0,
@@ -119,6 +123,8 @@ export const useInterviewStore = defineStore('interview', {
         this.report = null
         this.reportRaw = ''
         this.reportStatus = 'idle'
+        this.startedAt = Date.now()
+        this.endedAt = null
         this.phase = 'interview'
         await this.generate(KICKOFF)
       } finally {
@@ -129,7 +135,7 @@ export const useInterviewStore = defineStore('interview', {
     async send(text: string) {
       const t = text.trim()
       if (!t || this.generating || this.ended) return
-      this.messages.push({ role: 'user', text: t })
+      this.messages.push({ role: 'user', text: t, at: Date.now() })
       this.reactPending = isGoodAnswer(t)
       await this.generate(t)
     },
@@ -166,8 +172,11 @@ export const useInterviewStore = defineStore('interview', {
           this.streaming = stripThoughts(this.streaming)
           // 공백만 남은 턴(thought만 오고 끝난 경우 등)은 기록하지 않는다 — 빈 말풍선 방지
           const text = this.streaming.trim()
-          if (text) this.messages.push({ role: 'model', text: this.streaming })
-          if (hasEndPhrase(text)) this.ended = true
+          if (text) this.messages.push({ role: 'model', text: this.streaming, at: Date.now() })
+          if (hasEndPhrase(text)) {
+            this.ended = true
+            if (this.endedAt === null) this.endedAt = Date.now()
+          }
         } catch (e) {
           this.genError = e instanceof Error ? e.message : String(e)
         } finally {
@@ -219,6 +228,7 @@ export const useInterviewStore = defineStore('interview', {
       if (!session || this.reportStatus === 'writing') return
       // 가드를 await 이전에 동기로 선점 — finish()가 겹쳐 불려도 리포트 요청은 한 번만 나간다
       this.reportStatus = 'writing'
+      if (this.endedAt === null) this.endedAt = Date.now()
       this.phase = 'report'
       this.reportRaw = ''
       // 진행 중이던 generate의 정리를 기다린다(inflight가 없으면 즉시 통과) —
@@ -256,6 +266,8 @@ export const useInterviewStore = defineStore('interview', {
       this.resumeText = ''
       this.resumeName = null
       this.fallbackQuestions = []
+      this.startedAt = null
+      this.endedAt = null
       this.phase = 'prepare'
     },
   },

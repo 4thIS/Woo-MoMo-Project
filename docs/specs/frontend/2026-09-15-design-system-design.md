@@ -114,8 +114,12 @@
 | 타이핑 | 글자당 30ms, 문장부호 뒤 120ms 추가 정지 | 면접관 대사(랜딩 소개, 말풍선) |
 | 스크롤 페이드 | 히어로 진행률 0→1에 따라 `opacity 1→0`, `translateY 0→-40px`, 선형 | 랜딩 로고 창 |
 | 포커스 이동 스크롤 | `scrollIntoView({behavior:'smooth', block:'start'})` | 동의 → 장비 확인 |
+| 누름(`.press`) | hover: `translate(-2px,-2px)` + 그림자 `4px→6px`, `120ms steps(2)`; active: `translate(4px,4px)` + 그림자 없음(즉시) | 모든 누를 수 있는 것 — PixelButton(primary/secondary), 말하기, 단계 화살표, 파일 선택 행 |
+| 커서 nudge | hover 중 앞 ▶ 커서 `translateX(0↔4px)` `0.5s steps(1) infinite` | primary 버튼의 ▶, 선택지(ChoiceMenu) 커서 |
+| 등장(`.rise`) | `opacity 0→1`, `translateY(48px→0)`, `0.5s steps(6)`; 섹션 내용은 scroll-driven(`view()`) | 히어로 로고 계단식, 마무리 창, 섹션 진입 |
+| 섹션 화살표 | `translateY(0↔10px)` `1.4s steps(4) infinite`, 마지막 섹션 제외 | 스크롤 스냅 섹션 바닥 |
 
-`prefers-reduced-motion: reduce`이면 깜빡임·타이핑·창 등장을 끄고(최종 상태 즉시 표시) 걷기는 정지 프레임(0번) 유지. 스크롤 페이드는 유지(사용자가 스크롤을 직접 제어).
+`prefers-reduced-motion: reduce`이면 깜빡임·타이핑·창 등장을 끄고(최종 상태 즉시 표시) 걷기는 정지 프레임(0번) 유지. 누름 lift·커서 nudge·등장·섹션 화살표·스크롤 스냅도 끈다. 스크롤 페이드는 유지(사용자가 스크롤을 직접 제어).
 
 ## 4. 컴포넌트
 

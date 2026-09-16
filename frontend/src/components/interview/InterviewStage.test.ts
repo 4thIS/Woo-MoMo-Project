@@ -29,6 +29,11 @@ describe('InterviewStage', () => {
     const w = mount(InterviewStage, { props: base })
     expect(w.findAll('.sprite').length).toBe(4)
   })
+  it('경과 시계를 mm:ss로 보여 준다 (질문 번호는 여전히 없다)', () => {
+    const w = mount(InterviewStage, { props: { ...base, elapsedMs: 754_000 } })
+    expect(w.find('[data-test="clock"]').text()).toBe('12:34')
+    expect(w.text()).not.toMatch(/질문\s*\d|\d\s*\/\s*\d|남은/)
+  })
 })
 
 describe('InterviewStage 1회 재생', () => {
