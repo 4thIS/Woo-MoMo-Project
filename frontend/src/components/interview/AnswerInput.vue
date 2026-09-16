@@ -168,7 +168,7 @@ const micTitle = computed(() =>
     <div class="actions">
       <button
         type="button"
-        class="mic display"
+        class="mic display press"
         :class="{ on: listening }"
         data-test="mic"
         :title="micTitle"
@@ -248,7 +248,9 @@ const micTitle = computed(() =>
 .mic {
   background: var(--raise);
   color: var(--text);
-  border: var(--win-border);
+  border: 2px solid var(--line);
+  --press-shadow: var(--raise);
+  box-shadow: 4px 4px 0 var(--press-shadow);
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-button);
   display: inline-flex;
@@ -261,7 +263,11 @@ const micTitle = computed(() =>
   color: var(--bg);
 }
 .mic:disabled {
-  opacity: 0.5;
+  color: var(--text-3);
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--raise);
+  box-shadow: none;
   cursor: not-allowed;
 }
 .dot {

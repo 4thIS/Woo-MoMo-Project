@@ -44,7 +44,7 @@ function prev() {
     <div class="nav">
       <button
         type="button"
-        class="arrow"
+        class="arrow press"
         data-test="form-prev"
         aria-label="이전 항목"
         :disabled="idx === 0"
