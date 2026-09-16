@@ -102,6 +102,6 @@ describe('LandingView', () => {
     await w.find('[data-test=start-download]').trigger('click')
     await flushPromises()
     expect(useInterviewStore().phase).toBe('prepare')
-    expect(['downloading', 'downloaded', 'initializing', 'ready']).toContain(useModelStore().status)
+    expect(useModelStore().status).toBe('ready')
   })
 })
