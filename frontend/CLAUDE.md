@@ -5,7 +5,7 @@
 
 ## 스택
 
-- 언어/런타임: Vue 3 + TypeScript, Vite, Pinia. 브라우저 내 LLM은 `@mediapipe/tasks-genai`(WebGPU), 이력서는 pdf.js, 음성은 Web Speech API
+- 언어/런타임: Vue 3 + TypeScript, Vite, Pinia. 브라우저 내 LLM은 `@litert-lm/core`(LiteRT-LM JS, WebGPU; WASM은 `public/litert-wasm/`에서 같은 오리진 서빙), 이력서는 pdf.js, 음성은 Web Speech API
 - 패키지 매니저: **pnpm** (다른 매니저 사용 금지, `pnpm-lock.yaml` 커밋)
 - 테스트: Vitest (+ @vue/test-utils)
 - 린트·포맷: ESLint + Prettier + vue-tsc
@@ -15,11 +15,11 @@
 ```
 frontend/src/
 ├── views/        # 화면 4개: LandingView, PrepareView, InterviewView, ReportView
-├── components/   # 재사용 UI: InterviewerSprite, SpeechBubble, MicButton, CharacterProgress, ResumeDropzone, ReportCard
+├── components/   # 재사용 UI: components/ui/*, components/interview/{InterviewStage,ChatLog,AnswerInput}
 ├── services/     # 외부 세계 접점: llm.ts, modelCache.ts, pdf.ts, speech.ts, api.ts
 ├── stores/       # Pinia: model.ts(다운로드·초기화), interview.ts(단계·프로필·대화·리포트)
-├── prompts/      # 시스템 프롬프트·리포트 지시문 (계층 규율 경로)
-└── utils/        # 순수 함수: template.ts, thoughts.ts, tokens.ts, reportParser.ts
+├── prompts/      # 시스템 프롬프트·리포트 지시문: interviewer.ts, report.ts (계층 규율 경로)
+└── utils/        # 순수 함수: thoughts.ts, tokens.ts, endDetector.ts, goodAnswer.ts, reportParser.ts
 ```
 
 ## 계층 책임

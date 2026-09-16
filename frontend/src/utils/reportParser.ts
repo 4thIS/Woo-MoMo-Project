@@ -60,6 +60,11 @@ export function splitEmphasis(text: string): { text: string; strong: boolean }[]
   return parts.length ? parts : [{ text, strong: false }]
 }
 
+/** 리포트 복사 텍스트의 공용 헤더. 파싱된 리포트와 원문 폴백 복사가 같은 헤더를 쓴다. */
+export function reportHeader(fieldLabel: string, job: string): string {
+  return `모두의 모의면접 리포트 · ${fieldLabel} · ${job}`
+}
+
 export function reportToText(items: ReportItem[], fieldLabel: string, job: string): string {
   const strip = (s: string) => s.replace(/\*\*/g, '')
   const body = items
@@ -68,5 +73,5 @@ export function reportToText(items: ReportItem[], fieldLabel: string, job: strin
         `Q${i + 1}. ${strip(it.question)}\n답변 요약: ${strip(it.answerSummary)}\n피드백: ${strip(it.feedback)}`,
     )
     .join('\n\n')
-  return `모두의 모의면접 리포트 · ${fieldLabel} · ${job}\n\n${body}`
+  return `${reportHeader(fieldLabel, job)}\n\n${body}`
 }

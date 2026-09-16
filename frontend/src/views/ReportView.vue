@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
-import { reportToText, splitEmphasis } from '@/utils/reportParser'
+import { reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -16,7 +16,7 @@ const copied = ref(false)
 async function copy() {
   const text = s.report
     ? reportToText(s.report, fieldLabel.value, s.profile.job)
-    : `모두의 모의면접 리포트 · ${fieldLabel.value} · ${s.profile.job}\n\n${s.reportRaw}`
+    : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
   await navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
