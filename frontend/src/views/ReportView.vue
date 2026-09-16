@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
-import { reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
+import { clip, reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
+import { formatDuration, totalDuration, turnDurations } from '@/utils/timing'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -12,10 +13,16 @@ const modelTurns = computed(() => s.messages.filter((m) => m.role === 'model').l
 const nQ = computed(() => s.report?.length ?? 0)
 const nFollow = computed(() => Math.max(0, modelTurns.value - nQ.value))
 
+const total = computed(() => totalDuration(s.startedAt, s.endedAt))
+const turns = computed(() => turnDurations(s.messages, s.endedAt))
+const timing = computed(() =>
+  total.value > 0 || turns.value.length ? { total: total.value, turns: turns.value } : undefined,
+)
+
 const copied = ref(false)
 async function copy() {
   const text = s.report
-    ? reportToText(s.report, fieldLabel.value, s.profile.job)
+    ? reportToText(s.report, fieldLabel.value, s.profile.job, timing.value)
     : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
   await navigator.clipboard.writeText(text)
   copied.value = true
@@ -42,6 +49,9 @@ function printReport() {
         <PixelTag v-if="s.reportStatus === 'done' && s.report" tone="muted"
           >질문 {{ nQ }} · 꼬리질문 {{ nFollow }}</PixelTag
         >
+        <PixelTag v-if="total > 0" tone="muted" data-test="total"
+          >총 {{ formatDuration(total) }}</PixelTag
+        >
       </div>
       <p class="mono note">이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.</p>
       <div class="btns">
@@ -62,6 +72,18 @@ function printReport() {
         <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
       </div>
     </header>
+
+    <PixelWindow v-if="timing && turns.length" title="시간" data-test="timing" padding="sm">
+      <ol class="turns mono">
+        <li v-for="(t, i) in turns" :key="i" data-test="turn-row">
+          <span class="dur">{{ formatDuration(t.ms) }}</span>
+          <span class="q">{{ clip(t.question) }}</span>
+        </li>
+      </ol>
+      <p class="mono note">
+        면접관이 질문을 마친 뒤 답변을 보내기까지 걸린 시간입니다 (꼬리질문 포함).
+      </p>
+    </PixelWindow>
 
     <PixelWindow v-if="s.reportStatus === 'writing'" title="총평">
       <p class="mono">리포트를 쓰는 중…<span class="blink">▌</span></p>
@@ -158,6 +180,27 @@ function printReport() {
 .raw {
   white-space: pre-wrap;
   margin: 0;
+}
+.turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+}
+.turns li {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--sp-4);
+}
+.dur {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.q {
+  color: var(--text-2);
 }
 
 @media print {

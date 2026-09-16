@@ -69,6 +69,45 @@ describe('ReportView', () => {
     await Promise.resolve()
     expect(w.find('[data-test="copy"]').text()).toBe('복사됨')
   })
+  it('총 소요 시간 태그와 질문별 시간 표, 복사 텍스트에도 포함', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => {})
+    Object.assign(navigator, { clipboard: { writeText } })
+    const t0 = 1_000_000
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+      startedAt: t0,
+      endedAt: t0 + 754_000,
+      messages: [
+        { role: 'model', text: '자기소개 해주세요', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 },
+        { role: 'model', text: '어려웠던 문제는?', at: t0 + 110_000 },
+        { role: 'user', text: 'b', at: t0 + 175_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    expect(w.text()).toContain('총 12분 34초')
+    const rows = w.findAll('[data-test="turn-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('1분 30초')
+    expect(rows[0].text()).toContain('자기소개 해주세요')
+    expect(w.text()).not.toMatch(/질문\s*\d\s*\/|남은/)
+    await w.find('[data-test="copy"]').trigger('click')
+    expect(writeText.mock.calls[0][0]).toContain('소요 시간: 총 12분 34초')
+  })
+  it('시각이 없으면(옛 세션) 시간 표를 그리지 않는다', () => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+      messages: [{ role: 'model', text: 'q' }],
+    })
+    const w = mount(ReportView)
+    expect(w.find('[data-test="timing"]').exists()).toBe(false)
+  })
   it('다시 면접 보기는 reset', async () => {
     const s = useInterviewStore()
     s.$patch({
