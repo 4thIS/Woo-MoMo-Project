@@ -56,11 +56,17 @@ export async function startSession(systemPrompt: string): Promise<LlmSession> {
    * (스파이크에서 확인). 그래서 중단하면 지금까지 받은 텍스트를 model 턴으로 확정한 이력으로
    * 새 Conversation을 만들어 교체한다.
    */
-  async function recreate() {
+  /** 실패해도 던지지 않는다 — 중단된 send는 어떤 경우에도 지금까지 텍스트로 resolve해야 한다. */
+  async function recreate(): Promise<boolean> {
     const old = conv
-    conv = await createConversation(history)
+    try {
+      conv = await createConversation(history)
+    } catch {
+      return false // 다음 send가 런타임 오류로 드러나고, 스토어가 "다시 물어보기"를 띄운다
+    }
     if (current === old) current = conv
     await old.delete().catch(() => undefined)
+    return true
   }
 
   return {
@@ -82,12 +88,17 @@ export async function startSession(systemPrompt: string): Promise<LlmSession> {
           }
         }
       } catch (e) {
-        if (!signal?.aborted) throw e
+        if (!signal?.aborted) {
+          // 런타임 오류 뒤에도 같은 Conversation이 막힐 수 있으므로 이력 그대로 재생성(최선 노력) 후 던진다
+          await recreate()
+          throw e
+        }
       } finally {
         signal?.removeEventListener('abort', onAbort)
         reader.releaseLock()
       }
       history.push({ role: 'user', content: text })
+      // 텍스트가 하나도 오기 전에 중단되면 user 턴만 남는다 — 의도한 동작(질문은 던져졌고 답은 없음)
       if (full) history.push({ role: 'model', content: full })
       if (signal?.aborted) await recreate()
       return full
