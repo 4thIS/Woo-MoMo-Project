@@ -116,7 +116,7 @@ const startLabel = computed(() =>
   interview.canStart ? '면접 시작' : `면접 시작 — ${interview.startBlockReason}`,
 )
 function start() {
-  if (interview.canStart) interview.goto('interview')
+  if (interview.canStart) void interview.start()
 }
 async function clearAndRetry() {
   await model.clearCache()
