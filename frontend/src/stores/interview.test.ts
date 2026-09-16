@@ -8,6 +8,7 @@ import { startSession } from '@/services/llm'
 import type { LlmSession } from '@/services/llm'
 import { useModelStore } from './model'
 import { useInterviewStore } from './interview'
+import { REPORT_INSTRUCTION } from '@/prompts/report'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -249,6 +250,67 @@ describe('interview flow', () => {
       order.findIndex((o) => o.startsWith('send:면접이')),
     )
     expect(s.reportStatus).toBe('done')
+  })
+
+  it('finish는 두 번 겹쳐 불러도 리포트를 한 번만 요청한다', async () => {
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', '```json\n' + json + '\n```'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    const p1 = s.finish()
+    const p2 = s.finish()
+    await Promise.all([p1, p2])
+    expect(sess.sent.filter((t) => t === REPORT_INSTRUCTION)).toHaveLength(1)
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('종료 문장이 generate 경로로 오면 ended가 true이고 generating은 false다', async () => {
+    vi.mocked(startSession).mockResolvedValue(
+      fakeSession(['q', '수고하셨습니다. 면접을 마치겠습니다.']),
+    )
+    const s = await readyStore()
+    await s.start()
+    await s.send('답')
+    expect(s.ended).toBe(true)
+    expect(s.generating).toBe(false)
+    expect(s.stage).toBe('waiting')
+  })
+
+  it('start를 연달아 두 번 불러도 세션은 한 번만 만든다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    const p1 = s.start()
+    const p2 = s.start()
+    await Promise.all([p1, p2])
+    expect(startSession).toHaveBeenCalledTimes(1)
+    expect(s.messages).toHaveLength(1)
+    expect(s.messages[0].role).toBe('model')
+  })
+
+  it('첫 질문 생성이 실패하면 retryLast가 킥오프를 다시 보낸다', async () => {
+    const sess = fakeSession(['q'])
+    let attempts = 0
+    let fail = true
+    const origSend = sess.send
+    sess.send = async (t, on, sig) => {
+      if (t === '면접을 시작해 주세요.') attempts++
+      if (fail && t === '면접을 시작해 주세요.') {
+        fail = false
+        throw new Error('boom')
+      }
+      return origSend(t, on, sig)
+    }
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    expect(s.genError).toBe('boom')
+    expect(s.messages).toEqual([])
+    await s.retryLast()
+    expect(attempts).toBe(2)
+    expect(s.messages).toHaveLength(1)
+    expect(s.messages[0].role).toBe('model')
+    expect(s.genError).toBeNull()
   })
 
   it('reset은 대화·리포트를 비우고 prepare로 간다', async () => {

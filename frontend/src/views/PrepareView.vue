@@ -115,8 +115,12 @@ function usePasted() {
 const startLabel = computed(() =>
   interview.canStart ? '면접 시작' : `면접 시작 — ${interview.startBlockReason}`,
 )
+const busy = ref(false)
 function start() {
-  if (interview.canStart) void interview.start()
+  if (interview.canStart && !busy.value) {
+    busy.value = true
+    void interview.start().finally(() => (busy.value = false))
+  }
 }
 async function clearAndRetry() {
   await model.clearCache()
@@ -308,7 +312,7 @@ async function clearAndRetry() {
               }})
             </li>
           </ul>
-          <PixelButton data-test="start" :disabled="!interview.canStart" @click="start">{{
+          <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
             startLabel
           }}</PixelButton>
         </div>
