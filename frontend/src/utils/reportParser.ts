@@ -1,4 +1,4 @@
-import { formatDuration, type TurnDuration } from './timing'
+import { formatDuration, overBy, type TurnDuration } from './timing'
 
 const QUESTION_MAX = 40
 
@@ -84,7 +84,13 @@ export function reportToText(
     .join('\n\n')
   const time = timing
     ? `\n\n소요 시간: 총 ${formatDuration(timing.total)}\n` +
-      timing.turns.map((t) => `- ${formatDuration(t.ms)} · ${clip(t.question)}`).join('\n')
+      timing.turns
+        .map(
+          (t) =>
+            `- ${formatDuration(t.ms)} · ${clip(t.question)}` +
+            (overBy(t.ms) > 0 ? ` (${formatDuration(overBy(t.ms))} 초과)` : ''),
+        )
+        .join('\n')
     : ''
   return `${reportHeader(fieldLabel, job)}\n\n${body}${time}`
 }

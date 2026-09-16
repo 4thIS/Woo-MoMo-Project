@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatClock, formatDuration, totalDuration, turnDurations } from './timing'
+import {
+  ANSWER_LIMIT_MS,
+  ANSWER_WARN_MS,
+  answerLeftMs,
+  formatClock,
+  formatDuration,
+  formatSignedClock,
+  overBy,
+  totalDuration,
+  turnDurations,
+} from './timing'
 
 describe('formatClock', () => {
   it('mm:ss', () => {
@@ -58,5 +68,27 @@ describe('totalDuration', () => {
     expect(totalDuration(10, 25)).toBe(15)
     expect(totalDuration(null, 25)).toBe(0)
     expect(totalDuration(10, null)).toBe(0)
+  })
+})
+
+describe('답변 타이머', () => {
+  it('answerLeftMs: 질문 끝난 시각 + 60초 − now (음수 허용), 질문 없으면 null', () => {
+    expect(answerLeftMs(1_000_000, 1_013_000)).toBe(47_000)
+    expect(answerLeftMs(1_000_000, 1_072_000)).toBe(-12_000)
+    expect(answerLeftMs(null, 1_000_000)).toBeNull()
+  })
+  it('formatSignedClock: 00:47 / -00:12', () => {
+    expect(formatSignedClock(47_000)).toBe('00:47')
+    expect(formatSignedClock(-12_000)).toBe('-00:12')
+    expect(formatSignedClock(0)).toBe('00:00')
+  })
+  it('overBy: 60초 초과분, 이내면 0', () => {
+    expect(overBy(90_000)).toBe(30_000)
+    expect(overBy(42_000)).toBe(0)
+    expect(overBy(60_000)).toBe(0)
+  })
+  it('상수', () => {
+    expect(ANSWER_LIMIT_MS).toBe(60_000)
+    expect(ANSWER_WARN_MS).toBe(10_000)
   })
 })

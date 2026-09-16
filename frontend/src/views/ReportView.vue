@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { clip, reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
-import { formatDuration, totalDuration, turnDurations } from '@/utils/timing'
+import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -17,6 +17,15 @@ const total = computed(() => totalDuration(s.startedAt, s.endedAt))
 // 자연 종료(ended)면 마지막 모델 턴은 항상 인사말(store.send()가 ended 이후 거부)이라
 // endAt을 주지 않아 표에서 제외한다. 진행 중 종료면 답 없는 마지막 질문이니 endedAt까지 센다.
 const turns = computed(() => turnDurations(s.messages, s.ended ? null : s.endedAt))
+/* 60초 제한: 초과 문항 수, 카드↔턴 1:1일 때만 카드 태그(꼬리질문이 섞이면 대응이 안 맞아 표만) */
+const overCount = computed(() => turns.value.filter((t) => overBy(t.ms) > 0).length)
+const cardTurns = computed(() =>
+  s.report && turns.value.length === s.report.length ? turns.value : null,
+)
+const answerTag = (ms: number) =>
+  overBy(ms) > 0
+    ? `답변 ${formatDuration(ms)} · ${formatDuration(overBy(ms))} 초과`
+    : `답변 ${formatDuration(ms)}`
 const timing = computed(() =>
   total.value > 0 || turns.value.length ? { total: total.value, turns: turns.value } : undefined,
 )
@@ -76,9 +85,14 @@ function printReport() {
     </header>
 
     <PixelWindow v-if="timing && turns.length" title="시간" data-test="timing" padding="sm">
+      <template #tag>
+        <PixelTag :tone="overCount ? 'danger' : 'muted'"
+          >제한 60초 · 초과 {{ overCount }}문항</PixelTag
+        >
+      </template>
       <ol class="turns mono">
         <li v-for="(t, i) in turns" :key="i" data-test="turn-row">
-          <span class="dur">{{ formatDuration(t.ms) }}</span>
+          <span class="dur" :class="{ over: overBy(t.ms) > 0 }">{{ formatDuration(t.ms) }}</span>
           <span class="q">{{ clip(t.question) }}</span>
         </li>
       </ol>
@@ -103,6 +117,11 @@ function printReport() {
         :title="`Q${i + 1}. ${it.question}`"
         data-test="card"
       >
+        <template v-if="cardTurns" #tag>
+          <PixelTag :tone="overBy(cardTurns[i].ms) > 0 ? 'danger' : 'ok'" data-test="answer-tag">{{
+            answerTag(cardTurns[i].ms)
+          }}</PixelTag>
+        </template>
         <dl class="kv">
           <dt class="mono">답변 요약</dt>
           <dd>{{ it.answerSummary }}</dd>
@@ -200,6 +219,9 @@ function printReport() {
 .dur {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+}
+.dur.over {
+  color: var(--danger);
 }
 .q {
   color: var(--text-2);

@@ -7,8 +7,10 @@ export const SILENCE_MS = 3000
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
+import { ANSWER_LIMIT_MS, ANSWER_WARN_MS, formatSignedClock } from '@/utils/timing'
 
-const props = defineProps<{ generating: boolean; disabled: boolean }>()
+/** leftMs: 이 질문에 남은 답변 시간(ms, 음수 가능). null이면 타이머를 그리지 않는다 */
+const props = defineProps<{ generating: boolean; disabled: boolean; leftMs?: number | null }>()
 const emit = defineEmits<{ send: [text: string]; abort: []; typing: [hasText: boolean] }>()
 
 const text = ref('')
@@ -118,6 +120,14 @@ onBeforeUnmount(() => {
   if (listening.value) stopSpeech()
 })
 
+/* 질문별 60초 게이지: 왼쪽으로 줄어들고 10초 이하면 붉게, 0을 지나면 비운 채 음수 숫자 */
+const timerPct = computed(() =>
+  Math.round(Math.min(1, Math.max(0, (props.leftMs ?? 0) / ANSWER_LIMIT_MS)) * 100),
+)
+const timerWarn = computed(() => (props.leftMs ?? Infinity) <= ANSWER_WARN_MS)
+// 깜빡임은 10초→0초 구간에서만. 0을 지나면 붉은 음수 숫자로 고정(계속 깜빡이면 소음)
+const timerBlink = computed(() => timerWarn.value && (props.leftMs ?? 0) > 0)
+
 const micTitle = computed(() =>
   !supported
     ? '이 브라우저는 음성 인식을 지원하지 않습니다'
@@ -127,6 +137,18 @@ const micTitle = computed(() =>
 
 <template>
   <div class="input-panel">
+    <div
+      v-if="leftMs !== null && leftMs !== undefined"
+      class="timer"
+      :class="{ warn: timerWarn }"
+      data-test="answer-timer"
+      aria-label="남은 답변 시간"
+    >
+      <div class="bar"><div class="fill" :style="{ width: `${timerPct}%` }" /></div>
+      <span class="mono num tab" :class="{ blink: timerBlink }">{{
+        formatSignedClock(leftMs)
+      }}</span>
+    </div>
     <div class="ta-wrap" :class="{ listening }">
       <textarea
         v-model="text"
@@ -169,6 +191,34 @@ const micTitle = computed(() =>
   flex-direction: column;
   gap: var(--sp-3);
   height: 100%;
+}
+.timer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.timer .bar {
+  flex: 1;
+  height: 14px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+  padding: 2px;
+}
+.timer .fill {
+  height: 100%;
+  background: var(--accent);
+}
+.timer.warn .fill {
+  background: var(--danger);
+}
+.timer .num {
+  min-width: 64px;
+  text-align: right;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.timer.warn .num {
+  color: var(--danger);
 }
 .ta-wrap {
   position: relative;

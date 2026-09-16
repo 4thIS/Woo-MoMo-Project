@@ -186,3 +186,74 @@ describe('ReportView — PDF 저장', () => {
     vi.useRealTimers()
   })
 })
+
+describe('ReportView — 60초 제한 표시', () => {
+  const t0 = 1_000_000
+  const base = {
+    phase: 'report' as const,
+    reportStatus: 'done' as const,
+    profile: { field: 'it' as const, job: '백엔드' },
+    startedAt: t0,
+    endedAt: t0 + 300_000,
+    ended: true,
+  }
+  it('턴 수 = 카드 수면 카드마다 답변 시간 태그, 초과는 danger + 초과분', () => {
+    useInterviewStore().$patch({
+      ...base,
+      report: items, // 2장
+      messages: [
+        { role: 'model', text: 'q1', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 }, // 90초 → 30초 초과
+        { role: 'model', text: 'q2', at: t0 + 110_000 },
+        { role: 'user', text: 'b', at: t0 + 152_000 }, // 42초
+        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    const tags = w.findAll('[data-test="answer-tag"]')
+    expect(tags).toHaveLength(2)
+    expect(tags[0].text()).toBe('답변 1분 30초 · 30초 초과')
+    expect(tags[0].classes()).toContain('danger')
+    expect(tags[1].text()).toBe('답변 42초')
+    expect(tags[1].classes()).toContain('ok')
+    // 시간 창: 초과 행은 붉게, 헤더 태그
+    expect(w.find('[data-test="timing"]').text()).toContain('제한 60초 · 초과 1문항')
+    const rows = w.findAll('[data-test="turn-row"]')
+    expect(rows[0].find('.dur').classes()).toContain('over')
+    expect(rows[1].find('.dur').classes()).not.toContain('over')
+  })
+  it('꼬리질문으로 턴 수 ≠ 카드 수면 카드 태그는 없고 시간 창만 초과를 표시한다', () => {
+    useInterviewStore().$patch({
+      ...base,
+      report: items, // 2장
+      messages: [
+        { role: 'model', text: 'q1', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 },
+        { role: 'model', text: 'q1-1', at: t0 + 110_000 },
+        { role: 'user', text: 'a2', at: t0 + 130_000 },
+        { role: 'model', text: 'q2', at: t0 + 140_000 },
+        { role: 'user', text: 'b', at: t0 + 182_000 },
+        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    expect(w.findAll('[data-test="answer-tag"]')).toHaveLength(0)
+    expect(w.find('[data-test="timing"]').text()).toContain('제한 60초 · 초과 1문항')
+  })
+  it('복사 텍스트의 시간 줄 끝에 초과분이 붙는다', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => {})
+    Object.assign(navigator, { clipboard: { writeText } })
+    useInterviewStore().$patch({
+      ...base,
+      report: items,
+      messages: [
+        { role: 'model', text: 'q1', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 },
+        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    await w.find('[data-test="copy"]').trigger('click')
+    expect(writeText.mock.calls[0][0]).toContain('- 1분 30초 · q1 (30초 초과)')
+  })
+})

@@ -6,6 +6,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
 import ChatLog from '@/components/interview/ChatLog.vue'
 import AnswerInput from '@/components/interview/AnswerInput.vue'
+import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
 
@@ -43,6 +44,14 @@ const now = ref(Date.now())
 const clock = setInterval(() => (now.value = Date.now()), 1000)
 onBeforeUnmount(() => clearInterval(clock))
 const elapsedMs = computed(() => (s.startedAt ? now.value - s.startedAt : 0))
+/* 질문별 답변 타이머: 마지막 메시지가 면접관 질문(생성 끝)일 때만, 그 질문이 끝난 시각부터 */
+const questionAt = computed(() => {
+  const last = s.messages.at(-1)
+  return !s.generating && !s.ended && last?.role === 'model' && last.at !== undefined
+    ? last.at
+    : null
+})
+const answerLeft = computed(() => answerLeftMs(questionAt.value, now.value))
 
 /* 종료: 면접관의 마지막 인사가 끝나면 바로 넘기지 않고 마무리 창을 띄운다. 리포트는 버튼으로 */
 const confirming = ref(false)
@@ -103,6 +112,7 @@ const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'i
         <AnswerInput
           :generating="s.generating"
           :disabled="inputDisabled"
+          :left-ms="answerLeft"
           @send="s.send($event)"
           @abort="s.abort()"
           @typing="s.setListening($event)"

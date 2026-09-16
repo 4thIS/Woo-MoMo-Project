@@ -44,3 +44,22 @@ export function turnDurations(messages: Msg[], endAt: number | null): TurnDurati
 export function totalDuration(startedAt: number | null, endedAt: number | null): number {
   return startedAt !== null && endedAt !== null ? Math.max(0, endedAt - startedAt) : 0
 }
+
+/* ---------- 질문별 답변 타이머 (spec §10) ---------- */
+export const ANSWER_LIMIT_MS = 60_000
+export const ANSWER_WARN_MS = 10_000
+
+/** 질문이 끝난 시각 기준 남은 답변 시간. 0을 지나면 음수로 계속 흐른다. 질문이 없으면 null */
+export function answerLeftMs(questionAt: number | null, now: number): number | null {
+  return questionAt === null ? null : questionAt + ANSWER_LIMIT_MS - now
+}
+
+/** 00:47 / -00:12 (음수는 부호만 붙여 같은 형식) */
+export function formatSignedClock(ms: number): string {
+  return ms < 0 ? `-${formatClock(-ms)}` : formatClock(ms)
+}
+
+/** 제한을 넘긴 만큼(ms). 이내면 0 */
+export function overBy(ms: number): number {
+  return Math.max(0, ms - ANSWER_LIMIT_MS)
+}

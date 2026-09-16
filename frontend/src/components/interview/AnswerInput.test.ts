@@ -189,3 +189,35 @@ describe('AnswerInput 침묵 자동 전송', () => {
     expect(w.emitted('abort')).toBeUndefined()
   })
 })
+
+describe('AnswerInput 답변 타이머(60초 게이지)', () => {
+  const mountLeft = (leftMs: number | null) =>
+    mount(AnswerInput, { props: { generating: false, disabled: false, leftMs } })
+  it('leftMs가 null이면 타이머를 그리지 않는다', () => {
+    expect(mountLeft(null).find('[data-test="answer-timer"]').exists()).toBe(false)
+  })
+  it('여유: 노란 바 78% + 00:47', () => {
+    const w = mountLeft(47_000)
+    const t = w.find('[data-test="answer-timer"]')
+    expect(t.text()).toContain('00:47')
+    expect(t.find('.fill').attributes('style')).toContain('width: 78%')
+    expect(t.classes()).not.toContain('warn')
+  })
+  it('임박(≤10초): warn 클래스 + 깜빡이는 숫자', () => {
+    const w = mountLeft(8_000)
+    const t = w.find('[data-test="answer-timer"]')
+    expect(t.classes()).toContain('warn')
+    expect(t.find('.num').classes()).toContain('blink')
+    expect(t.text()).toContain('00:08')
+  })
+  it('초과: 바는 비고 숫자는 음수, 전송은 막지 않는다', async () => {
+    const w = mountLeft(-12_000)
+    const t = w.find('[data-test="answer-timer"]')
+    expect(t.text()).toContain('-00:12')
+    expect(t.find('.fill').attributes('style')).toContain('width: 0%')
+    expect(t.find('.num').classes()).not.toContain('blink') // 초과 후엔 고정 표시
+    await w.find('textarea').setValue('늦은 답')
+    await w.find('[data-test="send"]').trigger('click')
+    expect(w.emitted('send')?.[0]).toEqual(['늦은 답'])
+  })
+})
