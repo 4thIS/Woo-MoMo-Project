@@ -83,10 +83,9 @@ async function onField(field: Field) {
 const extracting = ref(false)
 const tooShort = ref(false)
 const pasted = ref('')
-async function onFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+const dragging = ref(false)
+const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+async function readResume(file: File) {
   extracting.value = true
   try {
     const text = await extractPdfText(file)
@@ -97,8 +96,19 @@ async function onFile(e: Event) {
     tooShort.value = true
   } finally {
     extracting.value = false
-    input.value = ''
   }
+}
+async function onFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) await readResume(file)
+  input.value = '' // 같은 파일을 다시 골라도 change가 나게
+}
+/* 끌어다 놓기: 숨긴 input에는 드롭이 닿지 않으므로 라벨이 받는다. accept는 드롭에 안 걸리니 직접 거른다 */
+async function onDrop(e: DragEvent) {
+  dragging.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (file && isPdf(file)) await readResume(file)
 }
 /* PDF 대신 항목별로 답하는 간단 이력서 */
 const FORM_NAME = '직접 작성'
@@ -252,7 +262,14 @@ async function clearAndRetry() {
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
-              <label class="file-row press">
+              <label
+                class="file-row press"
+                :class="{ dragging }"
+                data-test="drop"
+                @dragover.prevent="dragging = true"
+                @dragleave="dragging = false"
+                @drop.prevent="onDrop"
+              >
                 <DocIcon />
                 <span class="mono name">{{
                   interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
@@ -453,6 +470,10 @@ async function clearAndRetry() {
   padding: 14px var(--sp-4);
   cursor: pointer;
   color: var(--text-2);
+}
+.file-row.dragging {
+  border-color: var(--accent);
+  color: var(--text);
 }
 .file-row:focus-within {
   outline: 2px solid var(--accent);

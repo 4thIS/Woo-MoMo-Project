@@ -86,6 +86,32 @@ describe('PrepareView', () => {
     expect(useInterviewStore().resumeName).toBe('cv.pdf')
   })
 
+  it('PDF를 끌어다 놓아도 같은 경로로 읽는다 (dragover는 기본 동작을 막는다)', async () => {
+    vi.mocked(extractPdfText).mockResolvedValue('이력서 '.repeat(100))
+    const w = mountView()
+    await fillProfile(w)
+    const zone = w.find('[data-test=drop]')
+    const over = new Event('dragover', { cancelable: true })
+    zone.element.dispatchEvent(over)
+    expect(over.defaultPrevented).toBe(true)
+    const file = new File(['x'], 'cv.pdf', { type: 'application/pdf' })
+    await zone.trigger('drop', { dataTransfer: { files: [file] } })
+    await flushPromises()
+    expect(extractPdfText).toHaveBeenCalledWith(file)
+    expect(useInterviewStore().resumeName).toBe('cv.pdf')
+  })
+
+  it('PDF가 아닌 파일을 떨어뜨리면 무시한다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    await w.find('[data-test=drop]').trigger('drop', {
+      dataTransfer: { files: [new File(['x'], 'photo.png', { type: 'image/png' })] },
+    })
+    await flushPromises()
+    expect(extractPdfText).not.toHaveBeenCalled()
+    expect(useInterviewStore().resumeName).toBeNull()
+  })
+
   it('추출 글자가 적으면 직접 붙여넣기 안내', async () => {
     vi.mocked(extractPdfText).mockResolvedValue('짧음')
     const w = mountView()

@@ -6,6 +6,7 @@ vi.mock('@/services/llm', () => ({ startSession: vi.fn() }))
 vi.mock('@/services/api', () => ({ getQuestions: vi.fn(), getManifest: vi.fn() }))
 import { useInterviewStore } from '@/stores/interview'
 import ReportView from './ReportView.vue'
+import ReportViewSource from './ReportView.vue?raw'
 
 beforeEach(() => setActivePinia(createPinia()))
 
@@ -197,7 +198,7 @@ describe('ReportView — 60초 제한 표시', () => {
     endedAt: t0 + 300_000,
     ended: true,
   }
-  it('턴 수 = 카드 수면 카드마다 답변 시간 태그, 초과는 danger + 초과분', () => {
+  it('시간은 카드에 흩어놓지 않고 "시간" 창 한 곳에 모은다 — 초과 행은 붉게 + 초과분', () => {
     useInterviewStore().$patch({
       ...base,
       report: items, // 2장
@@ -210,19 +211,33 @@ describe('ReportView — 60초 제한 표시', () => {
       ],
     })
     const w = mount(ReportView)
-    const tags = w.findAll('[data-test="answer-tag"]')
-    expect(tags).toHaveLength(2)
-    expect(tags[0].text()).toBe('답변 1분 30초 · 30초 초과')
-    expect(tags[0].classes()).toContain('danger')
-    expect(tags[1].text()).toBe('답변 42초')
-    expect(tags[1].classes()).toContain('ok')
-    // 시간 창: 초과 행은 붉게, 헤더 태그
+    expect(w.findAll('[data-test="answer-tag"]')).toHaveLength(0)
+    expect(w.findAll('[data-test="card"]')[0].text()).not.toMatch(/답변 \d/)
     expect(w.find('[data-test="timing"]').text()).toContain('제한 60초 · 초과 1문항')
     const rows = w.findAll('[data-test="turn-row"]')
     expect(rows[0].find('.dur').classes()).toContain('over')
+    expect(rows[0].text()).toContain('1분 30초')
+    expect(rows[0].find('[data-test="over-by"]').text()).toBe('30초 초과')
     expect(rows[1].find('.dur').classes()).not.toContain('over')
+    expect(rows[1].find('[data-test="over-by"]').exists()).toBe(false)
   })
-  it('꼬리질문으로 턴 수 ≠ 카드 수면 카드 태그는 없고 시간 창만 초과를 표시한다', () => {
+  it('시간 창의 danger 태그 글자색이 부모 scoped 스타일에 덮이지 않는다', () => {
+    useInterviewStore().$patch({
+      ...base,
+      report: items,
+      messages: [
+        { role: 'model', text: 'q1', at: t0 + 10_000 },
+        { role: 'user', text: 'a', at: t0 + 100_000 },
+        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    const tag = w.find('[data-test="timing"] .tag.danger')
+    expect(tag.exists()).toBe(true)
+    // 부모가 .danger 클래스 셀렉터를 갖고 있으면 자식 루트에 새어 들어간다 — 스타일 블록에 없어야 한다
+    expect(ReportViewSource).not.toMatch(/^\.danger\s*\{/m)
+  })
+  it('꼬리질문이 섞여 턴 수 ≠ 카드 수여도 시간 창은 모든 턴을 센다', () => {
     useInterviewStore().$patch({
       ...base,
       report: items, // 2장
