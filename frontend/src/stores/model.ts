@@ -105,7 +105,14 @@ export const useModelStore = defineStore('model', {
         this.ttsStatus = 'ready'
         return
       }
-      if (this.ttsStatus === 'ready') return // 경량 모델 전환 등으로 Gemma만 다시 올릴 때 TTS는 그대로 둔다
+      // ready: 경량 모델 전환 등으로 Gemma만 다시 올릴 때 TTS는 그대로 둔다.
+      // downloading/initializing: 다시 시도 연타 — 겹쳐 부르면 앞선 initTts가 superseded로 거부되며 error를 잠깐 덮어쓴다
+      if (
+        this.ttsStatus === 'ready' ||
+        this.ttsStatus === 'downloading' ||
+        this.ttsStatus === 'initializing'
+      )
+        return
       this.ttsStatus = 'initializing' // 캐시 조회 중에도 진행 창이 look_up을 유지하도록
       this.ttsError = null
       this.ttsReceived = 0

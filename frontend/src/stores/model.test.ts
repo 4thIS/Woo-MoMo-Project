@@ -250,3 +250,20 @@ describe('model store — TTS', () => {
     expect(s.ttsReceived).toBe(0)
   })
 })
+
+describe('model store — TTS 재진입', () => {
+  it('loadTts가 진행 중이면 retryTts는 겹쳐 부르지 않는다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    let release!: () => void
+    vi.mocked(initTts).mockReturnValue(new Promise<void>((r) => (release = r)))
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    await vi.waitFor(() => expect(s.status).toBe('ready'))
+    await s.retryTts()
+    expect(initTts).toHaveBeenCalledTimes(1)
+    release()
+    await p
+    expect(s.ttsStatus).toBe('ready')
+  })
+})
