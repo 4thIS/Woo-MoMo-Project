@@ -44,7 +44,11 @@ const cfg = {
 let w: FakeWorker
 beforeEach(() => {
   w = new FakeWorker()
-  __setWorkerFactory(() => w as unknown as Worker)
+  // 매 spawn()마다 새 인스턴스를 만든다 — 동시 initTts 테스트에서 두 워커를 구분해야 한다
+  __setWorkerFactory(() => {
+    w = new FakeWorker()
+    return w as unknown as Worker
+  })
   vi.mocked(hasModel).mockResolvedValue(false)
 })
 afterEach(() => {
@@ -61,8 +65,9 @@ afterEach(() => {
  * 보장되어, 호출부가 안전하게 그다음 줄에서 동기적으로 w.reply()를 호출할 수 있다.
  */
 async function startInit(onProgress?: (r: number, t: number) => void) {
+  const before = w // 세대 가드 테스트에서 이전 워커의 남은 'load'와 헷갈리지 않도록 참조가 바뀌었는지도 함께 확인한다
   const p = initTts(cfg, onProgress)
-  await vi.waitFor(() => expect(w.sent.some((m) => m.type === 'load')).toBe(true))
+  await vi.waitFor(() => expect(w !== before && w.sent.some((m) => m.type === 'load')).toBe(true))
   return { p }
 }
 
@@ -78,7 +83,16 @@ describe('initTts', () => {
       '/models/tts/supertonic-3/onnx/text_encoder.onnx',
       '/models/tts/supertonic-3/voice_styles/M2.json',
     ])
-    expect(prog.at(-1)).toEqual([60, 60]) // 캐시 히트 파일도 total·received에 포함
+    // 다운로드 중 콜백(done+r)과 파일 완료 후 콜백(done)이 파일마다 누적되어 온다.
+    // f1(30, 다운로드): [30,60] → 완료 후 [30,60] / f2(10, 캐시 히트: 다운로드 콜백 없음) → 완료 후 [40,60]
+    // f3(20, 다운로드): [60,60] → 완료 후 [60,60]
+    expect(prog).toEqual([
+      [30, 60],
+      [30, 60],
+      [40, 60],
+      [60, 60],
+      [60, 60],
+    ])
     const load = w.sent.find((m) => m.type === 'load') as Extract<MainToWorker, { type: 'load' }>
     expect(load.files.map((f) => f.cacheKey)).toEqual([
       '/models-cache/supertonic-3/models/tts/supertonic-3/onnx/text_encoder.onnx',
@@ -93,10 +107,37 @@ describe('initTts', () => {
     await expect(initTts(cfg)).rejects.toThrow(/incomplete/)
     expect(w.sent).toHaveLength(0)
   })
-  it('워커가 error로 답하면 initTts가 거부된다', async () => {
+  it('워커가 error로 답하면 initTts가 거부되고 워커를 정리한다(다음 init까지 죽은 워커를 남기지 않음)', async () => {
     const { p } = await startInit()
     w.reply({ type: 'error', message: 'WebGPU 없음' })
     await expect(p).rejects.toThrow(/WebGPU 없음/)
+    expect(w.terminated).toBe(true)
+    await expect(synthesize('그다음')).rejects.toThrow(/not loaded|초기화/)
+  })
+  it('동시에 initTts를 두 번 호출하면 나중 것만 유효하다 — 이전 워커는 terminate되고 응답은 무시된다', async () => {
+    const { p: pA } = await startInit()
+    const workerA = w
+    const { p: pB } = await startInit() // A가 아직 loaded 응답을 받기 전에 B를 시작
+    const workerB = w
+    expect(workerA).not.toBe(workerB)
+    expect(workerA.terminated).toBe(true) // B의 disposeTts()가 A를 정리했다
+
+    workerB.reply({ type: 'loaded' })
+    await pB
+
+    // 지연되어 도착한 A의 응답은 세대 가드가 무시한다 — 전역 상태를 건드리지 않는다
+    expect(() => workerA.reply({ type: 'loaded' })).not.toThrow()
+    void pA // A는 결코 정리되지 않는다(아무도 응답을 유효하게 주지 않음) — 의도된 동작, 대기만 함
+
+    const s = synthesize('안녕')
+    const req = workerB.sent.find((m) => m.type === 'synthesize') as Extract<
+      MainToWorker,
+      { type: 'synthesize' }
+    >
+    expect(req).toBeTruthy()
+    expect(workerA.sent.some((m) => m.type === 'synthesize')).toBe(false)
+    workerB.reply({ type: 'audio', id: req.id, samples: new Float32Array(10), sampleRate: 44100 })
+    await s
   })
 })
 
@@ -139,6 +180,21 @@ describe('synthesize', () => {
     expect(() =>
       w.reply({ type: 'audio', id: req.id, samples: new Float32Array(1), sampleRate: 44100 }),
     ).not.toThrow()
+  })
+  it('이미 abort된 signal로 호출하면 워커에 아무것도 보내지 않고 바로 AbortError로 거부한다', async () => {
+    await ready()
+    const ac = new AbortController()
+    ac.abort()
+    const before = w.sent.length
+    await expect(synthesize('시작 전에 취소', ac.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    expect(w.sent).toHaveLength(before) // synthesize도 cancel도 보내지 않음(애초에 id를 보낸 적이 없다)
+  })
+  it('워커 onerror 발생 시 loaded/worker를 정리해 이후 synthesize가 거부된다', async () => {
+    await ready()
+    w.onerror?.({ message: '워커 크래시' } as ErrorEvent)
+    await expect(synthesize('그다음')).rejects.toThrow(/not loaded|초기화/)
   })
   it('워커 error(id 있음)는 해당 요청만 거부한다', async () => {
     await ready()

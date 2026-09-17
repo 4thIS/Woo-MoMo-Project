@@ -16,6 +16,8 @@ let worker: Worker | null = null
 let loaded = false
 let nextId = 1
 const pending = new Map<number, Pending>()
+/** 동시에 initTts가 여러 번 호출될 때, 가장 최근 호출만 워커를 스폰·확정하게 하는 세대 카운터 */
+let gen = 0
 
 /** 테스트에서 가짜 워커를 꽂는다. null이면 실제 워커 */
 let factory: (() => Worker) | null = null
@@ -38,6 +40,7 @@ export async function initTts(
   onProgress?: (received: number, total: number) => void,
 ): Promise<void> {
   disposeTts()
+  const my = ++gen
   const total = cfg.files.reduce((n, f) => n + f.size, 0)
   let done = 0
   const files: TtsLoadFile[] = []
@@ -50,15 +53,23 @@ export async function initTts(
     done += f.size
     onProgress?.(done, total)
   }
+  if (my !== gen) return // 다운로드 중 더 새로운 initTts가 시작됨 — 이 워커는 스폰하지 않는다
   const w = spawn()
   worker = w
   await new Promise<void>((resolve, reject) => {
+    const stale = () => my !== gen
     w.onmessage = (e: MessageEvent<WorkerToMain>) => {
+      if (stale()) {
+        w.terminate() // 이미 다음 세대로 넘어간 워커 — 응답은 버리고 정리만 한다
+        return
+      }
       const m = e.data
       if (m.type === 'loaded') {
         loaded = true
         resolve()
       } else if (m.type === 'error' && m.id === undefined) {
+        w.terminate()
+        worker = null
         reject(new Error(m.message))
       } else if (m.type === 'error') {
         pending.get(m.id!)?.reject(new Error(m.message))
@@ -74,9 +85,15 @@ export async function initTts(
       }
     }
     w.onerror = (e) => {
+      if (stale()) {
+        w.terminate()
+        return
+      }
       const err = new Error(e.message || 'tts worker error')
       reject(err)
       fail(err)
+      loaded = false
+      worker = null
     }
     const msg: MainToWorker = {
       type: 'load',
@@ -96,12 +113,16 @@ export function synthesize(text: string, signal?: AbortSignal): Promise<AudioCli
   const w = worker
   const id = nextId++
   return new Promise<AudioClip>((resolve, reject) => {
+    if (signal?.aborted) {
+      // 아직 워커에 synthesize를 보내지 않았으니 취소할 것도 없다 — cancel을 보내지 않는다
+      reject(new DOMException('synthesize aborted', 'AbortError'))
+      return
+    }
     const abort = () => {
       pending.delete(id)
       w.postMessage({ type: 'cancel', id } satisfies MainToWorker)
       reject(new DOMException('synthesize aborted', 'AbortError'))
     }
-    if (signal?.aborted) return abort()
     signal?.addEventListener('abort', abort, { once: true })
     pending.set(id, {
       resolve: (c) => {
