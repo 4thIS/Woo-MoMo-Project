@@ -43,6 +43,7 @@
 - CORS: 프론트와 같은 오리진(nginx 뒤)이므로 별도 CORS 허용 불필요. 로컬 개발(Vite dev 서버 5173)에서만 `http://localhost:5173` 허용.
 - `data/` 파일은 앱 시작 시 한 번 읽어 스키마 검증하고 메모리에 둔다. 파일이 깨져 있으면 **기동 실패**로 드러나야 한다(런타임에 500이 아니라).
 - 매니페스트 `url`은 `/models/`로 시작하는 상대 경로만 허용한다(외부 URL 금지, 프록시 우회 방지).
+  - 2026-09-17 변경: 허용 목록 `/models/`, `https://huggingface.co/`로 확장. 현재 HF 커밋 고정 주소를 사용한다. 이유·복귀 절차: `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`
 - 라즈베리파이 자원: uvicorn 워커 1개, 의존성 최소(fastapi, uvicorn, pydantic). 무거운 라이브러리 금지.
 - 모델 파일은 리포·이미지에 넣지 않는다. 호스트 `/srv/momo/models`를 nginx 컨테이너에 읽기 전용 마운트.
 

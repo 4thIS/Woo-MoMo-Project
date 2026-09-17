@@ -10,7 +10,7 @@
 ```json
 {
   "id": "gemma4-e4b-it",
-  "url": "/models/gemma4-e4b-it-web.litertlm",
+  "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm",
   "size": 2969059328,
   "template": {
     "turnStart": "<|turn>",
@@ -20,12 +20,12 @@
   "systemPromptOverride": null,
   "fallback": {
     "id": "gemma4-e2b-it",
-    "url": "/models/gemma4-e2b-it-web.litertlm",
+    "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm",
     "size": 2008432640
   },
   "tts": {
     "id": "supertonic-3",
-    "baseUrl": "/models/tts/supertonic-3/",
+    "baseUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/",
     "files": [
       { "path": "onnx/text_encoder.onnx", "size": 36416150 },
       { "path": "onnx/duration_predictor.onnx", "size": 3700147 },
@@ -44,12 +44,12 @@
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `id` | string | 모델 식별자. Cache API 키에 포함되어 모델 교체 시 캐시가 갈린다 |
-| `url` | string | 모델 파일 경로 (nginx `/models/` 서빙, Range 지원) |
+| `url` | string | 모델 파일 주소. `/models/`(파이 nginx 자체 서빙, Range 지원) 또는 `https://huggingface.co/`(커밋 해시 고정 `resolve/<sha>/`)로 시작. 프론트는 이 값을 그대로 `fetch`한다 |
 | `size` | number | 바이트. 진행률 표시와 수신 무결성 확인에 사용 |
 | `template` | object | 채팅 템플릿 토큰. 실제 토크나이저와 대조해 확정 (D-6 검증 항목) |
 | `systemPromptOverride` | string \| null | null이면 프론트 내장 시스템 프롬프트 사용. 파인튜닝 모델은 짧은 프롬프트로 대체 가능 |
 | `fallback` | object \| null | 초기화 실패 시 재시도할 경량 모델. 없으면 null |
-| `tts` | object \| null | 면접관 음성(TTS) 모델. null이면 프론트는 음성 단계를 건너뛴다. `id`(캐시 키), `baseUrl`(`/models/`로 시작·`/`로 끝), `files[]`(`path` 상대경로·`size` 바이트), `voice`(프리셋명), `lang`(언어 코드). 파일 URL = `baseUrl + path` |
+| `tts` | object \| null | 면접관 음성(TTS) 모델. null이면 프론트는 음성 단계를 건너뛴다. `id`(캐시 키), `baseUrl`(`/models/` 또는 `https://huggingface.co/`로 시작·`/`로 끝), `files[]`(`path` 상대경로·`size` 바이트), `voice`(프리셋명), `lang`(언어 코드). 파일 URL = `baseUrl + path` |
 
 ## GET /api/questions/{field}
 
@@ -80,6 +80,8 @@
 ## 참고
 
 `tts`는 additive로 추가됨(2026-09-17). 기존 필드 불변.
+
+2026-09-17: `url`·`fallback.url`·`tts.baseUrl` 값을 파이(`/models/`)에서 Hugging Face로 전환. 응답 형태 불변, 허용 접두사만 확장. 이유와 파이 서빙 복귀 절차(파인튜닝 모델 포함): `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`
 
 ## 하지 않는 것
 
