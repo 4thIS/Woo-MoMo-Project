@@ -116,6 +116,7 @@ describe('initTts', () => {
   })
   it('동시에 initTts를 두 번 호출하면 나중 것만 유효하다 — 이전 워커는 terminate되고 응답은 무시된다', async () => {
     const { p: pA } = await startInit()
+    pA.catch(() => {}) // B가 A를 거부시키는 시점과 아래 rejects 단언 사이의 창에서 unhandledRejection 경고를 막는다
     const workerA = w
     const { p: pB } = await startInit() // A가 아직 loaded 응답을 받기 전에 B를 시작
     const workerB = w
@@ -127,7 +128,7 @@ describe('initTts', () => {
 
     // 지연되어 도착한 A의 응답은 세대 가드가 무시한다 — 전역 상태를 건드리지 않는다
     expect(() => workerA.reply({ type: 'loaded' })).not.toThrow()
-    void pA // A는 결코 정리되지 않는다(아무도 응답을 유효하게 주지 않음) — 의도된 동작, 대기만 함
+    await expect(pA).rejects.toThrow(/superseded/) // B가 시작되며 A는 즉시 거부된다 — 무한 대기하지 않는다
 
     const s = synthesize('안녕')
     const req = workerB.sent.find((m) => m.type === 'synthesize') as Extract<
@@ -138,6 +139,25 @@ describe('initTts', () => {
     expect(workerA.sent.some((m) => m.type === 'synthesize')).toBe(false)
     workerB.reply({ type: 'audio', id: req.id, samples: new Float32Array(10), sampleRate: 44100 })
     await s
+  })
+  it('다운로드 중 disposeTts()를 호출하면 init은 disposed로 거부되고 load는 끝내 보내지지 않는다', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    vi.mocked(downloadModel).mockImplementationOnce(
+      async (_id: string, _url: string, size: number, onProgress: (r: number) => void) => {
+        await gate
+        onProgress(size)
+      },
+    )
+    const p = initTts(cfg)
+    await vi.waitFor(() => expect(vi.mocked(downloadModel)).toHaveBeenCalled())
+    disposeTts()
+    await expect(p).rejects.toThrow(/disposed/)
+    release() // 남은 다운로드가 마저 끝나도 이미 거부된 뒤라 워커는 스폰되지 않는다
+    await vi.waitFor(() => expect(vi.mocked(downloadModel)).toHaveBeenCalledTimes(3))
+    expect(w.sent.some((m) => m.type === 'load')).toBe(false)
   })
 })
 
