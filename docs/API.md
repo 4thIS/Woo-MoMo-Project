@@ -22,6 +22,21 @@
     "id": "gemma4-e2b-it",
     "url": "/models/gemma4-e2b-it-web.litertlm",
     "size": 2008432640
+  },
+  "tts": {
+    "id": "supertonic-3",
+    "baseUrl": "/models/tts/supertonic-3/",
+    "files": [
+      { "path": "onnx/text_encoder.onnx", "size": 36416150 },
+      { "path": "onnx/duration_predictor.onnx", "size": 3700147 },
+      { "path": "onnx/vector_estimator.onnx", "size": 256534781 },
+      { "path": "onnx/vocoder.onnx", "size": 101424195 },
+      { "path": "onnx/tts.json", "size": 8253 },
+      { "path": "onnx/unicode_indexer.json", "size": 277676 },
+      { "path": "voice_styles/M2.json", "size": 292055 }
+    ],
+    "voice": "M2",
+    "lang": "ko"
   }
 }
 ```
@@ -34,6 +49,7 @@
 | `template` | object | 채팅 템플릿 토큰. 실제 토크나이저와 대조해 확정 (D-6 검증 항목) |
 | `systemPromptOverride` | string \| null | null이면 프론트 내장 시스템 프롬프트 사용. 파인튜닝 모델은 짧은 프롬프트로 대체 가능 |
 | `fallback` | object \| null | 초기화 실패 시 재시도할 경량 모델. 없으면 null |
+| `tts` | object \| null | 면접관 음성(TTS) 모델. null이면 프론트는 음성 단계를 건너뛴다. `id`(캐시 키), `baseUrl`(`/models/`로 시작·`/`로 끝), `files[]`(`path` 상대경로·`size` 바이트), `voice`(프리셋명), `lang`(언어 코드). 파일 URL = `baseUrl + path` |
 
 ## GET /api/questions/{field}
 
@@ -60,6 +76,10 @@
 ```json
 { "status": "ok" }
 ```
+
+## 참고
+
+`tts`는 additive로 추가됨(2026-09-17). 기존 필드 불변.
 
 ## 하지 않는 것
 

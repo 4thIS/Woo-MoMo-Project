@@ -12,5 +12,20 @@
     "id": "gemma4-e2b-it",
     "url": "/models/gemma4-e2b-it-web.litertlm",
     "size": 2008432640
+  },
+  "tts": {
+    "id": "supertonic-3",
+    "baseUrl": "/models/tts/supertonic-3/",
+    "files": [
+      { "path": "onnx/text_encoder.onnx", "size": 36416150 },
+      { "path": "onnx/duration_predictor.onnx", "size": 3700147 },
+      { "path": "onnx/vector_estimator.onnx", "size": 256534781 },
+      { "path": "onnx/vocoder.onnx", "size": 101424195 },
+      { "path": "onnx/tts.json", "size": 8253 },
+      { "path": "onnx/unicode_indexer.json", "size": 277676 },
+      { "path": "voice_styles/M2.json", "size": 292055 }
+    ],
+    "voice": "M2",
+    "lang": "ko"
   }
 }
