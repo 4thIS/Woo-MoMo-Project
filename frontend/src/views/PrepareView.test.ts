@@ -262,6 +262,35 @@ const manifestWithTts = {
   tts: TTS,
 }
 
+describe('PrepareView — 진행 창 제목은 단계를 따른다 (#24)', () => {
+  const title = (w: ReturnType<typeof mountView>) => w.find('.title').text()
+  it('다운로드 중: 출근하는 중', () => {
+    expect(title(mountView())).toBe('면접관이 출근하는 중')
+  })
+  it('초기화 중: 자리에 앉는 중', () => {
+    useModelStore().status = 'initializing'
+    expect(title(mountView())).toBe('면접관이 자리에 앉는 중')
+  })
+  it('목소리 준비 중: 목소리를 가다듬는 중', () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
+    expect(title(mountView())).toBe('면접관이 목소리를 가다듬는 중')
+  })
+  it('준비 완료: 자리에 앉았습니다 — 아래 문구와 모순되지 않는다', () => {
+    const m = useModelStore()
+    m.manifest = { ...manifestWithTts, tts: null }
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    expect(title(mountView())).toBe('면접관이 자리에 앉았습니다')
+  })
+  it('오류: 오는 길에 문제', () => {
+    useModelStore().status = 'error'
+    expect(title(mountView())).toBe('면접관이 오는 길에 문제가 생겼습니다')
+  })
+})
+
 describe('PrepareView — 목소리 준비', () => {
   it('Gemma ready + TTS 다운로드 중이면 진행 창은 voice 단계에 TTS 수치, 체크리스트에 "목소리 준비"', () => {
     const m = useModelStore()
