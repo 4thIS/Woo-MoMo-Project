@@ -3,11 +3,15 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MODELS_PREFIX = "/models/"
+HF_PREFIX = "https://huggingface.co/"
+# 자체 서빙(/models/, nginx 볼륨)과 Hugging Face 직접 다운로드만 허용한다.
+# 전환·복귀 절차: docs/specs/backend/2026-09-17-model-hosting-hf-design.md
+ALLOWED_URL_PREFIXES = (MODELS_PREFIX, HF_PREFIX)
 
 
 def _validate_model_url(url: str) -> str:
-    if not url.startswith(MODELS_PREFIX):
-        raise ValueError(f"model url must start with {MODELS_PREFIX!r}")
+    if not url.startswith(ALLOWED_URL_PREFIXES):
+        raise ValueError(f"model url must start with one of {ALLOWED_URL_PREFIXES!r}")
     return url
 
 
@@ -61,9 +65,9 @@ class TtsManifest(BaseModel):
     @field_validator("baseUrl")
     @classmethod
     def _base_url(cls, v: str) -> str:
-        if not v.startswith(MODELS_PREFIX) or not v.endswith("/"):
-            raise ValueError(f"tts baseUrl must start with {MODELS_PREFIX!r} and end with '/'")
-        return v
+        if not v.endswith("/"):
+            raise ValueError("tts baseUrl must end with '/'")
+        return _validate_model_url(v)
 
 
 class Manifest(ModelRef):
