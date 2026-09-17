@@ -1,2 +1,4 @@
+allowBuilds:
+  protobufjs: false # onnxruntime-web의 전이 의존성. 브라우저 번들엔 빌드 스크립트 불필요
 minimumReleaseAgeExclude:
   - '@litert-lm/core@0.17.1'
