@@ -39,6 +39,31 @@ describe('InterviewStage', () => {
 describe('InterviewStage 1회 재생', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
+  const srcOf = (w: ReturnType<typeof mount>, char: string) =>
+    (w.find(`[data-char="${char}"]`).element as HTMLElement).style.backgroundImage
+
+  it('좋은 답변: 셋이 동시에 1회 동작하고 가운데 끄덕임이 끝나면 react-done', async () => {
+    const w = mount(InterviewStage, { props: base })
+    await w.setProps({ reactPending: true })
+    expect(srcOf(w, 'left')).toContain('left_pageflip')
+    expect(srcOf(w, 'center')).toContain('center_nod')
+    expect(srcOf(w, 'right')).toContain('right_writing')
+    vi.advanceTimersByTime(11 * 125 + 50) // 11f @ 8fps
+    await w.vm.$nextTick()
+    expect(w.emitted('react-done')).toHaveLength(1)
+    expect(srcOf(w, 'center')).toContain('center_idle')
+  })
+
+  it('답변 지연: 1회차 가운데 시계, 2회차 서기 펜 톡톡', async () => {
+    const w = mount(InterviewStage, { props: base })
+    await w.setProps({ watchTick: 1 })
+    expect(srcOf(w, 'center')).toContain('center_watch')
+    vi.advanceTimersByTime(10 * 125 + 50)
+    await w.vm.$nextTick()
+    expect(srcOf(w, 'center')).toContain('center_idle')
+    await w.setProps({ watchTick: 2 })
+    expect(srcOf(w, 'right')).toContain('right_pentap')
+  })
 
   it('watch 중에 react가 와도 둘 다 끝나고 react-done이 나간다', async () => {
     const w = mount(InterviewStage, { props: base })
@@ -47,17 +72,33 @@ describe('InterviewStage 1회 재생', () => {
     vi.advanceTimersByTime(2000)
     await w.vm.$nextTick()
     expect(w.emitted('react-done')).toHaveLength(1)
-    // 둘 다 끝났으면 기본 idle 시트로 돌아온다
     const srcs = w.findAll('.sprite').map((el) => (el.element as HTMLElement).style.backgroundImage)
-    expect(srcs.some((s) => s.includes('center_react') || s.includes('center_watch'))).toBe(false)
+    expect(srcs.some((s) => s.includes('center_nod') || s.includes('center_watch'))).toBe(false)
   })
 
-  it('react 중에 watch가 와도 react-done은 나간다', async () => {
+  it('react 중에 watch가 와도 react-done은 나간다 (시계는 서기 펜 톡톡으로 대체)', async () => {
     const w = mount(InterviewStage, { props: base })
     await w.setProps({ reactPending: true })
     await w.setProps({ watchTick: 1 })
+    expect(srcOf(w, 'center')).toContain('center_nod')
+    expect(srcOf(w, 'right')).toContain('right_pentap')
     vi.advanceTimersByTime(2000)
     await w.vm.$nextTick()
     expect(w.emitted('react-done')).toHaveLength(1)
+  })
+
+  it('질문 중엔 가운데가 질문 제스처를 반복한다', () => {
+    const w = mount(InterviewStage, { props: { ...base, stage: 'asking' } })
+    expect(srcOf(w, 'center')).toContain('center_question')
+  })
+
+  it('듣는 중엔 서기가 잔동작(필기)을 무작위 간격으로 한다', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0) // 최소 간격, 첫 후보
+    const w = mount(InterviewStage, { props: { ...base, stage: 'listening' } })
+    expect(srcOf(w, 'right')).toContain('right_idle')
+    vi.advanceTimersByTime(5_000 + 10)
+    await w.vm.$nextTick()
+    expect(srcOf(w, 'right')).toContain('right_writing')
+    vi.restoreAllMocks()
   })
 })

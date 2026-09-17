@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
+/**
+ * 가로 한 줄 스프라이트 시트 재생기.
+ * - loop(기본): 0 → N-1 순환
+ * - loop=false: 0 → N-1 한 번 재생하고 마지막 프레임에 멈춘 뒤 `done` emit (1회성 동작은 마지막 프레임이 기본 자세)
+ * src가 바뀌면 처음부터 다시 시작한다.
+ */
 const props = withDefaults(
   defineProps<{
     src: string
@@ -10,23 +16,38 @@ const props = withDefaults(
     scale: number
     index?: number
     fps?: number
+    loop?: boolean
   }>(),
-  { index: 0, fps: 0 },
+  { index: 0, fps: 0, loop: true },
 )
+const emit = defineEmits<{ done: [] }>()
 const cur = ref(props.index)
 let timer: ReturnType<typeof setInterval> | null = null
 
-function restart() {
+function stop() {
   if (timer) clearInterval(timer)
   timer = null
-  cur.value = props.index
-  if (props.fps > 0 && props.frames > 1) {
-    // 0번은 기본 자세, 1..N-1 루프 (스프라이트 규칙)
-    timer = setInterval(() => (cur.value = 1 + (cur.value % (props.frames - 1))), 1000 / props.fps)
-  }
 }
-watch(() => [props.src, props.fps, props.index], restart, { immediate: true })
-onBeforeUnmount(() => timer && clearInterval(timer))
+function restart() {
+  stop()
+  cur.value = props.index
+  if (props.fps <= 0 || props.frames <= 1) return
+  timer = setInterval(() => {
+    const next = cur.value + 1
+    if (next < props.frames) {
+      cur.value = next
+      return
+    }
+    if (props.loop) {
+      cur.value = 0
+      return
+    }
+    stop()
+    emit('done')
+  }, 1000 / props.fps)
+}
+watch(() => [props.src, props.fps, props.index, props.loop], restart, { immediate: true })
+onBeforeUnmount(stop)
 
 const style = computed(() => ({
   width: `${props.frameW * props.scale}px`,

@@ -147,13 +147,14 @@
 - 스프라이트 시트: 가로 한 줄, 프레임 정사각. `manifest.json` 형식은 `pixel-progress/sheets/manifest.json` 그대로 (`{name: {file, frames, w, h}}`). 프론트는 이 JSON을 읽어 배치한다.
 - 위치는 정수 px. `transform`으로 움직일 때도 정수로 반올림.
 - 기존 에셋(`pixel-progress/sheets/`): 캐릭터 32×32(걷기 9프레임=0번 정지+8 루프, 줍기 9, 올려다보기 7), 회사 48×64, 바닥 아이템 20×20·16×16. 화면에서 캐릭터 ×4(128px), 회사 ×3(144px).
-- 면접 에셋(`pixel-progress/interviewers/sheets/` + `manifest.json`, 제작 완료 2026-09-15): 면접관 3인 32×32, 정면, 얼굴은 그림자, 연한 회청색 양복, 세 명 모두 같은 49색 팔레트. 0번 프레임 = 기본 자세, 1~N 루프, 10fps.
-  - left(여, 왼쪽): idle(5) · react(9) · watch(9) — nod 는 미사용, 듣기 상태도 idle
-  - center(가운데, 발화자): idle(5) · talk(7) · nod(5) · react(9) · watch(9)
-  - clerk(서기, 오른쪽): idle(5) · write(9)
-  - candidate_back(지원자 정수리, 48×32, 정지 1장)
-  - 상태 → 애니: 대기 idle/idle/idle · 질문 중 idle/talk/idle · 답변 듣는 중 idle/nod/write · 좋은 답변 react/react/write(1회) · 답변 지연 watch/watch/idle(1회)
-  - 면접 화면 배율: 면접관 ×6(192px), 지원자 ×6(288×192)
+- 면접 에셋(`frontend/public/sprites/interviewers/` + `manifest.json`, **2차 세트 2026-09-17**, 원본 `interviewer_pixelart/`): 면접관 3인 32×32 정면, 얼굴 그림자, 같은 회색 사무용 의자. **idle은 0→14 전체 순환(15f), 1회성 동작은 0→N-1 한 번 재생 후 마지막 프레임(=idle 첫 자세)에 머묾. 8fps.**
+  - left(여, 서류): idle(15) · pageflip(10, 서류 확인)
+  - center(가운데, 발화자): idle(15) · question(10, 검지 제스처 — 질문 중 **반복**) · nod(11, 끄덕임 2회) · watch(10, 손목시계) · lookside(10, 서기 쪽 보기) · armscross(28, 팔짱 홀드 2.2초)
+  - right(서기): idle(15) · writing(10, 필기) · pentap(10, 펜 톡톡)
+  - candidate_back(지원자 정수리, **32×32**, 정지 1장)
+  - 상태 → 애니: 대기 idle/idle/idle · 질문 중 idle/**question 반복**/idle · 좋은 답변 pageflip/nod/writing(1회, nod 끝나면 react-done) · 답변 지연 신호 홀수회 center watch ↔ 짝수회 right pentap
+  - 평시 잔동작(무작위 간격, 1회성): 대기 — left pageflip 18~30s, center lookside 15~25s · 듣는 중 — right writing 5~9s, center lookside/armscross/nod 15~25s, left pageflip 18~30s · 생각 중 — center nod 6~10s, right writing 5~9s. 반응·지연 동작 중이면 건너뜀
+  - 면접 화면 배율: 면접관 ×6(192px), 지원자 ×6(192×192, 무대 아래로 72px 걸침). 이전 세트(talk·react·clerk_*)는 폐기
 - 면접실 배경은 CSS 색면(벽 `--win`, 윗띠·바닥 `--bg`, 걸레받이·책상 상판 `--raise`, 책상 앞면 `--win` + `--bg` 4px 윤곽). 이미지 아님. 별하늘은 랜딩·준비·리포트에만.
 
 ## 6. 문구 · 톤

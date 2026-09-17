@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import type { Stage } from '@/stores/interview'
 import { formatClock } from '@/utils/timing'
-import { ANIMS, CANDIDATE_BACK, FPS, SCALE, animsFor } from './interviewerAnims'
+import {
+  ANIMS,
+  CANDIDATE_BACK,
+  FPS,
+  LIFE,
+  REACT,
+  SCALE,
+  baseAnims,
+  watchAnim,
+  type AnimName,
+  type Char,
+} from './interviewerAnims'
 
 const props = defineProps<{
   stage: Stage
@@ -19,45 +30,89 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'react-done': []; end: [] }>()
 
+/*
+ * 세 사람의 애니 = 상태별 기본(baseAnims) 위에 캐릭터별 1회성 덮어쓰기(over).
+ * 덮어쓰기는 SpriteFrame이 마지막 프레임에서 done을 주면 풀린다(1회성 시트는 마지막 프레임이 idle 자세).
+ * 우선순위: 좋은 답변 반응 > 답변 지연 신호 > 평시 잔동작.
+ */
+const CHARS: Char[] = ['left', 'center', 'right']
+const over = reactive<Record<Char, AnimName | null>>({ left: null, center: null, right: null })
 const reacting = ref(false)
-const watching = ref(false)
-// react와 watch는 독립된 1회 재생이므로 타이머를 따로 둔다. 하나로 합치면 서로의 종료를 지워
-// 애니가 멈추거나 react-done이 영영 안 나간다.
-const timers: Record<'react' | 'watch', ReturnType<typeof setTimeout> | null> = {
-  react: null,
-  watch: null,
+
+function playOnce(char: Char, anim: AnimName) {
+  over[char] = anim
 }
-function playOnce(kind: 'react' | 'watch') {
-  const t = timers[kind]
-  if (t) clearTimeout(t)
-  const flag = kind === 'react' ? reacting : watching
-  flag.value = true
-  const frames = ANIMS[kind === 'react' ? 'center_react' : 'center_watch'].frames
-  timers[kind] = setTimeout(
+function onDone(char: Char) {
+  const finished = over[char]
+  over[char] = null
+  if (char === 'center' && finished === 'center_nod' && reacting.value) {
+    reacting.value = false
+    emit('react-done')
+  }
+}
+
+/* 좋은 답변: 세 명이 동시에 1회씩. react-done은 가운데 끄덕임이 끝날 때 */
+watch(
+  () => props.reactPending,
+  (v) => {
+    if (!v) return
+    reacting.value = true
+    for (const c of CHARS) playOnce(c, REACT[c])
+  },
+)
+/* 답변 지연: 시계 ↔ 펜 톡톡 번갈아. 반응 중이면 가운데는 건드리지 않고 서기만 */
+watch(
+  () => props.watchTick,
+  (t) => {
+    if (t <= 0) return
+    const w = watchAnim(t)
+    if (w.char === 'center' && reacting.value) playOnce('right', 'right_pentap')
+    else playOnce(w.char, w.anim)
+  },
+)
+
+/* 평시 잔동작: 상태별·캐릭터별 무작위 간격으로 1회성 동작. 이미 무언가 하는 중이면 건너뛴다 */
+const lifeTimers: Record<Char, ReturnType<typeof setTimeout> | null> = {
+  left: null,
+  center: null,
+  right: null,
+}
+const rand = (a: number, b: number) => a + Math.random() * (b - a)
+function scheduleLife(char: Char) {
+  if (lifeTimers[char]) clearTimeout(lifeTimers[char]!)
+  lifeTimers[char] = null
+  const cfg = LIFE[props.stage]?.[char]
+  if (!cfg) return
+  lifeTimers[char] = setTimeout(
     () => {
-      timers[kind] = null
-      flag.value = false
-      if (kind === 'react') emit('react-done')
+      lifeTimers[char] = null
+      if (!over[char] && !reacting.value) {
+        const anim = cfg.anims[Math.floor(Math.random() * cfg.anims.length)]
+        playOnce(char, anim)
+      }
+      scheduleLife(char)
     },
-    (frames - 1) * (1000 / FPS),
+    rand(cfg.every[0], cfg.every[1]),
   )
 }
 watch(
-  () => props.reactPending,
-  (v) => v && playOnce('react'),
-)
-watch(
-  () => props.watchTick,
-  (v) => v > 0 && playOnce('watch'),
+  () => props.stage,
+  () => CHARS.forEach(scheduleLife),
+  { immediate: true },
 )
 onBeforeUnmount(() => {
-  for (const t of Object.values(timers)) if (t) clearTimeout(t)
+  for (const c of CHARS) if (lifeTimers[c]) clearTimeout(lifeTimers[c]!)
 })
 
-const anims = computed(() =>
-  animsFor(props.stage, { react: reacting.value, watch: watching.value }),
-)
-const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
+const anims = computed(() => {
+  const base = baseAnims(props.stage)
+  return {
+    left: over.left ?? base.left,
+    center: over.center ?? base.center,
+    right: over.right ?? base.right,
+  }
+})
+const sheet = (name: AnimName) => ANIMS[name]
 </script>
 
 <template>
@@ -79,28 +134,17 @@ const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
 
     <div class="row">
       <SpriteFrame
-        :src="sheet(anims.left).file"
+        v-for="c in CHARS"
+        :key="c"
+        :src="sheet(anims[c]).file"
         :frame-w="32"
         :frame-h="32"
-        :frames="sheet(anims.left).frames"
+        :frames="sheet(anims[c]).frames"
+        :loop="sheet(anims[c]).loop"
         :scale="SCALE"
         :fps="FPS"
-      />
-      <SpriteFrame
-        :src="sheet(anims.center).file"
-        :frame-w="32"
-        :frame-h="32"
-        :frames="sheet(anims.center).frames"
-        :scale="SCALE"
-        :fps="FPS"
-      />
-      <SpriteFrame
-        :src="sheet(anims.clerk).file"
-        :frame-w="32"
-        :frame-h="32"
-        :frames="sheet(anims.clerk).frames"
-        :scale="SCALE"
-        :fps="FPS"
+        :data-char="c"
+        @done="onDone(c)"
       />
     </div>
     <div class="desk" />
@@ -154,7 +198,7 @@ const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
   font-variant-numeric: tabular-nums;
 }
 .bubble {
-  margin-top: 72px;
+  margin-top: 56px;
   max-width: 720px;
   min-height: 72px;
   padding: var(--sp-4) var(--sp-5);
@@ -179,18 +223,19 @@ const sheet = (name: keyof typeof ANIMS) => ANIMS[name]
 .row {
   display: flex;
   gap: var(--sp-8);
-  margin-top: var(--sp-6);
+  margin-top: var(--sp-5);
 }
 .desk {
   width: 80%;
-  height: 48px;
+  height: 40px;
   margin-top: -8px;
   background: var(--raise);
   border-bottom: 4px solid var(--bg);
 }
+/* 지원자(내 정수리)는 책상에서 한참 떨어진 아래에서 걸쳐 보인다 — 면접관과의 거리감 */
 .candidate {
   position: absolute;
-  bottom: -64px;
+  bottom: -72px;
   left: 50%;
   transform: translateX(-50%);
 }
