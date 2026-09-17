@@ -12,11 +12,12 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "postinstall": "node scripts/copy-litert-wasm.mjs",
-    "prebuild": "node scripts/copy-litert-wasm.mjs"
+    "postinstall": "node scripts/copy-litert-wasm.mjs && node scripts/copy-ort-wasm.mjs",
+    "prebuild": "node scripts/copy-litert-wasm.mjs && node scripts/copy-ort-wasm.mjs"
   },
   "dependencies": {
     "@litert-lm/core": "^0.17.1",
+    "onnxruntime-web": "1.30.0",
     "pdfjs-dist": "^6.3.289",
     "pinia": "^4.0.3",
     "vue": "^3.5.42"

@@ -15,6 +15,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/public/litert-wasm/
+frontend/public/ort-wasm/
 
 # backend
 backend/.venv/
