@@ -88,7 +88,7 @@ describe('InterviewStage 1회 재생', () => {
   })
 
   it('질문 중엔 가운데가 질문 제스처를 반복한다', () => {
-    const w = mount(InterviewStage, { props: { ...base, stage: 'asking' } })
+    const w = mount(InterviewStage, { props: { ...base, stage: 'speaking' } })
     expect(srcOf(w, 'center')).toContain('center_question')
   })
 

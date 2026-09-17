@@ -39,9 +39,9 @@ export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 �
 export type Trio = Record<Char, AnimName>
 const IDLE: Trio = { left: 'left_idle', center: 'center_idle', right: 'right_idle' }
 
-/** 상태별 기본 애니. 질문 중엔 가운데가 질문 제스처를 말이 끝날 때까지 반복한다 */
+/** 상태별 기본 애니. 말하는 중엔 가운데가 질문 제스처를 말이 끝날 때까지 반복한다 */
 export function baseAnims(stage: Stage): Trio {
-  return stage === 'asking' ? { ...IDLE, center: 'center_question' } : IDLE
+  return stage === 'speaking' ? { ...IDLE, center: 'center_question' } : IDLE
 }
 
 /** 좋은 답변: 끄덕임 2회 + 왼쪽 서류 확인 + 서기 필기 (전부 1회) */

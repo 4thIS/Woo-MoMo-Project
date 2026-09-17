@@ -12,7 +12,7 @@ describe('interviewerAnims', () => {
       })
   })
   it('질문 중엔 가운데가 질문 제스처를 반복(loop)한다', () => {
-    expect(baseAnims('asking').center).toBe('center_question')
+    expect(baseAnims('speaking').center).toBe('center_question')
     expect(ANIMS.center_question.loop).toBe(true)
   })
   it('좋은 답변: 서류 확인 / 끄덕임 2회 / 필기 — 전부 1회성', () => {
