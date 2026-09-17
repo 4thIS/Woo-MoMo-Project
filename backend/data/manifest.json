@@ -1,6 +1,6 @@
 {
   "id": "gemma4-e4b-it",
-  "url": "/models/gemma4-e4b-it-web.litertlm",
+  "url": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm",
   "size": 2969059328,
   "template": {
     "turnStart": "<|turn>",
@@ -10,12 +10,12 @@
   "systemPromptOverride": null,
   "fallback": {
     "id": "gemma4-e2b-it",
-    "url": "/models/gemma4-e2b-it-web.litertlm",
+    "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm",
     "size": 2008432640
   },
   "tts": {
     "id": "supertonic-3",
-    "baseUrl": "/models/tts/supertonic-3/",
+    "baseUrl": "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323/",
     "files": [
       { "path": "onnx/text_encoder.onnx", "size": 36416150 },
       { "path": "onnx/duration_predictor.onnx", "size": 3700147 },
