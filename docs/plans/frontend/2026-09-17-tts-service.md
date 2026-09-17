@@ -917,7 +917,7 @@ if (import.meta.env.DEV) {
 
 ```markdown
 ## 음성(TTS) — 이슈 #12 단독 확인 (dev 콘솔)
-- [ ] `/models/tts/supertonic-3/`가 서빙되는 상태(로컬: `C:\MyCode\models\tts\supertonic-3\`에서 `python -m http.server 8765`)에서 콘솔:
+- [ ] `/models/tts/supertonic-3/`가 서빙되는 상태(로컬: Vite `/models` 프록시가 `/models/X` → `http://localhost:8765/X`로 넘기므로 `C:\MyCode\models\`에서 `python -m http.server 8765` — 모델 파일은 `C:\MyCode\models\tts\supertonic-3\{onnx,voice_styles}\`)에서 콘솔:
       `const m = await __momoTts.getManifest(); await __momoTts.initTts(m.tts, (r,t)=>console.log(r,t)); const c = await __momoTts.synthesize('안녕하세요. 자기소개를 부탁드립니다.'); __momoTts.warmUpAudio(); __momoTts.playClip(c, {muted:false})`
 - [ ] 60자 한국어 문장 합성 시간 3초 이내(스텝 4, 첫 호출은 워밍업 제외). 합성 중 면접실 애니가 멈추지 않는다
 - [ ] DevTools Network에 CDN 요청 없음(`/ort-wasm/…jsep.wasm`만), 두 번째 방문은 모델 요청 없이 캐시에서
