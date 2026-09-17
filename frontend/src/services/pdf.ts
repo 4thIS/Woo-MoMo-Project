@@ -1,5 +1,6 @@
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { joinTextItems } from '@/utils/pdfText'
 
 // 워커는 로컬 번들에서 로드한다 — CDN 없음, 이력서가 밖으로 나가지 않는다.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -11,7 +12,7 @@ export async function extractPdfText(file: File): Promise<string> {
     const doc = await loadingTask.promise
     for (let i = 1; i <= doc.numPages; i++) {
       const content = await (await doc.getPage(i)).getTextContent()
-      pages.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '))
+      pages.push(joinTextItems(content.items.flatMap((it) => ('str' in it ? [it] : []))))
     }
   } finally {
     await loadingTask.destroy()
