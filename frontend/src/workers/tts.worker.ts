@@ -184,24 +184,34 @@ async function synthesize(id: number, text: string) {
   post({ type: 'audio', id, samples, sampleRate: cfg.ae.sample_rate }, [samples.buffer])
 }
 
+// 합성 요청은 여기서 직렬화한다: ORT 세션 4개를 워커가 공유하고 run()은 재진입 불가라 두 synthesize가 await 경계에서 겹치면 안 된다.
+// cancel은 큐를 거치지 않고 즉시 표시만 한다(진행 중 step은 중단 불가). 메인은 abort 시 자기 promise를 스스로 정리한다.
+let queue: Promise<void> = Promise.resolve()
+
+async function runSynthesize(id: number, text: string) {
+  try {
+    await synthesize(id, text)
+  } catch (err) {
+    post({ type: 'error', id, message: err instanceof Error ? err.message : String(err) })
+  } finally {
+    cancelled.delete(id)
+  }
+}
+
 self.onmessage = async (e: MessageEvent<MainToWorker>) => {
   const m = e.data
+  if (m.type === 'synthesize') {
+    queue = queue.then(() => runSynthesize(m.id, m.text))
+    return
+  }
+  if (m.type === 'cancel') {
+    cancelled.add(m.id)
+    return
+  }
   try {
-    if (m.type === 'load') {
-      await load(m)
-      post({ type: 'loaded' })
-    } else if (m.type === 'synthesize') {
-      await synthesize(m.id, m.text)
-    } else if (m.type === 'cancel') {
-      cancelled.add(m.id)
-    }
+    await load(m)
+    post({ type: 'loaded' })
   } catch (err) {
-    post({
-      type: 'error',
-      id: m.type === 'synthesize' ? m.id : undefined,
-      message: err instanceof Error ? err.message : String(err),
-    })
-  } finally {
-    if (m.type === 'synthesize') cancelled.delete(m.id)
+    post({ type: 'error', message: err instanceof Error ? err.message : String(err) })
   }
 }
