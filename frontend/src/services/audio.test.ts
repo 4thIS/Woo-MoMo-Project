@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { __setAudioContextFactory, playClip, warmUpAudio } from './audio'
+import { __setAudioContextFactory, playClip, setMuted, warmUpAudio } from './audio'
 
 class FakeSource {
   buffer: unknown = null
@@ -95,5 +95,16 @@ describe('audio', () => {
     h.stop()
     expect(ctx.sources[0].stopped).toBe(true)
     await expect(h.done).resolves.toBeUndefined()
+  })
+  it('setMuted는 재생 중인 클립의 게인을 즉시 바꾸고, 다음 재생의 기본값이 된다', () => {
+    playClip(clip, { muted: false })
+    setMuted(true)
+    expect(ctx.gains[0].gain.value).toBe(0)
+    setMuted(false)
+    expect(ctx.gains[0].gain.value).toBe(1)
+    setMuted(true)
+    playClip(clip) // opts 생략 → setMuted 값
+    expect(ctx.gains[1].gain.value).toBe(0)
+    setMuted(false)
   })
 })
