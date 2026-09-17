@@ -198,6 +198,29 @@ describe('ReportView — 60초 제한 표시', () => {
     endedAt: t0 + 300_000,
     ended: true,
   }
+  it('카드에는 모델 요약 대신 지원자가 입력한 답변 원문이 그대로 보인다', () => {
+    useInterviewStore().$patch({
+      ...base,
+      report: items, // Q1, Q2
+      messages: [
+        { role: 'model', text: 'Q1', at: t0 + 10_000 },
+        { role: 'user', text: '첫 번째 답변 원문입니다', at: t0 + 50_000 },
+        { role: 'model', text: 'Q1 꼬리', at: t0 + 60_000 },
+        { role: 'user', text: '꼬리 답변', at: t0 + 80_000 },
+        { role: 'model', text: 'Q2', at: t0 + 110_000 },
+        { role: 'user', text: '두 번째 답변', at: t0 + 152_000 },
+        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
+      ],
+    })
+    const w = mount(ReportView)
+    const cards = w.findAll('[data-test="card"]')
+    expect(cards[0].text()).toContain('내 답변')
+    expect(cards[0].text()).toContain('첫 번째 답변 원문입니다')
+    expect(cards[0].text()).toContain('꼬리 답변')
+    expect(cards[0].text()).not.toContain('A1') // 요약은 보이지 않는다
+    expect(cards[1].text()).toContain('두 번째 답변')
+    expect(w.text()).not.toContain('답변 요약')
+  })
   it('시간은 카드에 흩어놓지 않고 "시간" 창 한 곳에 모은다 — 초과 행은 붉게 + 초과분', () => {
     useInterviewStore().$patch({
       ...base,
