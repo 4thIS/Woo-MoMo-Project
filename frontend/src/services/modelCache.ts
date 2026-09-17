@@ -51,3 +51,20 @@ export async function downloadModel(
 export async function clearModels(): Promise<void> {
   await caches.delete(CACHE)
 }
+
+/**
+ * 현재 매니페스트에 없는 항목을 지운다(#22). 매니페스트 주소가 바뀌거나(파이 → Hugging Face)
+ * 모델 id가 바뀌면(파인튜닝 모델) 옛 항목이 수 GB씩 남으므로, 다운로드 전에 정리해 여유 공간 계산에도 반영한다.
+ * @param keep 남길 캐시 키(`cacheKey()` 결과). 지운 개수를 돌려준다
+ */
+export async function pruneModels(keep: string[]): Promise<number> {
+  const cache = await caches.open(CACHE)
+  const keepUrls = new Set(keep.map((k) => new URL(k, location.href).href))
+  let removed = 0
+  for (const req of await cache.keys()) {
+    if (keepUrls.has(req.url)) continue
+    await cache.delete(req)
+    removed++
+  }
+  return removed
+}

@@ -1,6 +1,13 @@
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cacheKey, clearModels, downloadModel, getModelBlob, hasModel } from './modelCache'
+import {
+  cacheKey,
+  clearModels,
+  downloadModel,
+  getModelBlob,
+  hasModel,
+  pruneModels,
+} from './modelCache'
 
 /** Cache API 최소 가짜: Map 하나 */
 function fakeCaches() {
@@ -8,6 +15,10 @@ function fakeCaches() {
   const cache = {
     match: async (k: string) => store.get(k) ?? undefined,
     put: async (k: string, r: Response) => void store.set(k, r),
+    // 실제 Cache API처럼 키를 절대 URL을 가진 Request 모양으로 돌려준다
+    keys: async () => [...store.keys()].map((k) => ({ url: new URL(k, location.href).href })),
+    delete: async (req: { url: string }) =>
+      store.delete(new URL(req.url).pathname + new URL(req.url).search),
   }
   return { open: async () => cache, delete: async () => true, _store: store }
 }
@@ -67,5 +78,22 @@ describe('modelCache', () => {
     const del = vi.spyOn(caches, 'delete')
     await clearModels()
     expect(del).toHaveBeenCalledWith('momo-models')
+  })
+})
+
+describe('pruneModels (#22)', () => {
+  it('현재 매니페스트에 없는 옛 항목만 지우고 현 키는 남긴다', async () => {
+    const keep = cacheKey('e4b', 'https://huggingface.co/x/resolve/abc/e4b.litertlm')
+    caches._store.set(keep, new Response('new'))
+    caches._store.set(cacheKey('e4b', '/models/e4b.litertlm'), new Response('old1'))
+    caches._store.set(cacheKey('e2b', '/models/e2b.litertlm'), new Response('old2'))
+    const removed = await pruneModels([keep])
+    expect(removed).toBe(2)
+    expect([...caches._store.keys()]).toEqual([keep])
+  })
+  it('지울 게 없으면 0', async () => {
+    const keep = cacheKey('e4b', '/models/e4b.litertlm')
+    caches._store.set(keep, new Response('x'))
+    expect(await pruneModels([keep])).toBe(0)
   })
 })
