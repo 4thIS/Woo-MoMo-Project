@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { clip, reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
 import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
+import { answersForReport } from '@/utils/reportAnswers'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -12,6 +13,8 @@ const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.fiel
 const modelTurns = computed(() => s.messages.filter((m) => m.role === 'model').length)
 const nQ = computed(() => s.report?.length ?? 0)
 const nFollow = computed(() => Math.max(0, modelTurns.value - nQ.value))
+/* 카드의 답변은 모델 요약(answerSummary)이 아니라 지원자가 입력한 원문 — 대화 기록에서 짝짓는다 */
+const answers = computed(() => (s.report ? answersForReport(s.report, s.messages) : []))
 
 const total = computed(() => totalDuration(s.startedAt, s.endedAt))
 // 자연 종료(ended)면 마지막 모델 턴은 항상 인사말(store.send()가 ended 이후 거부)이라
@@ -26,7 +29,7 @@ const timing = computed(() =>
 const copied = ref(false)
 async function copy() {
   const text = s.report
-    ? reportToText(s.report, fieldLabel.value, s.profile.job, timing.value)
+    ? reportToText(s.report, answers.value, fieldLabel.value, s.profile.job, timing.value)
     : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
   await navigator.clipboard.writeText(text)
   copied.value = true
@@ -114,8 +117,11 @@ function printReport() {
         data-test="card"
       >
         <dl class="kv">
-          <dt class="mono">답변 요약</dt>
-          <dd>{{ it.answerSummary }}</dd>
+          <dt class="mono">내 답변</dt>
+          <dd class="answers" data-test="answers">
+            <p v-for="(a, j) in answers[i]" :key="j">{{ a }}</p>
+            <p v-if="!answers[i]?.length" class="none">(답변 없음)</p>
+          </dd>
           <dt class="mono">피드백</dt>
           <dd>
             <template v-for="(p, j) in splitEmphasis(it.feedback)" :key="j">
@@ -175,6 +181,18 @@ function printReport() {
   grid-template-columns: 80px 1fr;
   gap: var(--sp-2) var(--sp-4);
   margin: 0;
+}
+.answers p {
+  margin: 0;
+  white-space: pre-wrap; /* 지원자가 친 줄바꿈 그대로 */
+}
+.answers p + p {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 2px dashed var(--raise); /* 꼬리질문 답변 구분 */
+}
+.answers .none {
+  color: var(--text-3);
 }
 .kv dt {
   color: var(--text-3);

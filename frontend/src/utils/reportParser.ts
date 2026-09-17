@@ -69,8 +69,17 @@ export function reportHeader(fieldLabel: string, job: string): string {
   return `모두의 모의면접 리포트 · ${fieldLabel} · ${job}`
 }
 
+/** 카드별 답변 줄: 하나면 한 줄, 여럿(꼬리질문)이면 목록, 없으면 (답변 없음) */
+function answerLines(answers: string[]): string {
+  if (answers.length === 0) return '내 답변: (답변 없음)'
+  if (answers.length === 1) return `내 답변: ${answers[0]}`
+  return '내 답변:\n' + answers.map((a) => `- ${a}`).join('\n')
+}
+
+/** answers[i] = i번째 카드에 지원자가 실제로 입력한 답변들(모델 요약 대신 원문을 쓴다) */
 export function reportToText(
   items: ReportItem[],
+  answers: string[][],
   fieldLabel: string,
   job: string,
   timing?: { total: number; turns: TurnDuration[] },
@@ -79,7 +88,7 @@ export function reportToText(
   const body = items
     .map(
       (it, i) =>
-        `Q${i + 1}. ${strip(it.question)}\n답변 요약: ${strip(it.answerSummary)}\n피드백: ${strip(it.feedback)}`,
+        `Q${i + 1}. ${strip(it.question)}\n${answerLines(answers[i] ?? [])}\n피드백: ${strip(it.feedback)}`,
     )
     .join('\n\n')
   const time = timing

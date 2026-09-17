@@ -43,15 +43,21 @@ describe('splitEmphasis', () => {
 })
 
 describe('reportToText', () => {
-  it('복사 형식과 별표 제거', () => {
-    expect(reportToText([item], 'IT', '백엔드')).toBe(
-      '모두의 모의면접 리포트 · IT · 백엔드\n\nQ1. Q\n답변 요약: A\n피드백: 좋았지만 근거가 필요합니다.',
+  it('복사 형식과 별표 제거 — 답변은 요약이 아니라 지원자가 입력한 원문', () => {
+    expect(reportToText([item], [['제가 입력한 답']], 'IT', '백엔드')).toBe(
+      '모두의 모의면접 리포트 · IT · 백엔드\n\nQ1. Q\n내 답변: 제가 입력한 답\n피드백: 좋았지만 근거가 필요합니다.',
     )
+  })
+  it('답변이 여럿(꼬리질문)이면 줄로 나열하고, 없으면 (답변 없음)', () => {
+    expect(reportToText([item], [['답1', '답1-1']], 'IT', '백엔드')).toContain(
+      'Q1. Q\n내 답변:\n- 답1\n- 답1-1\n피드백',
+    )
+    expect(reportToText([item], [[]], 'IT', '백엔드')).toContain('내 답변: (답변 없음)')
   })
   it('timing이 있으면 끝에 소요 시간 절을 붙인다', () => {
     const longQuestion =
       '어려웠던 문제는 무엇이었나요? 아주 긴 질문 문장이 여기에 계속 이어집니다 정말로'
-    const text = reportToText([item], 'IT', '백엔드', {
+    const text = reportToText([item], [['a']], 'IT', '백엔드', {
       total: 754_000,
       turns: [
         { question: '자기소개 해주세요', ms: 90_000 },
@@ -63,7 +69,7 @@ describe('reportToText', () => {
     expect(text).toContain(`- 1분 5초 · ${longQuestion.slice(0, 40)}…`)
   })
   it('timing이 없으면 기존 형식 그대로', () => {
-    expect(reportToText([item], 'IT', '백엔드')).not.toContain('소요 시간')
+    expect(reportToText([item], [['a']], 'IT', '백엔드')).not.toContain('소요 시간')
   })
 })
 
