@@ -23,6 +23,10 @@ export function playClip(
   clip: AudioClip,
   opts: { muted: boolean },
 ): { done: Promise<void>; stop(): void } {
+  // Web Audio는 0-length 버퍼에서 예외를 던진다 — AudioContext를 건드리지 않고 바로 끝낸다
+  if (clip.samples.length === 0) {
+    return { done: Promise.resolve(), stop() {} }
+  }
   const c = context()
   if (c.state !== 'running') void c.resume()
   const buffer = c.createBuffer(1, clip.samples.length, clip.sampleRate)

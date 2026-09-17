@@ -78,6 +78,7 @@ export function initTts(
           const m = e.data
           if (m.type === 'loaded') {
             loaded = true
+            initReject = null
             resolve()
           } else if (m.type === 'error' && m.id === undefined) {
             w.terminate()
@@ -102,6 +103,7 @@ export function initTts(
             return
           }
           const err = new Error(e.message || 'tts worker error')
+          w.terminate() // 죽었지만 살아있는 워커가 세션(약 400MB)을 붙들고 있지 않도록 정리한다
           reject(err)
           fail(err)
           loaded = false
@@ -124,6 +126,7 @@ export function initTts(
 }
 
 export function synthesize(text: string, signal?: AbortSignal): Promise<AudioClip> {
+  if (!text.trim()) return Promise.reject(new Error('합성할 텍스트가 없습니다'))
   if (!worker || !loaded)
     return Promise.reject(new Error('TTS가 초기화되지 않았습니다 (not loaded)'))
   const w = worker

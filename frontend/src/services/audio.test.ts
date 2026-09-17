@@ -67,10 +67,23 @@ describe('audio', () => {
   it('playClip은 버퍼→게인→목적지로 연결하고 끝나면 done이 resolve', async () => {
     const h = playClip(clip, { muted: false })
     const s = ctx.sources[0]
+    const g = ctx.gains[0]
     expect(s.started).toBe(true)
-    expect(ctx.gains[0].gain.value).toBe(1)
+    expect(g.gain.value).toBe(1)
+    expect(s.connect).toHaveBeenCalledWith(g)
+    expect(g.connect).toHaveBeenCalledWith(ctx.destination)
     s.onended?.()
     await expect(h.done).resolves.toBeUndefined()
+  })
+  it('0샘플 클립은 AudioContext를 건드리지 않고 즉시 완료한다', async () => {
+    const h = playClip(
+      { samples: new Float32Array(0), sampleRate: 44100, durationMs: 0 },
+      { muted: false },
+    )
+    expect(ctx.sources).toHaveLength(0)
+    expect(ctx.gains).toHaveLength(0)
+    await expect(h.done).resolves.toBeUndefined()
+    expect(() => h.stop()).not.toThrow()
   })
   it('muted면 게인 0 (타이밍은 유지)', () => {
     playClip(clip, { muted: true })

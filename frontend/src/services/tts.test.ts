@@ -170,6 +170,12 @@ describe('synthesize', () => {
   it('로드 전엔 거부', async () => {
     await expect(synthesize('안녕')).rejects.toThrow(/not loaded|초기화/)
   })
+  it('빈 문자열/공백만 있는 텍스트는 워커에 아무것도 보내지 않고 즉시 거부한다', async () => {
+    await ready()
+    const before = w.sent.length
+    await expect(synthesize('   ')).rejects.toThrow()
+    expect(w.sent).toHaveLength(before)
+  })
   it('요청 id로 응답을 매칭해 AudioClip을 만든다(durationMs = samples/sampleRate)', async () => {
     await ready()
     const p1 = synthesize('하나')
@@ -211,9 +217,10 @@ describe('synthesize', () => {
     })
     expect(w.sent).toHaveLength(before) // synthesize도 cancel도 보내지 않음(애초에 id를 보낸 적이 없다)
   })
-  it('워커 onerror 발생 시 loaded/worker를 정리해 이후 synthesize가 거부된다', async () => {
+  it('워커 onerror 발생 시 워커를 terminate하고 loaded/worker를 정리해 이후 synthesize가 거부된다', async () => {
     await ready()
     w.onerror?.({ message: '워커 크래시' } as ErrorEvent)
+    expect(w.terminated).toBe(true)
     await expect(synthesize('그다음')).rejects.toThrow(/not loaded|초기화/)
   })
   it('워커 error(id 있음)는 해당 요청만 거부한다', async () => {
