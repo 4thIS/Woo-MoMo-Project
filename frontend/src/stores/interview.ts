@@ -206,8 +206,15 @@ export const useInterviewStore = defineStore('interview', {
           this.generating = false
           abortCtl = null
         }
-        if (text) await this.speak(this.streaming)
-        else
+        if (text) {
+          // playClip이 던져도(AudioContext 생성 실패 등) 면접이 thinking에 갇히지 않게 — 텍스트만 보이고 계속
+          try {
+            await this.speak(this.streaming)
+          } catch {
+            this.revealed = this.streaming
+            this.ttsWarning = TTS_WARNING
+          }
+        } else
           this.revealed = [...this.messages].reverse().find((m) => m.role === 'model')?.text ?? ''
         this.stage = 'waiting'
         await this.refreshTokens()
@@ -246,6 +253,7 @@ export const useInterviewStore = defineStore('interview', {
         if (speakCtl === ctl) speakCtl = null
       }
       if (ctl.signal.aborted) {
+        if (timedOut) this.ttsWarning = TTS_WARNING // 신호를 무시하고 15초 뒤 늦게 온 결과 — 타임아웃과 같은 취급
         this.revealed = text
         return
       }

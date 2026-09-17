@@ -587,3 +587,22 @@ describe('canStart — TTS', () => {
     expect(s.canStart).toBe(true)
   })
 })
+
+describe('interview flow — 음성 재생 실패', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('playClip이 던지면 텍스트만 보이고 경고, waiting으로 간다 (thinking에 갇히지 않음)', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(1000))
+    vi.mocked(playClip).mockImplementation(() => {
+      throw new Error('NotSupportedError')
+    })
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    await s.start()
+    expect(s.revealed).toBe('q ')
+    expect(s.ttsWarning).toBe(TTS_WARNING)
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('waiting')
+  })
+})
