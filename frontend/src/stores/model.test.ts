@@ -313,3 +313,29 @@ describe('model store — 옛 캐시 정리 (#22)', () => {
     expect(s.manifestError).toBeNull()
   })
 })
+
+describe('model store — 전체 진행률 (#26)', () => {
+  it('모델 다운로드 중: 모델 몫만 차오르고, TTS 몫은 처음부터 분모에 들어간다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts }) // 모델 100 + TTS 100
+    const s = useModelStore()
+    await s.loadManifest()
+    s.received = 50
+    expect(s.overallTotal).toBe(200)
+    expect(s.overallReceived).toBe(50)
+    expect(s.overallProgress).toBe(25)
+  })
+  it('모델 완료 뒤 TTS 다운로드 중에는 0으로 되돌아가지 않고 이어서 오른다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    s.received = 100
+    s.$patch({ ttsReceived: 40, ttsTotal: 100 })
+    expect(s.overallProgress).toBe(70)
+  })
+  it('tts가 없으면 모델만으로 100', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    s.received = 100
+    expect(s.overallProgress).toBe(100)
+  })
+})

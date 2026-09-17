@@ -29,9 +29,10 @@ describe('PixelProgress', () => {
     expect(w.text()).toContain('1.14 GB / 2.77 GB')
     expect((w.find('.fill').element as HTMLElement).style.width).toBe('41%')
   })
-  it('초기화 중 문구', () => {
-    const w = mount(PixelProgress, { props: { ...base, progress: 100, phase: 'init' } })
-    expect(w.text()).toContain('출근 완료 — 자리에 앉는 중')
+  it('초기화 중 문구·오른쪽 표시', () => {
+    const w = mount(PixelProgress, { props: { ...base, progress: 88, phase: 'init' } })
+    expect(w.text()).toContain('잠깐 숨 고르는 중')
+    expect(w.text()).toContain('초기화 중')
   })
   it('준비 완료면 바가 ok', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 100, phase: 'ready' } })
@@ -59,6 +60,16 @@ describe('PixelProgress', () => {
       slots: { actions: '<button>다시 시도</button>' },
     })
     expect(w.find('button').exists()).toBe(false)
+  })
+  it('init 단계: 전체 진행률 기준으로는 아직 도착 전이라 "숨 고르는 중" (#26)', () => {
+    const w = mount(PixelProgress, { props: { ...base, progress: 88.2, phase: 'init' } })
+    expect(w.text()).toContain('잠깐 숨 고르는 중')
+    expect(w.text()).not.toContain('자리에 앉는 중')
+  })
+  it('소수 진행률은 표시할 때만 반올림한다', () => {
+    const w = mount(PixelProgress, { props: { ...base, progress: 41.6, phase: 'download' } })
+    expect(w.text()).toContain('42%')
+    expect(w.find('.fill').attributes('style')).toContain('width: 41.6%')
   })
   it('voice 단계: 캡션 "목소리 준비 중"과 진행률, 걷기 장면으로 돌아가지 않는다', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 42, phase: 'voice' } })

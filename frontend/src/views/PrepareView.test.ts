@@ -267,9 +267,16 @@ describe('PrepareView — 진행 창 제목은 단계를 따른다 (#24)', () =>
   it('다운로드 중: 출근하는 중', () => {
     expect(title(mountView())).toBe('면접관이 출근하는 중')
   })
-  it('초기화 중: 자리에 앉는 중', () => {
+  it('모델 다운로드 중에도 진행률 분모에 TTS 용량이 들어간다 (#26)', () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts // 모델 100 + TTS 100, received 78
+    const w = mountView()
+    expect(w.find('pixel-progress-stub').attributes('progress')).toBe('39')
+    expect(w.find('pixel-progress-stub').attributes('total')).toBe('200')
+  })
+  it('초기화 중: 전체 진행률로는 아직 길 위(88%쯤) — 숨 고르는 중', () => {
     useModelStore().status = 'initializing'
-    expect(title(mountView())).toBe('면접관이 자리에 앉는 중')
+    expect(title(mountView())).toBe('면접관이 잠깐 숨 고르는 중')
   })
   it('목소리 준비 중: 목소리를 가다듬는 중', () => {
     const m = useModelStore()
@@ -292,16 +299,18 @@ describe('PrepareView — 진행 창 제목은 단계를 따른다 (#24)', () =>
 })
 
 describe('PrepareView — 목소리 준비', () => {
-  it('Gemma ready + TTS 다운로드 중이면 진행 창은 voice 단계에 TTS 수치, 체크리스트에 "목소리 준비"', () => {
+  it('Gemma ready + TTS 다운로드 중이면 voice 단계, 진행률·바이트는 모델+TTS 합산으로 이어진다 (#26)', () => {
     const m = useModelStore()
-    m.manifest = manifestWithTts
+    m.manifest = manifestWithTts // 모델 100 + TTS 100
     m.status = 'ready'
     m.received = 100
     m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
     const w = mountView()
     const stub = w.find('pixel-progress-stub')
     expect(stub.attributes('phase')).toBe('voice')
-    expect(stub.attributes('progress')).toBe('40')
+    expect(stub.attributes('progress')).toBe('70') // 0으로 되돌아가지 않는다
+    expect(stub.attributes('received')).toBe('140')
+    expect(stub.attributes('total')).toBe('200')
     expect(stub.attributes('filename')).toBe('supertonic-3')
     expect(w.text()).toContain('목소리 준비 (40%)')
     expect((w.find('[data-test="start"]').element as HTMLButtonElement).disabled).toBe(true)

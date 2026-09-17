@@ -2,9 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   STAGES,
+  TRACK,
   advance,
   captionFor,
+  followScroll,
+  scrollProgress,
   stageIndexFor,
+  targetScroll,
   type OnceAnim,
   type StageState,
 } from '@/utils/progressStages'
@@ -24,24 +28,28 @@ const props = withDefaults(
   { eta: '', errorText: '', scale: 3 },
 )
 
+/** 표시용 정수 % (장면은 소수 progress를 그대로 쓴다) */
+const pct = computed(() => Math.round(props.progress))
 const caption = computed(() => {
-  if (props.phase === 'init') return '출근 완료 — 자리에 앉는 중'
+  // 초기화는 전체 진행률(모델+TTS)로는 88% 언저리 — 아직 길 위라 "자리에 앉는 중"이 아니다 (#26)
+  if (props.phase === 'init') return '잠깐 숨 고르는 중…'
   if (props.phase === 'voice') return '목소리 준비 중'
   if (props.phase === 'ready') return '면접관이 자리에 앉았습니다'
   if (props.phase === 'error') return props.errorText
-  return captionFor(props.progress)
+  return captionFor(pct.value)
 })
 const right = computed(() =>
   props.phase === 'download' || props.phase === 'voice'
-    ? [`${props.progress}%`, props.eta].filter(Boolean).join(' · ')
+    ? [`${pct.value}%`, props.eta].filter(Boolean).join(' · ')
     : props.phase === 'init'
       ? '초기화 중'
       : '',
 )
 
-/* ---------- 캔버스 장면 (pixel-progress/index.html 이식) ---------- */
-/** 장면이 따르는 진행률: 출근(다운로드) 동안만 실제 값, 그 뒤(초기화·목소리 준비)는 도착한 상태(100)로 고정 */
-const sceneProgress = computed(() => (props.phase === 'download' ? props.progress : 100))
+/* ---------- 캔버스 장면 (pixel-progress/index.html 이식) ----------
+ * 월드 좌표 하나(scroll)로 바닥·구름·물건·건물을 함께 움직인다(#25). 진행률은 목표 거리로만 쓰고,
+ * scroll은 매 프레임 일정 속도로 목표를 따라간다 — 다운로드가 튀어도 화면은 걷는 속도로만 움직인다.
+ * 물건 줍기·도착 전환은 scroll에서 되돌린 진행률로 판정해 캐릭터가 그 자리에 닿을 때 나온다. */
 type SheetMeta = { file: string; frames: number; w: number; h: number; img?: HTMLImageElement }
 const canvas = ref<HTMLCanvasElement | null>(null)
 const W = 320
@@ -49,12 +57,11 @@ const H = 64 // 하늘 여백을 줄인 높이. 회사(64px)는 윗부분 6px만
 const GROUND = H - 8
 const CHAR_X = 60
 const FPS = 10
-const SCROLL = 40
-const APPROACH = 8
 let sheets: Record<string, SheetMeta> = {}
 let state: StageState = { stage: 0, queue: [] }
 let once: { name: OnceAnim; start: number } | null = null
-let scroll = 0
+let scroll = 0 // 캐릭터가 걸어온 월드 거리(px)
+let target = 0 // 진행률이 가리키는 목표 거리
 let last = 0
 let raf = 0
 let colors = { ink: '', sky: '' }
@@ -82,13 +89,22 @@ function resetScene() {
   state = { stage: 0, queue: [] }
   once = null
   scroll = 0
+  target = 0
 }
+/** 물건·건물의 월드 X: 진행률 at 지점에 캐릭터가 왔을 때 바로 앞(gap)에 있도록 */
+const worldX = (at: number, gap: number) => (at / 100) * TRACK + CHAR_X + gap
+const arrived = () => state.stage === STAGES.length - 1
 
 function frame(now: number) {
   const ctx = canvas.value?.getContext('2d')
   if (!ctx) return
   const dt = last ? (now - last) / 1000 : 0
   last = now
+  // 1) 걷기: 목표를 향해 일정 속도로. 줍는 동안은 멈춘다. 도착 지점에 닿으면 look_up이 큐에 들어가고 그 뒤로는 서 있는다
+  const before = scroll
+  if (!once && !arrived()) scroll = followScroll(scroll, target, dt)
+  const moving = scroll > before
+  state = advance(state, scrollProgress(scroll))
   const stage = STAGES[state.stage]
   if (!once && state.queue.length) {
     const next = state.queue.shift()
@@ -106,16 +122,19 @@ function frame(now: number) {
     }
     if (once) sheet = s
   }
-  const walking = !once && props.phase === 'download' && stage.walk
-  if (walking) {
-    sheet = sheets[stage.walk!]
+  if (!sheet && moving && stage.walk) {
+    sheet = sheets[stage.walk]
     if (sheet) idx = 1 + (Math.floor((now / 1000) * FPS) % (sheet.frames - 1))
-    scroll += dt * SCROLL
   }
   if (!sheet) {
-    sheet = sheets[stage.walk ?? 'walk_suit_bag']
-    idx = props.phase !== 'download' && sheets.look_up ? sheets.look_up.frames - 1 : 0
-    if (props.phase !== 'download' && sheets.look_up) sheet = sheets.look_up
+    // 서 있기: 도착했으면 look_up 마지막 프레임, 아니면 그 구간 걷기 시트의 첫 프레임
+    if (arrived() && sheets.look_up) {
+      sheet = sheets.look_up
+      idx = sheet.frames - 1
+    } else {
+      sheet = sheets[stage.walk ?? 'walk_suit_bag']
+      idx = 0
+    }
   }
 
   ctx.clearRect(0, 0, W, H)
@@ -126,11 +145,9 @@ function frame(now: number) {
     ctx.fillRect(x + 10, 14, 14, 3)
     ctx.fillRect(x + 14, 11, 8, 3)
   }
-  const approachX = (at: number, gap: number) =>
-    CHAR_X + gap + Math.max(0, at - sceneProgress.value) * APPROACH
   const b = sheets.company2
   if (ready(b)) {
-    const bx = approachX(90, 40)
+    const bx = worldX(STAGES[STAGES.length - 1].at, 40) - scroll
     if (bx < W) ctx.drawImage(b.img, bx, GROUND - b.h + 2)
   }
   STAGES.forEach((s, i) => {
@@ -138,7 +155,7 @@ function frame(now: number) {
     const picking = once && once.name === s.once
     if (i <= state.stage && !(picking && idx < 4)) return
     const it = sheets[s.item]
-    const x = approachX(s.at, 18)
+    const x = worldX(s.at, 18) - scroll
     if (ready(it) && x < W) ctx.drawImage(it.img, x, GROUND - it.h + 2)
   })
   if (ready(sheet))
@@ -156,11 +173,12 @@ function frame(now: number) {
   raf = requestAnimationFrame(frame)
 }
 
+/* 진행률은 목표 거리만 바꾼다. 되돌아가면(다시 시도·모델 교체) 장면을 처음부터 */
 watch(
-  sceneProgress,
+  () => props.progress,
   (p, prev) => {
     if (p < (prev ?? 0)) resetScene()
-    state = advance(state, p)
+    target = targetScroll(p)
   },
   { immediate: true },
 )
@@ -171,7 +189,9 @@ onMounted(async () => {
     ink: css.getPropertyValue('--text-3').trim(),
     sky: css.getPropertyValue('--raise').trim(),
   }
-  state = { stage: stageIndexFor(sceneProgress.value), queue: [] } // 캐시 히트 등으로 중간에서 시작하면 전환 애니 없이 그 구간부터
+  // 캐시 히트 등으로 중간(또는 도착 상태)에서 시작하면 걸어오는 연출 없이 그 자리에서 시작한다
+  scroll = target
+  state = { stage: stageIndexFor(scrollProgress(scroll)), queue: [] }
   await loadSheets()
   raf = requestAnimationFrame(frame)
 })
