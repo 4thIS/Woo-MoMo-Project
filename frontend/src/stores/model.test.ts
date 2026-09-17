@@ -182,7 +182,7 @@ describe('model store — TTS', () => {
     expect(seen).toContain('downloading')
     expect(seen).toContain('initializing')
     expect(initTts).toHaveBeenCalledWith(tts, expect.any(Function))
-    expect(synthesize).toHaveBeenCalledWith(TTS_WARMUP_TEXT)
+    expect(synthesize).toHaveBeenCalledWith(TTS_WARMUP_TEXT, expect.any(AbortSignal))
     expect(s.ttsReceived).toBe(100)
     expect(s.ttsTotal).toBe(100)
     expect(s.ttsProgress).toBe(100)

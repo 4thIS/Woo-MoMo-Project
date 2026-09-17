@@ -634,3 +634,75 @@ describe('interview flow — 합성 대기 중', () => {
     expect(s.interviewerTurn).toBe(false)
   })
 })
+
+describe('interview flow — 생성 중단과 음성', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  /** 킥오프는 즉시 답하고, '긴 답'은 abort 신호가 올 때까지 토큰을 흘리다 부분 텍스트로 resolve(실제 llm.ts와 같음) */
+  function slowSession() {
+    const sess = fakeSession(['q'])
+    sess.send = async (t, on, signal) => {
+      sess.sent.push(t)
+      if (t !== '긴 답') {
+        on(t === '면접을 시작해 주세요.' ? 'q ' : '[] ')
+        return t === '면접을 시작해 주세요.' ? 'q ' : '[] '
+      }
+      on('부분 ')
+      await new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
+      return '부분 '
+    }
+    return sess
+  }
+
+  it('생성 중 abort()로 끝난 부분 텍스트는 읽지 않고 바로 보인다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = slowSession()
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    expect(synthesize).toHaveBeenCalledTimes(1) // 킥오프 질문만
+    const sending = s.send('긴 답')
+    await vi.advanceTimersByTimeAsync(0)
+    await s.abort()
+    await sending
+    expect(synthesize).toHaveBeenCalledTimes(1)
+    expect(s.revealed).toBe('부분 ')
+    expect(s.stage).toBe('waiting')
+  })
+
+  it('생성 중 finish()는 부분 텍스트를 읽지 않고 바로 리포트를 요청한다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = slowSession()
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    const sending = s.send('긴 답')
+    await vi.advanceTimersByTimeAsync(0)
+    await s.finish()
+    await sending
+    expect(synthesize).toHaveBeenCalledTimes(1)
+    expect(playClip).toHaveBeenCalledTimes(1)
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('합성 실패로 바로 보인 질문도 at은 그 시각으로 다시 찍힌다 (답변 타이머 기준)', async () => {
+    vi.mocked(synthesize).mockImplementation(
+      () => new Promise((_r, rej) => setTimeout(() => rej(new Error('slow fail')), 3000)),
+    )
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    const genAt = s.messages[0].at!
+    await vi.advanceTimersByTimeAsync(3000)
+    await p
+    expect(s.messages[0].at).toBe(genAt + 3000)
+  })
+})

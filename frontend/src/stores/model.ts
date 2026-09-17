@@ -13,6 +13,7 @@ export type ModelStatus =
 export type TtsStatus = 'idle' | 'downloading' | 'initializing' | 'ready' | 'error'
 /** 준비 단계에서 한 번 미리 합성해 두는 문장 — 첫 질문의 합성이 워밍업 비용을 물지 않게 (spec 6절) */
 export const TTS_WARMUP_TEXT = '안녕하세요.'
+export const TTS_WARMUP_TIMEOUT_MS = 15_000
 
 export const useModelStore = defineStore('model', {
   state: () => ({
@@ -123,7 +124,12 @@ export const useModelStore = defineStore('model', {
           this.ttsTotal = t
           this.ttsStatus = r < t ? 'downloading' : 'initializing'
         })
-        await synthesize(TTS_WARMUP_TEXT).catch(() => undefined) // 워밍업 실패는 무시 — 실제 턴에서 다시 시도된다
+        // 워밍업 실패·지연은 무시 — 실제 턴에서 다시 시도된다. 상한을 두어 첫 WebGPU 실행이 멈춰도 준비 화면이 갇히지 않게
+        const warm = new AbortController()
+        const t = setTimeout(() => warm.abort(), TTS_WARMUP_TIMEOUT_MS)
+        await synthesize(TTS_WARMUP_TEXT, warm.signal)
+          .catch(() => undefined)
+          .finally(() => clearTimeout(t))
         this.ttsStatus = 'ready'
       } catch (e) {
         this.ttsStatus = 'error'

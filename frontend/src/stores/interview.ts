@@ -58,6 +58,7 @@ let systemPrompt = '' // 근사치 계산에 프리필(시스템 프롬프트) �
 let speakCtl: AbortController | null = null // 진행 중 합성의 취소(사용자 중단·15초 상한)
 let playing: { stop(): void } | null = null
 let revealTimer: ReturnType<typeof setInterval> | null = null
+let graceTimer: ReturnType<typeof setTimeout> | null = null // onended가 안 올 때의 상한
 let speakText = '' // 재생 중인 발화 전문 — 중단 시 이걸로 revealed를 채운다
 
 export const useInterviewStore = defineStore('interview', {
@@ -183,6 +184,7 @@ export const useInterviewStore = defineStore('interview', {
         abortCtl = new AbortController()
         const filter = new ThoughtFilter()
         let text = ''
+        let aborted = false // 중단된 생성의 부분 텍스트는 읽지 않는다(spec 4절: 기존대로 텍스트만)
         try {
           await session.send(
             userText,
@@ -192,6 +194,7 @@ export const useInterviewStore = defineStore('interview', {
             },
             abortCtl.signal,
           )
+          aborted = abortCtl.signal.aborted
           this.streaming += filter.flush()
           // 태그 쌍이 통째로 버퍼링되어 필터를 통과했을 수 있는 잔여 thought를 최종 텍스트에서 제거
           this.streaming = stripThoughts(this.streaming)
@@ -208,7 +211,7 @@ export const useInterviewStore = defineStore('interview', {
           this.generating = false
           abortCtl = null
         }
-        if (text) {
+        if (text && !aborted) {
           // playClip이 던져도(AudioContext 생성 실패 등) 면접이 thinking에 갇히지 않게 — 텍스트만 보이고 계속
           try {
             await this.speak(this.streaming)
@@ -216,7 +219,11 @@ export const useInterviewStore = defineStore('interview', {
             this.revealed = this.streaming
             this.ttsWarning = TTS_WARNING
           }
-        } else
+          // 답변 타이머 기준은 면접관 말이 끝난 시각 — 합성 실패·타임아웃으로 바로 보인 경우도 지금부터
+          const last = this.messages.at(-1)
+          if (last?.role === 'model') last.at = Date.now()
+        } else if (text) this.revealed = this.streaming
+        else
           this.revealed = [...this.messages].reverse().find((m) => m.role === 'model')?.text ?? ''
         this.stage = 'waiting'
         await this.refreshTokens()
@@ -272,7 +279,7 @@ export const useInterviewStore = defineStore('interview', {
       }, REVEAL_TICK_MS)
       await Promise.race([
         play.done,
-        new Promise<void>((r) => setTimeout(r, clip.durationMs + PLAY_GRACE_MS)),
+        new Promise<void>((r) => (graceTimer = setTimeout(r, clip.durationMs + PLAY_GRACE_MS))),
       ])
       this.stopSpeaking()
     },
@@ -281,6 +288,8 @@ export const useInterviewStore = defineStore('interview', {
     stopSpeaking() {
       if (revealTimer) clearInterval(revealTimer)
       revealTimer = null
+      if (graceTimer) clearTimeout(graceTimer)
+      graceTimer = null
       playing?.stop()
       playing = null
       if (!this.speaking) return

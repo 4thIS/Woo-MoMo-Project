@@ -139,6 +139,7 @@ const sheet = (name: AnimName) => ANIMS[name]
           data-test="mute"
           :aria-pressed="muted"
           :title="muted ? '소리 켜기' : '소리 끄기'"
+          :aria-label="muted ? '소리 켜기' : '소리 끄기'"
           @click="emit('toggle-mute')"
         >
           <span><SpeakerIcon :muted="muted" /></span>
