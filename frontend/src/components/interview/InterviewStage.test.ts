@@ -10,6 +10,7 @@ const base = {
   watchTick: 0,
   fieldLabel: 'IT',
   job: '백엔드',
+  muted: false,
 }
 
 describe('InterviewStage', () => {
@@ -33,6 +34,26 @@ describe('InterviewStage', () => {
     const w = mount(InterviewStage, { props: { ...base, elapsedMs: 754_000 } })
     expect(w.find('[data-test="clock"]').text()).toBe('12:34')
     expect(w.text()).not.toMatch(/질문\s*\d|\d\s*\/\s*\d|남은/)
+  })
+  it('음소거 토글: 켜짐이면 aria-pressed=false, 클릭하면 toggle-mute', async () => {
+    const w = mount(InterviewStage, { props: base })
+    const btn = w.find('[data-test="mute"]')
+    expect(btn.attributes('aria-pressed')).toBe('false')
+    expect(btn.classes()).toContain('press')
+    await btn.trigger('click')
+    expect(w.emitted('toggle-mute')).toHaveLength(1)
+    await w.setProps({ muted: true })
+    expect(w.find('[data-test="mute"]').attributes('aria-pressed')).toBe('true')
+  })
+  it('경고 한 줄은 말풍선 아래에만, 없으면 렌더하지 않는다', async () => {
+    const w = mount(InterviewStage, { props: base })
+    expect(w.find('[data-test="tts-warning"]').exists()).toBe(false)
+    await w.setProps({ warning: '음성을 만들지 못했습니다' })
+    expect(w.find('[data-test="tts-warning"]').text()).toBe('음성을 만들지 못했습니다')
+  })
+  it('생성 중(thinking)엔 말풍선이 …', () => {
+    const w = mount(InterviewStage, { props: { ...base, stage: 'thinking', bubble: '' } })
+    expect(w.find('.bubble').text()).toBe('…')
   })
 })
 
