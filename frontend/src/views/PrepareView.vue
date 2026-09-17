@@ -31,6 +31,14 @@ const phase = computed(() => {
   if (model.status !== 'ready') return model.status === 'initializing' ? 'init' : 'download'
   return model.ready ? 'ready' : 'voice'
 })
+/* 진행 창 제목도 단계를 따른다 — 아래 문구(PixelProgress caption)와 모순되지 않게 (#24) */
+const TITLE: Record<'download' | 'init' | 'voice' | 'ready' | 'error', string> = {
+  download: '면접관이 출근하는 중',
+  init: '면접관이 자리에 앉는 중',
+  voice: '면접관이 목소리를 가다듬는 중',
+  ready: '면접관이 자리에 앉았습니다',
+  error: '면접관이 오는 길에 문제가 생겼습니다',
+}
 const fileName = computed(() =>
   voice.value ? (model.manifest?.tts?.id ?? '') : (model.active?.url.split('/').pop() ?? ''),
 )
@@ -158,7 +166,7 @@ async function clearAndRetry() {
     <!-- 1. 다운로드 / 초기화 -->
     <section class="snap">
       <div class="content">
-        <PixelWindow class="rise" title="면접관이 출근하는 중" padding="sm">
+        <PixelWindow class="rise" :title="TITLE[phase]" padding="sm">
           <PixelProgress
             :progress="voice ? model.ttsProgress : model.progress"
             :phase="phase"
