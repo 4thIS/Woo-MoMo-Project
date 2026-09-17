@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 /** Supertonic 3 TTS 워커 — onnxruntime-web(WebGPU)은 이 파일에서만 import. 파이프라인은 supertonic web/helper.js(MIT) 이식 */
-import * as ort from 'onnxruntime-web/webgpu'
+// 기본 진입점(jsep 글루)이 WebGPU EP를 포함한다. '/webgpu' 진입점은 asyncify 글루를 요구해 public/ort-wasm(jsep)과 맞지 않음
+import * as ort from 'onnxruntime-web'
 import {
   DEFAULT_MAX,
   KO_JA_MAX,
