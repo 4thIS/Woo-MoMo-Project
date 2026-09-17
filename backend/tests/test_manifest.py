@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,7 +23,7 @@ def test_manifest_includes_tts_contract(client):
     body = client.get("/api/manifest").json()
     tts = body["tts"]
     assert tts["id"] == "supertonic-3"
-    assert tts["baseUrl"] == "/models/tts/supertonic-3/"
+    assert tts["baseUrl"].endswith("/")
     assert tts["voice"] == "M2" and tts["lang"] == "ko"
     paths = [f["path"] for f in tts["files"]]
     assert paths == [
@@ -41,3 +42,16 @@ def test_app_fails_to_start_on_broken_data(broken_data_dir):
     with pytest.raises(json.JSONDecodeError):
         with TestClient(create_app(data_dir=broken_data_dir)):
             pass
+
+
+HF_REVISION = re.compile(r"^https://huggingface\.co/[^/]+/[^/]+/resolve/[0-9a-f]{40}/")
+
+
+def test_repo_manifest_pins_hugging_face_revisions(repo_manifest):
+    # HF 항목은 브랜치명(main)이 아닌 커밋 해시로 고정한다(매니페스트 size와 어긋나지 않게).
+    # /models/(파이 자체 서빙) 항목은 검사하지 않는다 — 복귀는 manifest.json 수정만으로 끝난다.
+    urls = [repo_manifest["url"], repo_manifest["tts"]["baseUrl"]]
+    if repo_manifest["fallback"]:
+        urls.append(repo_manifest["fallback"]["url"])
+    hf = [u for u in urls if u.startswith("https://huggingface.co/")]
+    assert all(HF_REVISION.match(u) for u in hf), hf

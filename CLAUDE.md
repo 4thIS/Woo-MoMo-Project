@@ -9,7 +9,7 @@
 - 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 이력서·대화·리포트가 사용자 기기를 떠나지 않는다. 포트폴리오 겸 공모전 데모.
 - 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/arm64)
 - 호스팅: https://github.com/4thIS/Woo-MoMo-Project
-- 배포: 개인 라즈베리파이 웹서버. 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`.
+- 배포: 개인 라즈베리파이 웹서버. 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
 - 설계 문서: `docs/superpowers/specs/2026-09-15-mock-interview-design.md` (전체 아키텍처·화면·LLM 흐름·일정)
 
 ## 역할 분담

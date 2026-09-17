@@ -17,7 +17,7 @@ def test_data_dir_defaults_to_backend_data():
 def test_load_manifest_reads_repo_file():
     m = load_manifest(REPO_DATA / "manifest.json")
     assert isinstance(m, Manifest)
-    assert m.url.startswith("/models/")
+    assert m.url.startswith(("/models/", "https://huggingface.co/"))
 
 
 def test_load_question_sets_reads_all_five_fields():

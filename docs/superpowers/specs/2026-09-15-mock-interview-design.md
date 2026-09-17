@@ -175,7 +175,8 @@ src/
 
 ### 5.4 모델 파일 준비
 - 초기: Hugging Face에서 Gemma 4 E4B 웹용 `.litertlm`(및 E2B 폴백)을 받아 파이 볼륨에 복사.
-- 파인튜닝 성공 시: 변환된 파일을 같은 볼륨에 추가하고 `manifest.json`의 `id`·`url`·`template`·`systemPromptOverride`만 수정.
+- 2026-09-17 변경: 파이 회선이 느려 원본 모델·TTS는 **브라우저가 Hugging Face에서 직접** 받는다(매니페스트 주소만 바꿈, 커밋 고정). 파이 볼륨의 파일과 nginx `/models/`는 복귀용으로 유지한다. 파인튜닝 모델 배포 시에는 파이 서빙으로 돌아간다. 절차: `docs/specs/backend/2026-09-17-model-hosting-hf-design.md` 7절.
+- 파인튜닝 성공 시: 변환된 파일을 같은 볼륨에 추가하고 `manifest.json`의 `id`·`url`(`/models/...`)·`size`·`template`·`systemPromptOverride`만 수정.
 - 데모 노트북은 리허설 때 다운로드해 캐시를 채워 둔다. 당일 파이 회선 부하를 피한다.
 
 ## 6. 에러 처리

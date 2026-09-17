@@ -41,9 +41,26 @@ def test_manifest_allows_null_fallback_and_override():
     assert m.systemPromptOverride is None
 
 
-def test_manifest_rejects_external_url():
+HF_MODEL = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/abc123/gemma-4-E4B-it-web.litertlm"
+
+
+def test_manifest_allows_hugging_face_url():
+    m = Manifest.model_validate(_manifest(url=HF_MODEL))
+    assert m.url == HF_MODEL
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example/x.litertlm",
+        "http://huggingface.co/x.litertlm",
+        "https://huggingface.co.evil.example/x.litertlm",
+        "//huggingface.co/x.litertlm",
+    ],
+)
+def test_manifest_rejects_non_allowlisted_url(url):
     with pytest.raises(ValidationError):
-        Manifest.model_validate(_manifest(url="https://huggingface.co/x.litertlm"))
+        Manifest.model_validate(_manifest(url=url))
 
 
 def test_manifest_rejects_non_positive_size():
@@ -109,8 +126,25 @@ def test_manifest_parses_tts():
     assert [f.path for f in m.tts.files] == ["onnx/text_encoder.onnx", "voice_styles/M2.json"]
 
 
-@pytest.mark.parametrize("base", ["/static/tts/", "/models/tts", "https://x/models/tts/"])
-def test_tts_base_url_must_be_models_dir(base):
+HF_TTS_BASE = "https://huggingface.co/Supertone/supertonic-3/resolve/abc123/"
+
+
+def test_tts_base_url_allows_hugging_face_dir():
+    m = Manifest.model_validate(_manifest(tts={**TTS, "baseUrl": HF_TTS_BASE}))
+    assert m.tts is not None and m.tts.baseUrl == HF_TTS_BASE
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "/static/tts/",
+        "/models/tts",
+        "https://x/models/tts/",
+        "https://huggingface.co/Supertone/supertonic-3/resolve/abc123",
+        "https://huggingface.co.evil.example/tts/",
+    ],
+)
+def test_tts_base_url_must_be_allowlisted_dir(base):
     with pytest.raises(ValidationError):
         Manifest.model_validate(_manifest(tts={**TTS, "baseUrl": base}))
 

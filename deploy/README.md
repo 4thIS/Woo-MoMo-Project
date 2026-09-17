@@ -3,6 +3,10 @@
 파이에는 리포를 **git clone**해서 올리고, 이미지는 파이에서 직접 빌드한다(GHCR 불필요).
 프론트 빌드 산출물이 없어도 `web` 이미지는 플레이스홀더 페이지로 기동한다.
 
+> **2026-09-17: 모델·TTS 다운로드는 Hugging Face로 전환됐다.** 매니페스트가 HF 주소를 가리키므로 브라우저는 파이에서 모델을 받지 않는다.
+> 파이 볼륨 `/srv/momo/models`의 파일과 nginx `/models/` 규칙은 **복귀용으로 지우지 말고 유지**한다(HF 장애 롤백, 파인튜닝 모델 배포).
+> 복귀 절차: `docs/specs/backend/2026-09-17-model-hosting-hf-design.md` 7절. 아래 모델 배치 절차는 복귀할 때 쓴다.
+
 ## 실제 파이 구성 (webPi, 2026-09-15 기준)
 
 위의 일반 절차와 다른 점만 적는다. **이 절이 우선한다.**
@@ -28,7 +32,7 @@ curl -I -H "Range: bytes=0-1023" http://127.0.0.1:8006/models/gemma4-e4b-it-web.
 ```
 
 ### TTS 모델 파일 배치 (Supertonic 3, 약 398MB)
-`backend/data/manifest.json`의 `tts.baseUrl`·`files[].path`와 경로가 일치해야 한다.
+파이 서빙으로 복귀할 때 쓴다(현재 파일은 배치돼 있음). 매니페스트 `tts.baseUrl`을 `/models/tts/supertonic-3/`로 되돌리면, 그 경로·`files[].path`와 일치해야 한다.
 ```
 mkdir -p /srv/momo/models/tts/supertonic-3/onnx /srv/momo/models/tts/supertonic-3/voice_styles
 cd /srv/momo/models/tts/supertonic-3
