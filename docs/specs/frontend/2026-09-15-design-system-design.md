@@ -154,7 +154,7 @@
   - candidate_back(지원자 정수리, **32×32**, 정지 1장)
   - 상태 → 애니: 대기 idle/idle/idle · 질문 중 idle/**question 반복**/idle · 좋은 답변 pageflip/nod/writing(1회, nod 끝나면 react-done) · 답변 지연 신호 홀수회 center watch ↔ 짝수회 right pentap
   - 평시 잔동작(무작위 간격, 1회성): 대기 — left pageflip 18~30s, center lookside 15~25s · 듣는 중 — right writing 5~9s, center lookside/armscross/nod 15~25s, left pageflip 18~30s · 생각 중 — center nod 6~10s, right writing 5~9s. 반응·지연 동작 중이면 건너뜀
-  - 면접 화면 배율: 면접관 ×6(192px), 지원자 ×6(192×192, 무대 아래로 72px 걸침). 이전 세트(talk·react·clerk_*)는 폐기
+  - 면접 화면 배율: 면접관 ×5(160px), 지원자 ×6(192×192, 무대 아래로 80px 걸침 — 가까운 쪽이 더 크게). 이전 세트(talk·react·clerk_*)는 폐기
 - 면접실 배경은 CSS 색면(벽 `--win`, 윗띠·바닥 `--bg`, 걸레받이·책상 상판 `--raise`, 책상 앞면 `--win` + `--bg` 4px 윤곽). 이미지 아님. 별하늘은 랜딩·준비·리포트에만.
 
 ## 6. 문구 · 톤

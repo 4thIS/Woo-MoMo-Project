@@ -33,7 +33,8 @@ export const ANIMS: Record<AnimName, { file: string; frames: number; loop: boole
 }
 export const CANDIDATE_BACK = { file: '/sprites/interviewers/candidate_back.png', w: 32, h: 32 }
 export const FPS = 8
-export const SCALE = 6
+export const SCALE = 5 // 면접관 ×5(160px)
+export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 커 보이게
 
 export type Trio = Record<Char, AnimName>
 const IDLE: Trio = { left: 'left_idle', center: 'center_idle', right: 'right_idle' }

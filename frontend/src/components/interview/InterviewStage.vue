@@ -8,6 +8,7 @@ import { formatClock } from '@/utils/timing'
 import {
   ANIMS,
   CANDIDATE_BACK,
+  CANDIDATE_SCALE,
   FPS,
   LIFE,
   REACT,
@@ -154,7 +155,7 @@ const sheet = (name: AnimName) => ANIMS[name]
         :frame-w="CANDIDATE_BACK.w"
         :frame-h="CANDIDATE_BACK.h"
         :frames="1"
-        :scale="SCALE"
+        :scale="CANDIDATE_SCALE"
       />
     </div>
   </section>
@@ -235,7 +236,7 @@ const sheet = (name: AnimName) => ANIMS[name]
 /* 지원자(내 정수리)는 책상에서 한참 떨어진 아래에서 걸쳐 보인다 — 면접관과의 거리감 */
 .candidate {
   position: absolute;
-  bottom: -72px;
+  bottom: -80px;
   left: 50%;
   transform: translateX(-50%);
 }
