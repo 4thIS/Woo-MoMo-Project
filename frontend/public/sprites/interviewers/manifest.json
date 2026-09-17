@@ -1,91 +1,73 @@
 {
+ "candidate_back": {
+  "file": "candidate_back.png",
+  "frames": 1,
+  "w": 32,
+  "h": 32
+ },
+ "center_armscross": {
+  "file": "center_armscross.png",
+  "frames": 28,
+  "w": 32,
+  "h": 32
+ },
  "center_idle": {
-  "file": "sheets/center_idle.png",
-  "frames": 5,
+  "file": "center_idle.png",
+  "frames": 15,
+  "w": 32,
+  "h": 32
+ },
+ "center_lookside": {
+  "file": "center_lookside.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  },
  "center_nod": {
-  "file": "sheets/center_nod.png",
-  "frames": 5,
+  "file": "center_nod.png",
+  "frames": 11,
   "w": 32,
   "h": 32
  },
- "center_react": {
-  "file": "sheets/center_react.png",
-  "frames": 9,
-  "w": 32,
-  "h": 32
- },
- "center_talk": {
-  "file": "sheets/center_talk.png",
-  "frames": 7,
+ "center_question": {
+  "file": "center_question.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  },
  "center_watch": {
-  "file": "sheets/center_watch.png",
-  "frames": 9,
-  "w": 32,
-  "h": 32
- },
- "clerk_idle": {
-  "file": "sheets/clerk_idle.png",
-  "frames": 5,
-  "w": 32,
-  "h": 32
- },
- "clerk_write": {
-  "file": "sheets/clerk_write.png",
-  "frames": 9,
+  "file": "center_watch.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  },
  "left_idle": {
-  "file": "sheets/left_idle.png",
-  "frames": 5,
+  "file": "left_idle.png",
+  "frames": 15,
   "w": 32,
   "h": 32
  },
- "left_nod": {
-  "file": "sheets/left_nod.png",
-  "frames": 9,
+ "left_pageflip": {
+  "file": "left_pageflip.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  },
- "left_react": {
-  "file": "sheets/left_react.png",
-  "frames": 9,
+ "right_idle": {
+  "file": "right_idle.png",
+  "frames": 15,
   "w": 32,
   "h": 32
  },
- "left_watch": {
-  "file": "sheets/left_watch.png",
-  "frames": 9,
+ "right_pentap": {
+  "file": "right_pentap.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  },
- "candidate_back": {
-  "file": "sheets/candidate_back.png",
-  "frames": 1,
-  "w": 48,
-  "h": 32
- },
- "center": {
-  "file": "sheets/center.png",
-  "frames": 1,
-  "w": 32,
-  "h": 32
- },
- "clerk": {
-  "file": "sheets/clerk.png",
-  "frames": 1,
-  "w": 32,
-  "h": 32
- },
- "left": {
-  "file": "sheets/left.png",
-  "frames": 1,
+ "right_writing": {
+  "file": "right_writing.png",
+  "frames": 10,
   "w": 32,
   "h": 32
  }

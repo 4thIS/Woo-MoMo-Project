@@ -119,7 +119,7 @@ function startDownload() {
       <div class="content">
         <PixelWindow>
           <div class="intro">
-            <Avatar src="/sprites/interviewers/center_talk.png" :frames="7" />
+            <Avatar src="/sprites/interviewers/center_idle.png" :frames="15" />
             <div class="intro-text">
               <PixelTag>면접관</PixelTag>
               <SpeechText
