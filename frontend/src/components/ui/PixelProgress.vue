@@ -13,7 +13,7 @@ import { formatBytes } from '@/utils/format'
 const props = withDefaults(
   defineProps<{
     progress: number
-    phase: 'download' | 'init' | 'ready' | 'error'
+    phase: 'download' | 'init' | 'voice' | 'ready' | 'error'
     received: number
     total: number
     fileName: string
@@ -26,12 +26,13 @@ const props = withDefaults(
 
 const caption = computed(() => {
   if (props.phase === 'init') return '출근 완료 — 자리에 앉는 중'
+  if (props.phase === 'voice') return '목소리 준비 중'
   if (props.phase === 'ready') return '면접관이 자리에 앉았습니다'
   if (props.phase === 'error') return props.errorText
   return captionFor(props.progress)
 })
 const right = computed(() =>
-  props.phase === 'download'
+  props.phase === 'download' || props.phase === 'voice'
     ? [`${props.progress}%`, props.eta].filter(Boolean).join(' · ')
     : props.phase === 'init'
       ? '초기화 중'
@@ -156,7 +157,7 @@ function frame(now: number) {
 watch(
   () => props.progress,
   (p, prev) => {
-    if (p < (prev ?? 0)) resetScene()
+    if (p < (prev ?? 0) && props.phase === 'download') resetScene()
     state = advance(state, p)
   },
   { immediate: true },

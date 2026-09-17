@@ -60,4 +60,9 @@ describe('PixelProgress', () => {
     })
     expect(w.find('button').exists()).toBe(false)
   })
+  it('voice 단계: 캡션 "목소리 준비 중"과 진행률, 걷기 장면으로 돌아가지 않는다', () => {
+    const w = mount(PixelProgress, { props: { ...base, progress: 42, phase: 'voice' } })
+    expect(w.text()).toContain('목소리 준비 중')
+    expect(w.text()).toContain('42%')
+  })
 })
