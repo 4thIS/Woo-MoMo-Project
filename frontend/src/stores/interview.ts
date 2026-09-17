@@ -99,6 +99,8 @@ export const useInterviewStore = defineStore('interview', {
       return '위 항목을 채우면 열립니다'
     },
     overLimit: (s) => s.tokenCount > TOKEN_LIMIT,
+    /** 면접관 차례(생성·합성 대기·재생). 이 동안 지원자 입력과 답변 타이머는 멈춘다 */
+    interviewerTurn: (s) => s.generating || s.speaking || s.stage === 'thinking',
   },
   actions: {
     goto(phase: Phase) {
@@ -160,7 +162,7 @@ export const useInterviewStore = defineStore('interview', {
 
     async send(text: string) {
       const t = text.trim()
-      if (!t || this.generating || this.speaking || this.ended) return
+      if (!t || this.interviewerTurn || this.ended) return
       this.messages.push({ role: 'user', text: t, at: Date.now() })
       this.reactPending = isGoodAnswer(t)
       await this.generate(t)
@@ -315,7 +317,7 @@ export const useInterviewStore = defineStore('interview', {
     },
 
     setListening(on: boolean) {
-      if (this.generating || this.speaking) return
+      if (this.interviewerTurn) return
       if (on && this.stage === 'waiting') this.stage = 'listening'
       if (!on && this.stage === 'listening') this.stage = 'waiting'
     },

@@ -606,3 +606,31 @@ describe('interview flow — 음성 재생 실패', () => {
     expect(s.stage).toBe('waiting')
   })
 })
+
+describe('interview flow — 합성 대기 중', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('생성이 끝나고 합성을 기다리는 동안(thinking)도 면접관 차례라 send·setListening이 막힌다', async () => {
+    let release!: (c: ReturnType<typeof clip>) => void
+    vi.mocked(synthesize).mockReturnValue(new Promise((r) => (release = r)))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = fakeSession(['q', 'q2'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.generating).toBe(false)
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('thinking')
+    expect(s.interviewerTurn).toBe(true)
+    await s.send('끼어들기')
+    expect(sess.sent).toHaveLength(1)
+    s.setListening(true)
+    expect(s.stage).toBe('thinking')
+    release(clip(0))
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    expect(s.interviewerTurn).toBe(false)
+  })
+})
