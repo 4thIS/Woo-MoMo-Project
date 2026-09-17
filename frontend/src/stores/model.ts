@@ -11,6 +11,7 @@ import {
 import { disposeEngine, initEngine } from '@/services/llm'
 import { disposeTts, initTts, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef } from '@/types/api'
+import { overallFraction } from '@/utils/progressStages'
 
 export const MAX_NUM_TOKENS = 8192
 
@@ -53,6 +54,24 @@ export const useModelStore = defineStore('model', {
     /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
     downloadSize(): number {
       return (this.active?.size ?? 0) + this.ttsSize
+    },
+    /* 준비 화면 진행 바·장면 기준(#26): 모델 + TTS 합산 바이트. 목소리 단계에서 0으로 되돌아가지 않는다 */
+    overallTotal(): number {
+      return this.downloadSize
+    },
+    overallReceived(): number {
+      return Math.min(this.received, this.total) + Math.min(this.ttsReceived, this.ttsSize)
+    },
+    /** 0~100, 반올림하지 않은 값 — 장면은 소수 진행률로 부드럽게, 표시는 쓰는 쪽에서 반올림 */
+    overallProgress(): number {
+      return (
+        overallFraction({
+          modelSize: this.total,
+          modelReceived: this.received,
+          ttsSize: this.ttsSize,
+          ttsReceived: this.ttsReceived,
+        }) * 100
+      )
     },
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,

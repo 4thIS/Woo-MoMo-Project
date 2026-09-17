@@ -34,7 +34,7 @@ const phase = computed(() => {
 /* 진행 창 제목도 단계를 따른다 — 아래 문구(PixelProgress caption)와 모순되지 않게 (#24) */
 const TITLE: Record<'download' | 'init' | 'voice' | 'ready' | 'error', string> = {
   download: '면접관이 출근하는 중',
-  init: '면접관이 자리에 앉는 중',
+  init: '면접관이 잠깐 숨 고르는 중',
   voice: '면접관이 목소리를 가다듬는 중',
   ready: '면접관이 자리에 앉았습니다',
   error: '면접관이 오는 길에 문제가 생겼습니다',
@@ -46,10 +46,13 @@ const ttsError = computed(() => voice.value && model.ttsStatus === 'error')
 /* 남은 시간: 최근 표본 속도로 추정 */
 const eta = ref('')
 const samples: { t: number; r: number }[] = []
+const downloading = computed(
+  () => model.status === 'downloading' || (voice.value && model.ttsStatus === 'downloading'),
+)
 watch(
-  () => [model.received, model.status] as const,
-  ([r, status]) => {
-    if (status !== 'downloading') {
+  () => [model.overallReceived, downloading.value] as const,
+  ([r, on]) => {
+    if (!on) {
       eta.value = ''
       samples.length = 0
       return
@@ -63,7 +66,7 @@ watch(
       eta.value = ''
       return
     }
-    const s = Math.round((model.total - r) / rate)
+    const s = Math.round((model.overallTotal - r) / rate)
     eta.value = s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
   },
   { immediate: true },
@@ -168,10 +171,10 @@ async function clearAndRetry() {
       <div class="content">
         <PixelWindow class="rise" :title="TITLE[phase]" padding="sm">
           <PixelProgress
-            :progress="voice ? model.ttsProgress : model.progress"
+            :progress="model.overallProgress"
             :phase="phase"
-            :received="voice ? model.ttsReceived : model.received"
-            :total="voice ? model.ttsTotal : model.total"
+            :received="model.overallReceived"
+            :total="model.overallTotal"
             :file-name="fileName"
             :eta="eta"
             :error-text="
