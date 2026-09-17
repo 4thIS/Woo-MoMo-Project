@@ -7,12 +7,14 @@ vi.mock('@/services/modelCache', () => ({
   downloadModel: vi.fn(),
   clearModels: vi.fn(),
   getModelBlob: vi.fn(),
+  pruneModels: vi.fn(async () => 0),
+  cacheKey: (id: string, url: string) => `/models-cache/${id}${url}`,
 }))
 vi.mock('@/services/llm', () => ({ initEngine: vi.fn(), disposeEngine: vi.fn() }))
 vi.mock('@/services/tts', () => ({ initTts: vi.fn(), synthesize: vi.fn(), disposeTts: vi.fn() }))
 
 import { getManifest } from '@/services/api'
-import { downloadModel, getModelBlob, hasModel } from '@/services/modelCache'
+import { downloadModel, getModelBlob, hasModel, pruneModels } from '@/services/modelCache'
 import { initEngine } from '@/services/llm'
 import { disposeTts, initTts, synthesize } from '@/services/tts'
 import { TTS_WARMUP_TEXT, useModelStore } from './model'
@@ -265,5 +267,26 @@ describe('model store — TTS 재진입', () => {
     release()
     await p
     expect(s.ttsStatus).toBe('ready')
+  })
+})
+
+describe('model store — 옛 캐시 정리 (#22)', () => {
+  it('매니페스트를 읽으면 현재 모델·폴백·TTS 파일 키만 남기도록 pruneModels를 부른다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(pruneModels).toHaveBeenCalledWith([
+      '/models-cache/e4b/models/e4b.litertlm',
+      '/models-cache/e2b/models/e2b.litertlm',
+      '/models-cache/supertonic-3/models/tts/supertonic-3/a.onnx',
+      '/models-cache/supertonic-3/models/tts/supertonic-3/b.onnx',
+    ])
+  })
+  it('정리가 실패해도 매니페스트 로드는 성공이다', async () => {
+    vi.mocked(pruneModels).mockRejectedValueOnce(new Error('quota'))
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.manifest?.id).toBe('e4b')
+    expect(s.manifestError).toBeNull()
   })
 })

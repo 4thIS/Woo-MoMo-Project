@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia'
 import { getManifest } from '@/services/api'
-import { clearModels, downloadModel, getModelBlob, hasModel } from '@/services/modelCache'
+import {
+  cacheKey,
+  clearModels,
+  downloadModel,
+  getModelBlob,
+  hasModel,
+  pruneModels,
+} from '@/services/modelCache'
 import { disposeEngine, initEngine } from '@/services/llm'
 import { disposeTts, initTts, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef } from '@/types/api'
@@ -14,6 +21,14 @@ export type TtsStatus = 'idle' | 'downloading' | 'initializing' | 'ready' | 'err
 /** 준비 단계에서 한 번 미리 합성해 두는 문장 — 첫 질문의 합성이 워밍업 비용을 물지 않게 (spec 6절) */
 export const TTS_WARMUP_TEXT = '안녕하세요.'
 export const TTS_WARMUP_TIMEOUT_MS = 15_000
+
+/** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일 전부) */
+function currentCacheKeys(m: Manifest): string[] {
+  const keys = [cacheKey(m.id, m.url)]
+  if (m.fallback) keys.push(cacheKey(m.fallback.id, m.fallback.url))
+  if (m.tts) for (const f of m.tts.files) keys.push(cacheKey(m.tts.id, m.tts.baseUrl + f.path))
+  return keys
+}
 
 export const useModelStore = defineStore('model', {
   state: () => ({
@@ -45,6 +60,8 @@ export const useModelStore = defineStore('model', {
       try {
         this.manifest = await getManifest()
         this.setActive(this.manifest)
+        // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
+        await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
       } catch (e) {
         this.manifestError = e instanceof Error ? e.message : String(e)
       } finally {
