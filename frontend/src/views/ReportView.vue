@@ -17,15 +17,8 @@ const total = computed(() => totalDuration(s.startedAt, s.endedAt))
 // 자연 종료(ended)면 마지막 모델 턴은 항상 인사말(store.send()가 ended 이후 거부)이라
 // endAt을 주지 않아 표에서 제외한다. 진행 중 종료면 답 없는 마지막 질문이니 endedAt까지 센다.
 const turns = computed(() => turnDurations(s.messages, s.ended ? null : s.endedAt))
-/* 60초 제한: 초과 문항 수, 카드↔턴 1:1일 때만 카드 태그(꼬리질문이 섞이면 대응이 안 맞아 표만) */
+/* 60초 제한: 시간은 카드에 흩어놓지 않고 "시간" 창 한 곳에만 모은다 (초과 문항 수 + 행마다 초과분) */
 const overCount = computed(() => turns.value.filter((t) => overBy(t.ms) > 0).length)
-const cardTurns = computed(() =>
-  s.report && turns.value.length === s.report.length ? turns.value : null,
-)
-const answerTag = (ms: number) =>
-  overBy(ms) > 0
-    ? `답변 ${formatDuration(ms)} · ${formatDuration(overBy(ms))} 초과`
-    : `답변 ${formatDuration(ms)}`
 const timing = computed(() =>
   total.value > 0 || turns.value.length ? { total: total.value, turns: turns.value } : undefined,
 )
@@ -94,6 +87,9 @@ function printReport() {
         <li v-for="(t, i) in turns" :key="i" data-test="turn-row">
           <span class="dur" :class="{ over: overBy(t.ms) > 0 }">{{ formatDuration(t.ms) }}</span>
           <span class="q">{{ clip(t.question) }}</span>
+          <span v-if="overBy(t.ms) > 0" class="over-by" data-test="over-by"
+            >{{ formatDuration(overBy(t.ms)) }} 초과</span
+          >
         </li>
       </ol>
       <p class="mono note">
@@ -106,7 +102,7 @@ function printReport() {
     </PixelWindow>
 
     <PixelWindow v-else-if="s.reportStatus === 'error'" title="총평">
-      <p class="mono danger">리포트 생성에 실패했습니다. {{ s.genError }}</p>
+      <p class="mono err">리포트 생성에 실패했습니다. {{ s.genError }}</p>
       <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
     </PixelWindow>
 
@@ -117,11 +113,6 @@ function printReport() {
         :title="`Q${i + 1}. ${it.question}`"
         data-test="card"
       >
-        <template v-if="cardTurns" #tag>
-          <PixelTag :tone="overBy(cardTurns[i].ms) > 0 ? 'danger' : 'ok'" data-test="answer-tag">{{
-            answerTag(cardTurns[i].ms)
-          }}</PixelTag>
-        </template>
         <dl class="kv">
           <dt class="mono">답변 요약</dt>
           <dd>{{ it.answerSummary }}</dd>
@@ -195,7 +186,8 @@ function printReport() {
 .strong {
   color: var(--accent);
 }
-.danger {
+/* .danger를 쓰지 않는 이유: scoped 규칙이 자식(PixelTag) 루트의 tone 클래스에도 걸려 태그 글자색을 덮어쓴다 */
+.err {
   color: var(--danger);
 }
 .raw {
@@ -213,7 +205,7 @@ function printReport() {
 }
 .turns li {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 96px 1fr auto;
   gap: var(--sp-4);
 }
 .dur {
@@ -222,6 +214,11 @@ function printReport() {
 }
 .dur.over {
   color: var(--danger);
+}
+.over-by {
+  color: var(--danger);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
 }
 .q {
   color: var(--text-2);
