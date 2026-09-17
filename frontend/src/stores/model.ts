@@ -48,6 +48,12 @@ export const useModelStore = defineStore('model', {
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
     ttsEnabled: (s) => !!s.manifest?.tts,
+    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용 */
+    ttsSize: (s) => s.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0,
+    /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
+    downloadSize(): number {
+      return (this.active?.size ?? 0) + this.ttsSize
+    },
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
     /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready */

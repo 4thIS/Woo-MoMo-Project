@@ -270,6 +270,29 @@ describe('model store — TTS 재진입', () => {
   })
 })
 
+describe('model store — 다운로드 용량 (#27)', () => {
+  it('ttsSize는 manifest.tts 파일 합, downloadSize는 모델 + TTS', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.ttsSize).toBe(100)
+    expect(s.downloadSize).toBe(200)
+  })
+  it('tts가 없으면 ttsSize 0, downloadSize는 모델만', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.ttsSize).toBe(0)
+    expect(s.downloadSize).toBe(100)
+  })
+  it('경량 모델로 바꾸면 downloadSize도 따라간다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    s.setActive(manifest.fallback)
+    expect(s.downloadSize).toBe(150)
+  })
+})
+
 describe('model store — 옛 캐시 정리 (#22)', () => {
   it('매니페스트를 읽으면 현재 모델·폴백·TTS 파일 키만 남기도록 pruneModels를 부른다', async () => {
     vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })

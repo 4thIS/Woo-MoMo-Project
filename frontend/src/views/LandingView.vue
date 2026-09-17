@@ -4,7 +4,7 @@ import { useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import { checkEnvironment, type EnvCheck } from '@/services/gpuCheck'
 import { verdict } from '@/utils/envVerdict'
-import { formatGB } from '@/utils/format'
+import { formatGB, formatSize } from '@/utils/format'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -55,7 +55,7 @@ const envEl = ref<HTMLElement | null>(null)
 /* 장비 확인 */
 const env = ref<EnvCheck | null>(null)
 const envBusy = ref(false)
-const need = computed(() => model.active?.size ?? 0)
+const need = computed(() => model.downloadSize) // 모델 + 음성 모델 — 동의 창의 합계와 같은 값
 /* 매니페스트를 아직 못 받았으면(model.active 없음) 판정을 내리지 않는다 */
 const result = computed(() => (env.value && model.active ? verdict(env.value, need.value) : null))
 
@@ -75,10 +75,28 @@ async function onConsent(v: Consent) {
   envEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const sizeText = computed(() => (model.active ? formatGB(model.active.size) : '확인 중'))
+/* 동의 창: 모델·음성 모델·합계는 전부 매니페스트에서 (하드코딩 없음). tts가 없으면 음성·합계 행을 뺀다 */
+const sizeText = computed(() => (model.active ? formatSize(model.downloadSize) : '확인 중'))
+const tts = computed(() => model.manifest?.tts ?? null)
+const consentTitle = computed(() =>
+  tts.value
+    ? '면접관 모델·목소리 다운로드에 동의하시겠습니까?'
+    : '모델 다운로드에 동의하시겠습니까?',
+)
 const kv = computed(() => [
-  { key: '모델', value: model.active?.id ?? '확인 중' },
-  { key: '용량', value: sizeText.value },
+  {
+    key: '모델',
+    value: model.active ? `${model.active.id} · ${formatSize(model.active.size)}` : '확인 중',
+  },
+  ...(tts.value
+    ? [
+        {
+          key: '음성 모델',
+          value: `${tts.value.id} · 목소리 ${tts.value.voice} · ${formatSize(model.ttsSize)}`,
+        },
+        { key: '합계', value: sizeText.value },
+      ]
+    : []),
   { key: '저장 위치', value: '이 브라우저의 캐시' },
   { key: '삭제', value: '사이트 데이터 삭제로 언제든' },
 ])
@@ -138,7 +156,7 @@ function startDownload() {
     <!-- 3. 동의 -->
     <section class="snap">
       <div class="content">
-        <PixelWindow title="모델 다운로드에 동의하시겠습니까?">
+        <PixelWindow :title="consentTitle">
           <KeyValueGrid :items="kv" />
           <p v-if="manifestTimedOut && !model.manifest" class="mono meta err">
             서버에 연결할 수 없습니다 — 새로고침해 주세요.
