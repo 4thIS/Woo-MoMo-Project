@@ -53,10 +53,60 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('LandingView', () => {
-  it('매니페스트 용량을 동의 창에 보여준다', async () => {
+  it('매니페스트 용량을 동의 창에 보여준다 — tts가 없으면 음성·합계 행 없음', async () => {
     const w = mountView()
     await flushPromises()
     expect(w.text()).toContain('약 2.8GB')
+    expect(w.text()).not.toContain('음성 모델')
+    expect(w.text()).not.toContain('합계')
+    expect(w.text()).toContain('모델 다운로드에 동의하시겠습니까?')
+  })
+  it('tts가 있으면 음성 모델(id·목소리·용량)과 합계를 매니페스트 값으로 보여주고 제목도 바뀐다 (#27)', async () => {
+    vi.mocked(getManifest).mockResolvedValue({
+      ...manifest,
+      tts: {
+        id: 'supertonic-3',
+        baseUrl: 'https://huggingface.co/x/resolve/abc/',
+        files: [
+          { path: 'onnx/a.onnx', size: 300_000_000 },
+          { path: 'onnx/b.onnx', size: 98_653_257 },
+        ],
+        voice: 'M2',
+        lang: 'ko',
+      },
+    })
+    const w = mountView()
+    await flushPromises()
+    const text = w.text()
+    expect(text).toContain('면접관 모델·목소리 다운로드에 동의하시겠습니까?')
+    expect(text).toContain('e4b · 약 2.8GB')
+    expect(text).toContain('음성 모델')
+    expect(text).toContain('supertonic-3 · 목소리 M2 · 약 380MB')
+    expect(text).toContain('합계')
+    expect(text).toContain('약 3.1GB')
+  })
+  it('장비 확인의 필요 용량은 모델 + 음성 모델 합계다 (#27)', async () => {
+    vi.mocked(getManifest).mockResolvedValue({
+      ...manifest,
+      tts: {
+        id: 't',
+        baseUrl: '/m/',
+        files: [{ path: 'a', size: 398_653_257 }],
+        voice: 'M2',
+        lang: 'ko',
+      },
+    })
+    vi.mocked(checkEnvironment).mockResolvedValue({
+      webgpu: true,
+      webgpuReason: null,
+      gpuName: 'Test GPU',
+      storageFree: 50 * 1024 ** 3,
+    })
+    const w = mountView()
+    await flushPromises()
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('필요 3.1GB')
   })
 
   it('동의 "네"를 고르면 장비 확인 창이 열리고 결과가 나온다', async () => {
