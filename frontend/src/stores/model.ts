@@ -2,12 +2,17 @@ import { defineStore } from 'pinia'
 import { getManifest } from '@/services/api'
 import { clearModels, downloadModel, getModelBlob, hasModel } from '@/services/modelCache'
 import { disposeEngine, initEngine } from '@/services/llm'
+import { disposeTts, initTts, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef } from '@/types/api'
 
 export const MAX_NUM_TOKENS = 8192
 
 export type ModelStatus =
   'idle' | 'loading-manifest' | 'downloading' | 'downloaded' | 'initializing' | 'ready' | 'error'
+
+export type TtsStatus = 'idle' | 'downloading' | 'initializing' | 'ready' | 'error'
+/** 준비 단계에서 한 번 미리 합성해 두는 문장 — 첫 질문의 합성이 워밍업 비용을 물지 않게 (spec 6절) */
+export const TTS_WARMUP_TEXT = '안녕하세요.'
 
 export const useModelStore = defineStore('model', {
   state: () => ({
@@ -19,9 +24,18 @@ export const useModelStore = defineStore('model', {
     error: null as string | null,
     manifestError: null as string | null,
     initFailed: false,
+    ttsStatus: 'idle' as TtsStatus,
+    ttsReceived: 0,
+    ttsTotal: 0,
+    ttsError: null as string | null,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
+    ttsEnabled: (s) => !!s.manifest?.tts,
+    ttsProgress: (s) =>
+      s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
+    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready */
+    ready: (s) => s.status === 'ready' && (!s.manifest?.tts || s.ttsStatus === 'ready'),
   },
   actions: {
     async loadManifest() {
@@ -77,11 +91,40 @@ export const useModelStore = defineStore('model', {
         if (!blob) throw new Error('cached model not found')
         await initEngine(blob, { maxNumTokens: MAX_NUM_TOKENS })
         this.status = 'ready'
+        await this.loadTts()
       } catch (e) {
         this.status = 'error'
         this.initFailed = true
         this.error = e instanceof Error ? e.message : String(e)
       }
+    },
+    /** Gemma ready 뒤 TTS 파일을 받아 워커를 올리고 워밍업 한 문장을 돌린다. manifest.tts가 없으면 텍스트 전용으로 바로 ready */
+    async loadTts() {
+      const cfg = this.manifest?.tts
+      if (!cfg) {
+        this.ttsStatus = 'ready'
+        return
+      }
+      if (this.ttsStatus === 'ready') return // 경량 모델 전환 등으로 Gemma만 다시 올릴 때 TTS는 그대로 둔다
+      this.ttsStatus = 'initializing' // 캐시 조회 중에도 진행 창이 look_up을 유지하도록
+      this.ttsError = null
+      this.ttsReceived = 0
+      this.ttsTotal = cfg.files.reduce((n, f) => n + f.size, 0)
+      try {
+        await initTts(cfg, (r, t) => {
+          this.ttsReceived = r
+          this.ttsTotal = t
+          this.ttsStatus = r < t ? 'downloading' : 'initializing'
+        })
+        await synthesize(TTS_WARMUP_TEXT).catch(() => undefined) // 워밍업 실패는 무시 — 실제 턴에서 다시 시도된다
+        this.ttsStatus = 'ready'
+      } catch (e) {
+        this.ttsStatus = 'error'
+        this.ttsError = e instanceof Error ? e.message : String(e)
+      }
+    },
+    retryTts() {
+      return this.loadTts()
     },
     retry() {
       return this.download()
@@ -94,11 +137,15 @@ export const useModelStore = defineStore('model', {
     },
     async clearCache() {
       await disposeEngine()
+      disposeTts()
       await clearModels()
       this.received = 0
       this.status = 'idle'
       this.error = null
       this.initFailed = false
+      this.ttsStatus = 'idle'
+      this.ttsReceived = 0
+      this.ttsError = null
     },
   },
 })
