@@ -13,7 +13,7 @@ import { formatBytes } from '@/utils/format'
 const props = withDefaults(
   defineProps<{
     progress: number
-    phase: 'download' | 'init' | 'ready' | 'error'
+    phase: 'download' | 'init' | 'voice' | 'ready' | 'error'
     received: number
     total: number
     fileName: string
@@ -26,12 +26,13 @@ const props = withDefaults(
 
 const caption = computed(() => {
   if (props.phase === 'init') return '출근 완료 — 자리에 앉는 중'
+  if (props.phase === 'voice') return '목소리 준비 중'
   if (props.phase === 'ready') return '면접관이 자리에 앉았습니다'
   if (props.phase === 'error') return props.errorText
   return captionFor(props.progress)
 })
 const right = computed(() =>
-  props.phase === 'download'
+  props.phase === 'download' || props.phase === 'voice'
     ? [`${props.progress}%`, props.eta].filter(Boolean).join(' · ')
     : props.phase === 'init'
       ? '초기화 중'
@@ -39,6 +40,8 @@ const right = computed(() =>
 )
 
 /* ---------- 캔버스 장면 (pixel-progress/index.html 이식) ---------- */
+/** 장면이 따르는 진행률: 출근(다운로드) 동안만 실제 값, 그 뒤(초기화·목소리 준비)는 도착한 상태(100)로 고정 */
+const sceneProgress = computed(() => (props.phase === 'download' ? props.progress : 100))
 type SheetMeta = { file: string; frames: number; w: number; h: number; img?: HTMLImageElement }
 const canvas = ref<HTMLCanvasElement | null>(null)
 const W = 320
@@ -124,7 +127,7 @@ function frame(now: number) {
     ctx.fillRect(x + 14, 11, 8, 3)
   }
   const approachX = (at: number, gap: number) =>
-    CHAR_X + gap + Math.max(0, at - props.progress) * APPROACH
+    CHAR_X + gap + Math.max(0, at - sceneProgress.value) * APPROACH
   const b = sheets.company2
   if (ready(b)) {
     const bx = approachX(90, 40)
@@ -154,7 +157,7 @@ function frame(now: number) {
 }
 
 watch(
-  () => props.progress,
+  sceneProgress,
   (p, prev) => {
     if (p < (prev ?? 0)) resetScene()
     state = advance(state, p)
@@ -168,7 +171,7 @@ onMounted(async () => {
     ink: css.getPropertyValue('--text-3').trim(),
     sky: css.getPropertyValue('--raise').trim(),
   }
-  state = { stage: stageIndexFor(props.progress), queue: [] } // 캐시 히트 등으로 중간에서 시작하면 전환 애니 없이 그 구간부터
+  state = { stage: stageIndexFor(sceneProgress.value), queue: [] } // 캐시 히트 등으로 중간에서 시작하면 전환 애니 없이 그 구간부터
   await loadSheets()
   raf = requestAnimationFrame(frame)
 })

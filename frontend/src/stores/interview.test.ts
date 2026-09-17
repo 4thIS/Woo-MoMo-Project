@@ -1,18 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/services/api', () => ({ getQuestions: vi.fn(), getManifest: vi.fn() }))
 vi.mock('@/services/llm', () => ({ startSession: vi.fn() }))
+vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
+vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
 import { getQuestions } from '@/services/api'
 import { startSession } from '@/services/llm'
 import type { LlmSession } from '@/services/llm'
 import { useModelStore } from './model'
-import { useInterviewStore } from './interview'
+import { synthesize } from '@/services/tts'
+import { playClip, setMuted } from '@/services/audio'
+import { PLAY_GRACE_MS, SYNTH_TIMEOUT_MS, TTS_WARNING, useInterviewStore } from './interview'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  localStorage.clear()
   vi.mocked(getQuestions).mockResolvedValue({
     field: 'it',
     questions: ['q1', 'q2', 'q3', 'q4', 'q5'],
@@ -365,5 +370,339 @@ describe('interview flow', () => {
     await s.finish()
     expect(s.endedAt).toBe(2_000_000)
     vi.useRealTimers()
+  })
+})
+
+const TTS = {
+  id: 'tts',
+  baseUrl: '/models/tts/',
+  files: [{ path: 'a', size: 1 }],
+  voice: 'M2',
+  lang: 'ko',
+}
+async function voiceStore() {
+  const s = await readyStore()
+  const m = useModelStore()
+  m.manifest = { ...m.manifest!, tts: TTS }
+  m.ttsStatus = 'ready'
+  return s
+}
+const clip = (durationMs: number) => ({
+  samples: new Float32Array(4),
+  sampleRate: 44100,
+  durationMs,
+})
+function fakePlay() {
+  let end!: () => void
+  const done = new Promise<void>((r) => (end = r))
+  return { done, stop: vi.fn(() => end()), end }
+}
+
+describe('interview flow — 음성', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('TTS가 없으면 합성 없이 텍스트를 즉시 보인다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['첫 질문']))
+    const s = await readyStore()
+    await s.start()
+    expect(synthesize).not.toHaveBeenCalled()
+    expect(s.revealed).toBe('첫 질문 ')
+    expect(s.stage).toBe('waiting')
+  })
+
+  it('생성 중엔 revealed가 비고(…), 합성 뒤 재생과 함께 글자가 균등하게 차오르며 끝나면 waiting', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(1000))
+    const play = fakePlay()
+    vi.mocked(playClip).mockReturnValue(play)
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['가나다라']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.stage).toBe('speaking')
+    expect(s.speaking).toBe(true)
+    expect(s.revealed).toBe('')
+    expect(playClip).toHaveBeenCalledWith(expect.objectContaining({ durationMs: 1000 }), {
+      muted: false,
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(s.revealed).toBe('가나') // '가나다라 ' 5자 중 절반
+    play.end()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.revealed).toBe('가나다라 ')
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('waiting')
+    expect(s.messages[0].at).toBe(Date.now()) // 답변 타이머 기준 = 재생이 끝난 시각
+    await p
+  })
+
+  it('onended가 오지 않아도(suspended) durationMs + 여유 뒤에 끝난다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(1000))
+    vi.mocked(playClip).mockReturnValue(fakePlay())
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(1000 + PLAY_GRACE_MS)
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('waiting')
+    await p
+  })
+
+  it('합성 실패는 텍스트 즉시 + 경고 한 줄, 다음 턴에 경고를 지운다', async () => {
+    vi.mocked(synthesize).mockRejectedValueOnce(new Error('boom')).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q1', 'q2']))
+    const s = await voiceStore()
+    await s.start()
+    expect(s.revealed).toBe('q1 ')
+    expect(s.ttsWarning).toBe(TTS_WARNING)
+    expect(s.stage).toBe('waiting')
+    expect(playClip).not.toHaveBeenCalled()
+    const p = s.send('답')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.ttsWarning).toBeNull()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+  })
+
+  it('15초 안에 합성이 끝나지 않으면 abort 신호를 보내고 텍스트만 보인다', async () => {
+    vi.mocked(synthesize).mockImplementation(
+      (_t, signal) =>
+        new Promise((_res, rej) =>
+          signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError'))),
+        ),
+    )
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(SYNTH_TIMEOUT_MS - 1)
+    expect(s.stage).toBe('thinking')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(s.revealed).toBe('q ')
+    expect(s.ttsWarning).toBe(TTS_WARNING)
+    expect(s.stage).toBe('waiting')
+    await p
+  })
+
+  it('재생 중 abort()는 소리를 멈추고 텍스트를 전부 보인다 (경고 없음)', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(5000))
+    const play = fakePlay()
+    vi.mocked(playClip).mockReturnValue(play)
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['긴 질문']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(s.speaking).toBe(true)
+    await s.abort()
+    expect(play.stop).toHaveBeenCalled()
+    expect(s.speaking).toBe(false)
+    expect(s.revealed).toBe('긴 질문 ')
+    expect(s.ttsWarning).toBeNull()
+    expect(s.stage).toBe('waiting')
+    await p
+  })
+
+  it('재생 중엔 send·setListening이 막힌다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(5000))
+    const play = fakePlay()
+    vi.mocked(playClip).mockReturnValue(play)
+    const sess = fakeSession(['q', 'q2'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(100)
+    await s.send('끼어들기')
+    expect(sess.sent).toHaveLength(1)
+    s.setListening(true)
+    expect(s.stage).toBe('speaking')
+    play.end()
+    await vi.advanceTimersByTimeAsync(0)
+    await p
+  })
+
+  it('finish()는 재생을 멈추고 리포트를 요청한다 (리포트는 합성하지 않는다)', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(5000))
+    const play = fakePlay()
+    vi.mocked(playClip).mockReturnValue(play)
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q', '[]']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(100)
+    await s.finish()
+    expect(play.stop).toHaveBeenCalled()
+    expect(s.reportStatus).toBe('done')
+    expect(synthesize).toHaveBeenCalledTimes(1)
+    await p
+  })
+
+  it('toggleMuted는 setMuted를 부르고 momo.muted에 기억한다. 새 스토어는 저장값을 읽는다', async () => {
+    const s = await voiceStore()
+    expect(s.muted).toBe(false)
+    s.toggleMuted()
+    expect(s.muted).toBe(true)
+    expect(setMuted).toHaveBeenCalledWith(true)
+    expect(localStorage.getItem('momo.muted')).toBe('1')
+    setActivePinia(createPinia())
+    expect(useInterviewStore().muted).toBe(true)
+  })
+
+  it('muted면 playClip에 muted:true로 넘긴다', async () => {
+    localStorage.setItem('momo.muted', '1')
+    vi.mocked(synthesize).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    expect(playClip).toHaveBeenCalledWith(expect.anything(), { muted: true })
+    await p
+  })
+
+  it('reset은 재생을 멈추고 revealed·ttsWarning을 비운다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(5000))
+    const play = fakePlay()
+    vi.mocked(playClip).mockReturnValue(play)
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(100)
+    await s.reset()
+    expect(play.stop).toHaveBeenCalled()
+    expect(s.speaking).toBe(false)
+    expect(s.revealed).toBe('')
+    expect(s.stage).toBe('idle')
+    await p
+  })
+})
+
+describe('canStart — TTS', () => {
+  it('manifest.tts가 있고 ttsStatus가 ready가 아니면 잠기고 이유를 말한다', async () => {
+    const s = await readyStore()
+    const m = useModelStore()
+    m.manifest = { ...m.manifest!, tts: TTS }
+    m.ttsStatus = 'downloading'
+    expect(s.canStart).toBe(false)
+    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
+    m.ttsStatus = 'ready'
+    expect(s.canStart).toBe(true)
+  })
+})
+
+describe('interview flow — 음성 재생 실패', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('playClip이 던지면 텍스트만 보이고 경고, waiting으로 간다 (thinking에 갇히지 않음)', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(1000))
+    vi.mocked(playClip).mockImplementation(() => {
+      throw new Error('NotSupportedError')
+    })
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    await s.start()
+    expect(s.revealed).toBe('q ')
+    expect(s.ttsWarning).toBe(TTS_WARNING)
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('waiting')
+  })
+})
+
+describe('interview flow — 합성 대기 중', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('생성이 끝나고 합성을 기다리는 동안(thinking)도 면접관 차례라 send·setListening이 막힌다', async () => {
+    let release!: (c: ReturnType<typeof clip>) => void
+    vi.mocked(synthesize).mockReturnValue(new Promise((r) => (release = r)))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = fakeSession(['q', 'q2'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(s.generating).toBe(false)
+    expect(s.speaking).toBe(false)
+    expect(s.stage).toBe('thinking')
+    expect(s.interviewerTurn).toBe(true)
+    await s.send('끼어들기')
+    expect(sess.sent).toHaveLength(1)
+    s.setListening(true)
+    expect(s.stage).toBe('thinking')
+    release(clip(0))
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    expect(s.interviewerTurn).toBe(false)
+  })
+})
+
+describe('interview flow — 생성 중단과 음성', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  /** 킥오프는 즉시 답하고, '긴 답'은 abort 신호가 올 때까지 토큰을 흘리다 부분 텍스트로 resolve(실제 llm.ts와 같음) */
+  function slowSession() {
+    const sess = fakeSession(['q'])
+    sess.send = async (t, on, signal) => {
+      sess.sent.push(t)
+      if (t !== '긴 답') {
+        on(t === '면접을 시작해 주세요.' ? 'q ' : '[] ')
+        return t === '면접을 시작해 주세요.' ? 'q ' : '[] '
+      }
+      on('부분 ')
+      await new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
+      return '부분 '
+    }
+    return sess
+  }
+
+  it('생성 중 abort()로 끝난 부분 텍스트는 읽지 않고 바로 보인다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = slowSession()
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    expect(synthesize).toHaveBeenCalledTimes(1) // 킥오프 질문만
+    const sending = s.send('긴 답')
+    await vi.advanceTimersByTimeAsync(0)
+    await s.abort()
+    await sending
+    expect(synthesize).toHaveBeenCalledTimes(1)
+    expect(s.revealed).toBe('부분 ')
+    expect(s.stage).toBe('waiting')
+  })
+
+  it('생성 중 finish()는 부분 텍스트를 읽지 않고 바로 리포트를 요청한다', async () => {
+    vi.mocked(synthesize).mockResolvedValue(clip(0))
+    vi.mocked(playClip).mockImplementation(() => ({ done: Promise.resolve(), stop: vi.fn() }))
+    const sess = slowSession()
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(PLAY_GRACE_MS)
+    await p
+    const sending = s.send('긴 답')
+    await vi.advanceTimersByTimeAsync(0)
+    await s.finish()
+    await sending
+    expect(synthesize).toHaveBeenCalledTimes(1)
+    expect(playClip).toHaveBeenCalledTimes(1)
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('합성 실패로 바로 보인 질문도 at은 그 시각으로 다시 찍힌다 (답변 타이머 기준)', async () => {
+    vi.mocked(synthesize).mockImplementation(
+      () => new Promise((_r, rej) => setTimeout(() => rej(new Error('slow fail')), 3000)),
+    )
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await voiceStore()
+    const p = s.start()
+    await vi.advanceTimersByTimeAsync(0)
+    const genAt = s.messages[0].at!
+    await vi.advanceTimersByTimeAsync(3000)
+    await p
+    expect(s.messages[0].at).toBe(genAt + 3000)
   })
 })

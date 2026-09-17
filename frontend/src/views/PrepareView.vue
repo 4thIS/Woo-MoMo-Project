@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
+import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -23,17 +24,17 @@ const fieldItems = (Object.keys(FIELD_LABELS) as Field[]).map((value) => ({
   label: FIELD_LABELS[value],
 }))
 
-/* 진행 창 */
-const phase = computed(() =>
-  model.status === 'error'
-    ? 'error'
-    : model.status === 'ready'
-      ? 'ready'
-      : model.status === 'initializing'
-        ? 'init'
-        : 'download',
+/* 진행 창: Gemma(다운로드→초기화) 다음에 목소리(voice). 둘 다 끝나야 ready */
+const voice = computed(() => model.status === 'ready' && model.ttsEnabled)
+const phase = computed(() => {
+  if (model.status === 'error' || (voice.value && model.ttsStatus === 'error')) return 'error'
+  if (model.status !== 'ready') return model.status === 'initializing' ? 'init' : 'download'
+  return model.ready ? 'ready' : 'voice'
+})
+const fileName = computed(() =>
+  voice.value ? (model.manifest?.tts?.id ?? '') : (model.active?.url.split('/').pop() ?? ''),
 )
-const fileName = computed(() => model.active?.url.split('/').pop() ?? '')
+const ttsError = computed(() => voice.value && model.ttsStatus === 'error')
 /* 남은 시간: 최근 표본 속도로 추정 */
 const eta = ref('')
 const samples: { t: number; r: number }[] = []
@@ -119,6 +120,7 @@ const busy = ref(false)
 const startError = ref('')
 function start() {
   if (interview.canStart && !busy.value) {
+    warmUpAudio() // 사용자 제스처 안에서 AudioContext를 푼다
     busy.value = true
     startError.value = ''
     void interview
@@ -148,24 +150,35 @@ async function clearAndRetry() {
       <div class="content">
         <PixelWindow class="rise" title="면접관이 출근하는 중" padding="sm">
           <PixelProgress
-            :progress="model.progress"
+            :progress="voice ? model.ttsProgress : model.progress"
             :phase="phase"
-            :received="model.received"
-            :total="model.total"
+            :received="voice ? model.ttsReceived : model.received"
+            :total="voice ? model.ttsTotal : model.total"
             :file-name="fileName"
             :eta="eta"
-            :error-text="model.error ?? ''"
+            :error-text="
+              ttsError ? `목소리를 준비하지 못했습니다: ${model.ttsError}` : (model.error ?? '')
+            "
           >
             <template #actions>
-              <PixelButton variant="secondary" @click="model.retry()">다시 시도</PixelButton>
-              <PixelButton
-                v-if="model.manifest?.fallback && model.active?.id !== model.manifest.fallback.id"
-                variant="secondary"
-                @click="model.useFallback()"
-              >
-                경량 모델로 시도
-              </PixelButton>
-              <PixelButton variant="secondary" @click="clearAndRetry">캐시 지우기</PixelButton>
+              <template v-if="ttsError">
+                <PixelButton variant="secondary" data-test="retry-tts" @click="model.retryTts()">
+                  다시 시도
+                </PixelButton>
+              </template>
+              <template v-else>
+                <PixelButton variant="secondary" data-test="retry-model" @click="model.retry()">
+                  다시 시도
+                </PixelButton>
+                <PixelButton
+                  v-if="model.manifest?.fallback && model.active?.id !== model.manifest.fallback.id"
+                  variant="secondary"
+                  @click="model.useFallback()"
+                >
+                  경량 모델로 시도
+                </PixelButton>
+                <PixelButton variant="secondary" @click="clearAndRetry">캐시 지우기</PixelButton>
+              </template>
             </template>
           </PixelProgress>
         </PixelWindow>
@@ -317,6 +330,22 @@ async function clearAndRetry() {
               />
               면접관 출근 ({{
                 model.status === 'ready' ? '완료' : `다운로드 ${model.progress}% → 초기화`
+              }})
+            </li>
+            <li v-if="model.ttsEnabled">
+              <i
+                :class="{
+                  ok: model.ttsStatus === 'ready',
+                  wait: model.ttsStatus !== 'ready',
+                  blink: model.ttsStatus !== 'ready' && model.ttsStatus !== 'error',
+                }"
+              />
+              목소리 준비 ({{
+                model.ttsStatus === 'ready'
+                  ? '완료'
+                  : model.ttsStatus === 'error'
+                    ? '실패'
+                    : `${model.ttsProgress}%`
               }})
             </li>
           </ul>

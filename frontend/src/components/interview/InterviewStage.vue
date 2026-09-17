@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
+import SpeakerIcon from '@/components/ui/icons/SpeakerIcon.vue'
 import type { Stage } from '@/stores/interview'
 import { formatClock } from '@/utils/timing'
 import {
@@ -19,17 +20,22 @@ import {
   type Char,
 } from './interviewerAnims'
 
-const props = defineProps<{
-  stage: Stage
-  bubble: string
-  streaming: boolean
-  reactPending: boolean
-  watchTick: number
-  fieldLabel: string
-  job: string
-  elapsedMs?: number
-}>()
-const emit = defineEmits<{ 'react-done': []; end: [] }>()
+const props = withDefaults(
+  defineProps<{
+    stage: Stage
+    bubble: string
+    streaming: boolean
+    reactPending: boolean
+    watchTick: number
+    fieldLabel: string
+    job: string
+    elapsedMs?: number
+    muted?: boolean
+    warning?: string
+  }>(),
+  { muted: false },
+)
+const emit = defineEmits<{ 'react-done': []; end: []; 'toggle-mute': [] }>()
 
 /*
  * 세 사람의 애니 = 상태별 기본(baseAnims) 위에 캐릭터별 1회성 덮어쓰기(over).
@@ -125,13 +131,30 @@ const sheet = (name: AnimName) => ANIMS[name]
           formatClock(elapsedMs ?? 0)
         }}</span>
       </div>
-      <PixelButton variant="secondary" data-test="end" @click="emit('end')">면접 종료</PixelButton>
+      <div class="right">
+        <button
+          type="button"
+          class="mute press"
+          :class="{ off: muted }"
+          data-test="mute"
+          :aria-pressed="muted"
+          :title="muted ? '소리 켜기' : '소리 끄기'"
+          :aria-label="muted ? '소리 켜기' : '소리 끄기'"
+          @click="emit('toggle-mute')"
+        >
+          <span><SpeakerIcon :muted="muted" /></span>
+        </button>
+        <PixelButton variant="secondary" data-test="end" @click="emit('end')"
+          >면접 종료</PixelButton
+        >
+      </div>
     </div>
 
     <div class="bubble mono" :class="{ streaming }" aria-live="polite">
       <span>{{ bubble || '…' }}</span
       ><span v-if="streaming" class="blink">▌</span>
     </div>
+    <p v-if="warning" class="mono warning" data-test="tts-warning">{{ warning }}</p>
 
     <div class="row">
       <SpriteFrame
@@ -197,6 +220,31 @@ const sheet = (name: AnimName) => ANIMS[name]
   font-size: var(--fs-label);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mute {
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--raise);
+  color: var(--accent);
+  border: 2px solid var(--line);
+  --press-shadow: var(--raise);
+  box-shadow: 4px 4px 0 var(--press-shadow);
+  cursor: pointer;
+}
+.mute.off {
+  color: var(--text-3);
+}
+.warning {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-meta);
+  color: var(--danger);
 }
 .bubble {
   margin-top: 56px;

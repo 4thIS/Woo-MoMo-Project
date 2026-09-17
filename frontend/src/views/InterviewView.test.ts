@@ -10,6 +10,8 @@ vi.mock('@/services/speech', () => ({
   stopSpeech: vi.fn(),
   isSpeechActive: () => false,
 }))
+vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
+vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
 import { useInterviewStore } from '@/stores/interview'
 import InterviewView from './InterviewView.vue'
 
@@ -27,9 +29,51 @@ function mountWith(patch: Partial<ReturnType<typeof useInterviewStore>['$state']
 }
 
 describe('InterviewView', () => {
-  it('말풍선에는 스트리밍 중 텍스트, 아니면 마지막 면접관 발화', () => {
-    const { w } = mountWith({ messages: [{ role: 'model', text: '첫 질문' }] })
-    expect(w.text()).toContain('첫 질문')
+  it('말풍선은 revealed(음성에 맞춰 드러난 부분)만 보인다', () => {
+    const { w } = mountWith({
+      messages: [{ role: 'model', text: '첫 질문입니다' }],
+      revealed: '첫 질',
+    })
+    expect(w.find('.bubble').text()).toBe('첫 질')
+  })
+  it('speaking 중엔 말하기·전송이 잠기고 답변 타이머가 없다', () => {
+    const { w } = mountWith({
+      stage: 'speaking',
+      speaking: true,
+      messages: [{ role: 'model', text: 'q', at: Date.now() }],
+    })
+    expect((w.find('[data-test="send"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((w.find('textarea').element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(w.find('[data-test="answer-timer"]').exists()).toBe(false)
+  })
+  it('합성 대기 중(thinking, 생성 끝)에도 입력이 잠기고 타이머가 없다', () => {
+    const { w } = mountWith({
+      stage: 'thinking',
+      generating: false,
+      speaking: false,
+      messages: [{ role: 'model', text: 'q', at: Date.now() }],
+    })
+    expect((w.find('textarea').element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(w.find('[data-test="answer-timer"]').exists()).toBe(false)
+  })
+  it('ended여도 speaking 중엔 마무리 창을 띄우지 않는다', async () => {
+    const { w, s } = mountWith({
+      stage: 'speaking',
+      speaking: true,
+      ended: true,
+      messages: [{ role: 'model', text: '마치겠습니다', at: Date.now() }],
+    })
+    expect(w.find('[data-test="closing"]').exists()).toBe(false)
+    s.$patch({ speaking: false, stage: 'waiting' })
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="closing"]').exists()).toBe(true)
+  })
+  it('음소거 토글은 store.toggleMuted, 경고는 store.ttsWarning', async () => {
+    const { w, s } = mountWith({ ttsWarning: '음성을 만들지 못했습니다' })
+    const toggle = vi.spyOn(s, 'toggleMuted').mockImplementation(() => undefined)
+    expect(w.find('[data-test="tts-warning"]').text()).toBe('음성을 만들지 못했습니다')
+    await w.find('[data-test="mute"]').trigger('click')
+    expect(toggle).toHaveBeenCalled()
   })
   it('면접 종료 → 인라인 확인 → 확인하면 finish', async () => {
     const { w, s } = mountWith({ messages: [{ role: 'model', text: 'q' }] })

@@ -11,11 +11,9 @@ import { answerLeftMs } from '@/utils/timing'
 const s = useInterviewStore()
 
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
-const lastModel = computed(
-  () => [...s.messages].reverse().find((m) => m.role === 'model')?.text ?? '',
+const inputDisabled = computed(
+  () => s.ended || s.overLimit || s.reportStatus !== 'idle' || s.interviewerTurn,
 )
-const bubble = computed(() => (s.generating ? s.streaming : lastModel.value))
-const inputDisabled = computed(() => s.ended || s.overLimit || s.reportStatus !== 'idle')
 
 /* 답변 지연 watch: waiting 20초 → 1회, 이후 30초마다 */
 const watchTick = ref(0)
@@ -47,7 +45,7 @@ const elapsedMs = computed(() => (s.startedAt ? now.value - s.startedAt : 0))
 /* 질문별 답변 타이머: 마지막 메시지가 면접관 질문(생성 끝)일 때만, 그 질문이 끝난 시각부터 */
 const questionAt = computed(() => {
   const last = s.messages.at(-1)
-  return !s.generating && !s.ended && last?.role === 'model' && last.at !== undefined
+  return !s.interviewerTurn && !s.ended && last?.role === 'model' && last.at !== undefined
     ? last.at
     : null
 })
@@ -55,7 +53,7 @@ const answerLeft = computed(() => answerLeftMs(questionAt.value, now.value))
 
 /* 종료: 면접관의 마지막 인사가 끝나면 바로 넘기지 않고 마무리 창을 띄운다. 리포트는 버튼으로 */
 const confirming = ref(false)
-const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'idle')
+const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus === 'idle')
 </script>
 
 <template>
@@ -63,14 +61,17 @@ const closing = computed(() => s.ended && !s.generating && s.reportStatus === 'i
     <div class="stage-area">
       <InterviewStage
         :stage="s.stage"
-        :bubble="bubble"
-        :streaming="s.generating"
+        :bubble="s.revealed"
+        :streaming="s.speaking"
         :react-pending="s.reactPending"
         :watch-tick="watchTick"
         :field-label="fieldLabel"
         :job="s.profile.job"
         :elapsed-ms="elapsedMs"
+        :muted="s.muted"
+        :warning="s.ttsWarning ?? ''"
         @react-done="s.consumeReact()"
+        @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />
       <div v-if="confirming" class="confirm" role="dialog">

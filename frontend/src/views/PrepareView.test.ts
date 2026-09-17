@@ -22,9 +22,24 @@ vi.mock('@/services/llm', () => ({
   disposeEngine: vi.fn(async () => {}),
   startSession: vi.fn(),
 }))
+vi.mock('@/services/tts', () => ({
+  initTts: vi.fn(async () => {}),
+  synthesize: vi.fn(async () => ({
+    samples: new Float32Array(1),
+    sampleRate: 44100,
+    durationMs: 0,
+  })),
+  disposeTts: vi.fn(),
+}))
+vi.mock('@/services/audio', () => ({
+  warmUpAudio: vi.fn(),
+  playClip: vi.fn(),
+  setMuted: vi.fn(),
+}))
 
 import { extractPdfText } from '@/services/pdf'
 import { clearModels } from '@/services/modelCache'
+import { warmUpAudio } from '@/services/audio'
 import { useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import PrepareView from './PrepareView.vue'
@@ -201,5 +216,83 @@ describe('PrepareView — 캐시 지우기 후 재다운로드', () => {
 
     expect(clearModels).toHaveBeenCalled()
     expect(useModelStore().status).toBe('ready')
+  })
+})
+
+const TTS = {
+  id: 'supertonic-3',
+  baseUrl: '/models/tts/supertonic-3/',
+  files: [{ path: 'a.onnx', size: 100 }],
+  voice: 'M2',
+  lang: 'ko',
+}
+const manifestWithTts = {
+  id: 'e4b',
+  url: '/models/e4b.litertlm',
+  size: 100,
+  template: { turnStart: '', turnEnd: '', roles: {} },
+  systemPromptOverride: null,
+  fallback: null,
+  tts: TTS,
+}
+
+describe('PrepareView — 목소리 준비', () => {
+  it('Gemma ready + TTS 다운로드 중이면 진행 창은 voice 단계에 TTS 수치, 체크리스트에 "목소리 준비"', () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.received = 100
+    m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
+    const w = mountView()
+    const stub = w.find('pixel-progress-stub')
+    expect(stub.attributes('phase')).toBe('voice')
+    expect(stub.attributes('progress')).toBe('40')
+    expect(stub.attributes('filename')).toBe('supertonic-3')
+    expect(w.text()).toContain('목소리 준비 (40%)')
+    expect((w.find('[data-test="start"]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+  it('TTS 실패면 error 단계 + 원인, 다시 시도는 retryTts만 부른다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'error', ttsError: 'size mismatch' })
+    const retryTts = vi.spyOn(m, 'retryTts').mockResolvedValue()
+    const retry = vi.spyOn(m, 'retry').mockResolvedValue()
+    const w = mount(PrepareView)
+    expect(w.text()).toContain('size mismatch')
+    expect(w.text()).toContain('목소리 준비 (실패)')
+    await w.find('[data-test="retry-tts"]').trigger('click')
+    expect(retryTts).toHaveBeenCalled()
+    expect(retry).not.toHaveBeenCalled()
+    expect(w.find('[data-test="retry-model"]').exists()).toBe(false)
+  })
+  it('manifest.tts가 없으면 체크리스트에 목소리 항목이 없고 Gemma ready면 ready 단계', () => {
+    const m = useModelStore()
+    m.manifest = { ...manifestWithTts, tts: null }
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    expect(w.text()).not.toContain('목소리 준비')
+    expect(w.find('pixel-progress-stub').attributes('phase')).toBe('ready')
+  })
+  it('면접 시작 클릭은 warmUpAudio를 먼저 부른다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    await fillProfile(w)
+    vi.mocked(extractPdfText).mockResolvedValue('가'.repeat(100))
+    const input = w.find('[data-test="file"]')
+    Object.defineProperty(input.element, 'files', {
+      value: [new File(['x'], 'cv.pdf', { type: 'application/pdf' })],
+    })
+    await input.trigger('change')
+    await flushPromises()
+    const interview = useInterviewStore()
+    const start = vi.spyOn(interview, 'start').mockResolvedValue()
+    await w.find('[data-test="start"]').trigger('click')
+    expect(warmUpAudio).toHaveBeenCalled()
+    expect(start).toHaveBeenCalled()
   })
 })
