@@ -67,6 +67,10 @@ watch(
       return
     }
     const s = Math.round((model.overallTotal - r) / rate)
+    if (s <= 0) {
+      eta.value = '' // 다 받았는데 상태가 아직 downloading인 짧은 순간 — "약 0초 남음"을 내지 않는다
+      return
+    }
     eta.value = s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
   },
   { immediate: true },

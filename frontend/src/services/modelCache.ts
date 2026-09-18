@@ -14,8 +14,9 @@ export async function getModelBlob(id: string, url: string): Promise<Blob | null
 }
 
 /**
- * 스트리밍 다운로드 + 진행률. 수신 바이트가 expectedSize(매니페스트 size)와 다르면 캐시에 저장하지 않는다(설계서 6절).
- * Content-Length가 있으면 그것도 대조한다.
+ * 스트리밍 다운로드 + 진행률. 청크를 메모리에 모으지 않고 Cache API에 바로 흘려 넣는다 —
+ * 3GB를 JS 힙에 쌓으면(+ Blob 복사) 4GB 탭 한도에 닿아 GC 스톨·크래시가 난다.
+ * 수신 바이트가 expectedSize(매니페스트 size)·Content-Length와 다르면 항목을 지우고 던진다(설계서 6절).
  */
 export async function downloadModel(
   id: string,
@@ -27,25 +28,31 @@ export async function downloadModel(
   const res = await fetch(url, { signal })
   if (!res.ok || !res.body) throw new Error(`model fetch ${res.status}`)
   const declared = Number(res.headers.get('Content-Length') ?? expectedSize)
-  const reader = res.body.getReader()
-  const chunks: Uint8Array[] = []
   let received = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    received += value.byteLength
-    onProgress(received)
-  }
-  if (received !== expectedSize || received !== declared)
-    throw new Error(`incomplete: ${received}/${expectedSize}`)
-  // TS6 Uint8Array<ArrayBufferLike> vs BlobPart의 ArrayBufferView<ArrayBuffer> 불일치(타입 전용, fetch 바디는 항상 실제 ArrayBuffer).
-  const blob = new Blob(chunks as BlobPart[], { type: 'application/octet-stream' })
-  const cache = await caches.open(CACHE)
-  await cache.put(
-    cacheKey(id, url),
-    new Response(blob, { headers: { 'Content-Length': String(received) } }),
+  const counted = res.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, ctl) {
+        received += chunk.byteLength
+        onProgress(received)
+        ctl.enqueue(chunk)
+      },
+    }),
   )
+  const cache = await caches.open(CACHE)
+  const key = cacheKey(id, url)
+  try {
+    await cache.put(
+      key,
+      new Response(counted, { headers: { 'Content-Type': 'application/octet-stream' } }),
+    )
+  } catch (e) {
+    await cache.delete(key).catch(() => undefined) // 중간에 끊긴 항목이 남지 않게
+    throw e
+  }
+  if (received !== expectedSize || received !== declared) {
+    await cache.delete(key).catch(() => undefined)
+    throw new Error(`incomplete: ${received}/${expectedSize}`)
+  }
 }
 
 export async function clearModels(): Promise<void> {

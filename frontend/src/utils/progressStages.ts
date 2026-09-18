@@ -56,29 +56,50 @@ export function captionFor(progress: number): string {
   return STAGES[stageIndexFor(progress)].caption
 }
 
-/* ---------- 장면 스크롤 (#25): 바닥·물건·건물이 같은 월드 좌표를 쓴다 ---------- */
-/** 출발 → 회사 앞까지의 월드 거리(px). 진행률 1% = 20px — 건물(가로 320px 화면)이 약 87%부터, 즉 TTS 다운로드 구간에 보인다 */
-export const TRACK = 2000
-/** 회사 앞 도착 지점(%). 그 뒤(TTS 초기화·워밍업)는 서서 기다린다 */
-export const ARRIVE_AT = STAGES[STAGES.length - 1].at
-/** 장면이 따라가는 최대 속도(px/s). 다운로드가 튀어도 화면은 이 속도로 걷는다 (전 구간 약 33초) */
-export const SCROLL_MAX = 60
+/* ---------- 장면 (#25): 캐릭터는 트레드밀처럼 일정 속도로 걷고, 물건·건물은 "도착 예정 시각 × 걷는 속도"만큼
+ * 앞에 두어 바닥과 같은 속도로 다가온다. 진행이 멈추면(초기화 구간) 바닥·물건도 함께 멈춘다. ---------- */
+/** 걷는 속도(px/s) = 바닥·물건이 흐르는 속도 */
+export const SCROLL = 40
+/** 진행 속도를 재는 창(ms). 이 안에서 진행률이 안 변하면 멈춘 것으로 본다 */
+export const RATE_WINDOW_MS = 4000
 
-/** 진행률(0~100, 소수 가능)에 해당하는 목표 스크롤 */
-export function targetScroll(progress: number): number {
-  return (Math.min(Math.max(progress, 0), ARRIVE_AT) / 100) * TRACK
+export interface Sample {
+  t: number
+  p: number
+}
+/** 최근 창의 진행 속도(%/s). 표본이 모자라거나 진행률이 안 변했으면 0 */
+export function progressRate(samples: Sample[], now: number, window = RATE_WINDOW_MS): number {
+  const recent = samples.filter((s) => now - s.t <= window)
+  if (recent.length < 2) return 0
+  const a = recent[0]
+  const b = recent[recent.length - 1]
+  const dt = (b.t - a.t) / 1000
+  return dt > 0 && b.p > a.p ? (b.p - a.p) / dt : 0
 }
 
-/** 한 프레임 이동: 일정 속도로 목표를 향해 가고 목표에서 멈춘다. 뒤로는 가지 않는다 */
-export function followScroll(scroll: number, target: number, dt: number, max = SCROLL_MAX): number {
-  const gap = target - scroll
-  if (gap <= 0) return scroll
-  return scroll + Math.min(gap, max * dt)
+/** 물건까지 남은 거리(px): (at − 진행률) ÷ 진행 속도 × 걷는 속도. 이미 지났으면 0, 속도를 모르면 null(제자리 유지) */
+export function distanceAhead(
+  at: number,
+  progress: number,
+  ratePctPerSec: number,
+  speed = SCROLL,
+): number | null {
+  if (progress >= at) return 0
+  if (ratePctPerSec <= 0) return null
+  return ((at - progress) / ratePctPerSec) * speed
 }
 
-/** 스크롤 → 진행률(%). 물건 줍기·도착 전환은 이 값으로 판정해 위치와 어긋나지 않게 한다 */
-export function scrollProgress(scroll: number): number {
-  return (scroll / TRACK) * 100
+/**
+ * 물건의 화면 x 한 프레임: 바닥과 같은 속도로 다가오고(−speed·dt), 예상 위치와의 오차는 서서히 좁힌다 — 점프 금지.
+ * 더 가까워져야 하면 최대 3배 속도로, 더 멀어져야 하면(다운로드가 느려짐) 걷는 속도의 절반 이하로만 밀려난다.
+ * target이 null(속도 모름)이면 바닥과 함께만 움직인다.
+ */
+export function approach(x: number, target: number | null, dt: number, speed = SCROLL): number {
+  const base = x - speed * dt
+  if (target === null) return base
+  const err = target - base
+  const step = Math.max(-3 * speed * dt, Math.min(0.5 * speed * dt, err * 0.5 * dt))
+  return base + step
 }
 
 /* ---------- 전체 진행률 (#26): 모델 + TTS 합산 바이트 ---------- */
