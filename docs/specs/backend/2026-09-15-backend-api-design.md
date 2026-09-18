@@ -94,4 +94,5 @@
 ## 9. 열린 결정 (plan 단계에서 확정)
 
 - GHCR 이미지 네임스페이스: 조직(`ghcr.io/4this/`) vs 개인. CI에 조직으로 넣어 두었고, 조직 패키지 권한이 안 켜지면 개인으로 바꾼다.
+  - **확정(2026-09-18): 조직 `ghcr.io/4this/woo-momo-{web,api}`.** main CI의 publish 잡이 정상 푸시 중이다. 파이는 `git pull` 후 `docker compose up -d --build`(파이 빌드)가 기본이고, `docker compose pull`은 선택이다(`deploy/README.md`).
 - 로컬 개발 시 프론트 dev 서버가 `/api`를 어떻게 붙는지(Vite proxy vs CORS). CORS 허용을 넣되 프론트 담당이 Vite proxy를 쓰면 제거 가능.
