@@ -434,3 +434,49 @@ describe('model store — 재방문 판정 (#33)', () => {
     expect(s.cached).toBe(false)
   })
 })
+
+describe('model store — 캐시 히트 시작 상태·진행률 갱신 빈도', () => {
+  it('모델이 캐시에 있으면 download()는 hasModel을 기다리기 전에 received=size — 준비 화면이 0%로 마운트되지 않는다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.modelCached).toBe(true)
+    const p = s.download()
+    expect(s.received).toBe(100) // 동기: await 이전
+    expect(s.ttsReceived).toBe(100) // TTS도 캐시에 있으니 전체 100%에서 시작
+    await p
+    expect(downloadModel).not.toHaveBeenCalled()
+  })
+  it('모델만 캐시에 있으면 모델 몫만 채워 시작하고 TTS는 0부터', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockImplementation(async (id) => id === 'e4b')
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.modelCached).toBe(true)
+    expect(s.cached).toBe(false)
+    void s.download()
+    expect(s.received).toBe(100)
+    expect(s.ttsReceived).toBe(0)
+  })
+  it('진행률은 100ms에 한 번만 스토어에 반영한다(마지막 값은 항상) — 청크마다 재렌더하지 않게', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(downloadModel).mockImplementation(async (_id, _url, _size, onProgress) => {
+        for (let r = 1; r <= 99; r++) onProgress(r) // 같은 순간에 99번
+        vi.advanceTimersByTime(150)
+        onProgress(100)
+      })
+      const s = useModelStore()
+      await s.loadManifest()
+      const seen: number[] = []
+      s.$subscribe((_m, st) => seen.push(st.received), { detached: true, flush: 'sync' })
+      await s.download()
+      const received = seen.filter((v, i) => v !== seen[i - 1])
+      expect(received.filter((v) => v > 0 && v < 100)).toHaveLength(1) // 1만 통과
+      expect(s.received).toBe(100)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

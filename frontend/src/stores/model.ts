@@ -31,6 +31,20 @@ function currentCacheKeys(m: Manifest): string[] {
   return keys
 }
 
+/** 진행률을 스토어에 반영하는 최소 간격(ms). 네트워크 청크마다(초당 수백~수천 번) 재렌더하면 준비 장면이 끊긴다 */
+export const PROGRESS_TICK_MS = 100
+/** onProgress를 간격으로 묶는다. 마지막 값(done)은 항상 통과시켜야 하므로 호출 쪽이 total을 알려준다 */
+function throttled(total: number, set: (r: number) => void): (r: number) => void {
+  let last = 0
+  return (r) => {
+    const now = Date.now()
+    if (r >= total || now - last >= PROGRESS_TICK_MS) {
+      last = now
+      set(r)
+    }
+  }
+}
+
 /** 목소리(TTS) 다운로드 선택(#36). 기본 켬. 기존 momo.muted와 같은 방식으로 기억한다 */
 const VOICE_KEY = 'momo.voice'
 function loadVoiceWanted(): boolean {
@@ -58,6 +72,8 @@ export const useModelStore = defineStore('model', {
     voiceWanted: loadVoiceWanted(),
     /** 재방문 판정(#33): 선택한 파일(모델 + 목소리)이 전부 캐시에 있는지. null = 아직 조회 전 */
     cached: null as boolean | null,
+    /** 모델 파일만 따로: download()가 캐시 조회를 기다리는 동안 준비 화면이 0%로 시작하지 않게 미리 채우는 데 쓴다 */
+    modelCached: null as boolean | null,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
@@ -116,6 +132,8 @@ export const useModelStore = defineStore('model', {
       this.active = { id: ref.id, url: ref.url, size: ref.size }
       this.total = ref.size
       this.received = 0
+      this.modelCached = null // 다른 모델 — 캐시 여부는 다시 봐야 안다
+      this.cached = null
     },
     async download() {
       if (!this.active) {
@@ -129,12 +147,22 @@ export const useModelStore = defineStore('model', {
       // 캐시 조회 동안에도 준비 화면이 look_up(초기화) 장면을 보이도록 먼저 initializing으로 둔다.
       // 캐시 미스면 downloading으로 내려간다 (spec 4.2: 캐시 히트면 downloading을 건너뛴다)
       this.status = 'initializing'
+      // 매니페스트 때 캐시를 이미 확인했다면 조회를 기다리지 않고 채워 둔다 — 준비 장면이 0%에서 다시 걸어오지 않게
+      if (this.modelCached) this.received = size
+      if (this.cached) this.ttsReceived = this.ttsSize
       try {
         if (await hasModel(id, url)) {
           this.received = size
         } else {
           this.status = 'downloading'
-          await downloadModel(id, url, size, (r) => (this.received = r), undefined)
+          this.received = 0
+          await downloadModel(
+            id,
+            url,
+            size,
+            throttled(size, (r) => (this.received = r)),
+            undefined,
+          )
         }
         this.status = 'downloaded'
       } catch (e) {
@@ -177,11 +205,12 @@ export const useModelStore = defineStore('model', {
         return
       this.ttsStatus = 'initializing' // 캐시 조회 중에도 진행 창이 look_up을 유지하도록
       this.ttsError = null
-      this.ttsReceived = 0
       this.ttsTotal = cfg.files.reduce((n, f) => n + f.size, 0)
+      if (!this.cached) this.ttsReceived = 0 // 전부 캐시면 download()가 미리 채운 값을 유지한다
       try {
+        const tick = throttled(this.ttsTotal, (r) => (this.ttsReceived = r))
         await initTts(cfg, (r, t) => {
-          this.ttsReceived = r
+          tick(r)
           this.ttsTotal = t
           this.ttsStatus = r < t ? 'downloading' : 'initializing'
         })
@@ -202,6 +231,7 @@ export const useModelStore = defineStore('model', {
       const m = this.manifest
       if (!m || !this.active) {
         this.cached = false
+        this.modelCached = false
         return
       }
       const wanted: [string, string][] = [[this.active.id, this.active.url]]
@@ -209,8 +239,10 @@ export const useModelStore = defineStore('model', {
         for (const f of m.tts.files) wanted.push([m.tts.id, m.tts.baseUrl + f.path])
       try {
         const hits = await Promise.all(wanted.map(([id, url]) => hasModel(id, url)))
+        this.modelCached = hits[0]
         this.cached = hits.every(Boolean)
       } catch {
+        this.modelCached = false
         this.cached = false
       }
     },
@@ -233,6 +265,7 @@ export const useModelStore = defineStore('model', {
       if (!this.manifest?.fallback) return
       await disposeEngine()
       this.setActive(this.manifest.fallback)
+      await this.checkCached()
       await this.download()
     },
     async clearCache() {
@@ -247,6 +280,7 @@ export const useModelStore = defineStore('model', {
       this.ttsReceived = 0
       this.ttsError = null
       this.cached = false
+      this.modelCached = false
     },
   },
 })
