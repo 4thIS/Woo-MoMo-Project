@@ -48,3 +48,41 @@ describe('ResumeForm', () => {
     expect(w.find('[data-test=form-next]').text()).toContain('이력서 완성')
   })
 })
+
+describe('ResumeForm — 한글 IME·포커스 (#41)', () => {
+  it('조합 중(isComposing) Enter는 무시한다 — 조합 확정 Enter만 넘어간다', async () => {
+    const w = mount(ResumeForm)
+    await input(w).setValue('홍길동')
+    await input(w).trigger('keydown.enter', { isComposing: true })
+    expect(w.text()).toContain('1 / 7')
+    await input(w).trigger('keydown.enter')
+    expect(w.text()).toContain('2 / 7')
+  })
+  it('긴 항목의 Ctrl+Enter도 조합 중이면 무시한다', async () => {
+    const w = mount(ResumeForm)
+    const answers = ['홍길동', '27', '한국대', '', '']
+    for (const a of answers) {
+      await input(w).setValue(a)
+      await w.find('[data-test=form-next]').trigger('click')
+    }
+    expect(w.text()).toContain('6 / 7')
+    await input(w).setValue('동아리')
+    await input(w).trigger('keydown.enter', { ctrlKey: true, isComposing: true })
+    expect(w.text()).toContain('6 / 7')
+    await input(w).trigger('keydown.enter', { ctrlKey: true })
+    expect(w.text()).toContain('7 / 7')
+  })
+  it('항목이 바뀌면 <input> 요소를 새로 만든다 — 조합 중이던 글자가 다음 항목으로 새지 않게', async () => {
+    const w = mount(ResumeForm)
+    const first = input(w).element
+    await input(w).setValue('홍길동')
+    await input(w).trigger('keydown.enter')
+    expect(input(w).element).not.toBe(first)
+  })
+  it('양식을 열면 첫 칸에 포커스가 간다', async () => {
+    const w = mount(ResumeForm, { attachTo: document.body })
+    await w.vm.$nextTick()
+    expect(document.activeElement).toBe(input(w).element)
+    w.unmount()
+  })
+})

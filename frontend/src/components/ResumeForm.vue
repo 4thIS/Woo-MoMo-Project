@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
@@ -25,6 +25,19 @@ watch(idx, () => {
   attempted.value = false
   nextTick(() => el.value?.focus())
 })
+onMounted(() => el.value?.focus()) // 열자마자 타이핑해도 첫 칸에 들어가게
+
+/** 한글 IME 조합 중 Enter는 keydown이 두 번(조합 중·확정) 오므로 조합 중인 것은 무시한다 — AnswerInput과 같은 규칙 */
+function onEnter(e: KeyboardEvent) {
+  if (e.isComposing) return
+  e.preventDefault()
+  next()
+}
+function onCtrlEnter(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.isComposing) return
+  e.preventDefault()
+  next()
+}
 
 function next() {
   if (!filled.value) {
@@ -59,6 +72,7 @@ function prev() {
     <textarea
       v-if="field.long"
       ref="el"
+      :key="field.key"
       v-model="value"
       data-test="form-input"
       class="input long"
@@ -66,12 +80,12 @@ function prev() {
       :maxlength="field.max"
       :placeholder="field.hint"
       :aria-label="field.label"
-      @keydown.ctrl.enter.prevent="next"
-      @keydown.meta.enter.prevent="next"
+      @keydown.enter="onCtrlEnter"
     />
     <input
       v-else
       ref="el"
+      :key="field.key"
       v-model="value"
       data-test="form-input"
       class="input"
@@ -79,7 +93,7 @@ function prev() {
       :inputmode="field.key === 'age' ? 'numeric' : 'text'"
       :placeholder="field.hint"
       :aria-label="field.label"
-      @keydown.enter.prevent="next"
+      @keydown.enter="onEnter"
     />
 
     <div class="foot">

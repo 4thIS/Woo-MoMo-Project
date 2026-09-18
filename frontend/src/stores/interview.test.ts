@@ -706,3 +706,22 @@ describe('interview flow — 생성 중단과 음성', () => {
     expect(s.messages[0].at).toBe(genAt + 3000)
   })
 })
+
+describe('startBlockReason — 실패와 대기를 구분한다 (#41)', () => {
+  it('Gemma 실패', async () => {
+    const s = await readyStore()
+    useModelStore().status = 'error'
+    expect(s.startBlockReason).toBe('면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도')
+  })
+  it('TTS 실패 vs 준비 중', async () => {
+    const s = await readyStore()
+    const m = useModelStore()
+    m.manifest = { ...m.manifest!, tts: TTS }
+    m.ttsStatus = 'error'
+    expect(s.startBlockReason).toBe(
+      '목소리를 준비하지 못했습니다 — 다시 시도하거나 목소리 없이 시작',
+    )
+    m.ttsStatus = 'initializing'
+    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
+  })
+})

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useModelStore } from '@/stores/model'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
@@ -138,9 +138,46 @@ function usePasted() {
   tooShort.value = interview.resumeText.length < RESUME_MIN
 }
 
-const startLabel = computed(() =>
-  interview.canStart ? '면접 시작' : `면접 시작 — ${interview.startBlockReason}`,
+/* 막힌 이유(#41): 간단 이력서를 열어 두고 '이력서 완성'을 안 누른 상태가 가장 흔한 "다 채웠는데 안 열림" */
+const startLabel = computed(() => {
+  if (interview.canStart) return '면접 시작'
+  if (formOpen.value && !interview.resumeDone && interview.profileDone)
+    return "면접 시작 — 간단 이력서의 '이력서 완성'을 눌러 주세요"
+  return `면접 시작 — ${interview.startBlockReason}`
+})
+/** 모델·목소리 실패로 막혔으면 진행 창(1번 구역)이 위에 있어 안 보이므로 올라가는 링크를 단다 */
+const blockedByError = computed(
+  () => model.status === 'error' || (model.ttsEnabled && model.ttsStatus === 'error'),
 )
+function scrollToProgress() {
+  root.value?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+/* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중이면 텍스트 전용으로 바로 시작할 길을 연다 */
+const ttsStuck = ref(false)
+let stuckTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => model.status === 'ready' && model.ttsEnabled && model.ttsStatus !== 'ready',
+  (waiting) => {
+    if (stuckTimer) clearTimeout(stuckTimer)
+    stuckTimer = null
+    ttsStuck.value = false
+    if (waiting) stuckTimer = setTimeout(() => (ttsStuck.value = true), TTS_STUCK_MS)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => stuckTimer && clearTimeout(stuckTimer))
+const voicelessOffer = computed(
+  () =>
+    model.status === 'ready' &&
+    model.ttsEnabled &&
+    (model.ttsStatus === 'error' || ttsStuck.value) &&
+    interview.profileDone &&
+    interview.resumeDone,
+)
+function startVoiceless() {
+  model.setVoiceWanted(false) // ttsEnabled=false → ready. 받아 둔 TTS 캐시는 남는다
+  start()
+}
 const busy = ref(false)
 const startError = ref('')
 function start() {
@@ -381,9 +418,29 @@ async function clearAndRetry() {
               }})
             </li>
           </ul>
-          <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
-            startLabel
-          }}</PixelButton>
+          <div class="start-btns">
+            <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
+              startLabel
+            }}</PixelButton>
+            <PixelButton
+              v-if="voicelessOffer"
+              data-test="start-voiceless"
+              variant="secondary"
+              :disabled="busy"
+              @click="startVoiceless"
+            >
+              목소리 없이 시작
+            </PixelButton>
+            <button
+              v-if="blockedByError"
+              type="button"
+              class="mono link press"
+              data-test="start-scroll-top"
+              @click="scrollToProgress"
+            >
+              ▲ 진행 창으로
+            </button>
+          </div>
           <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
         </div>
       </div>
@@ -550,6 +607,21 @@ async function clearAndRetry() {
 }
 .checklist i.wait {
   background: var(--accent);
+}
+.start-btns {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+  --press-shadow: transparent;
 }
 .start-error {
   color: var(--danger);

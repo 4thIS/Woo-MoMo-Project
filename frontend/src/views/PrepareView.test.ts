@@ -40,7 +40,7 @@ vi.mock('@/services/audio', () => ({
 import { extractPdfText } from '@/services/pdf'
 import { clearModels } from '@/services/modelCache'
 import { warmUpAudio } from '@/services/audio'
-import { useModelStore } from '@/stores/model'
+import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import PrepareView from './PrepareView.vue'
 
@@ -56,6 +56,7 @@ async function fillProfile(w: ReturnType<typeof mountView>) {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   setActivePinia(createPinia())
   const m = useModelStore()
   m.active = { id: 'e4b', url: '/models/e4b.litertlm', size: 100 }
@@ -358,5 +359,70 @@ describe('PrepareView — 목소리 준비', () => {
     await w.find('[data-test="start"]').trigger('click')
     expect(warmUpAudio).toHaveBeenCalled()
     expect(start).toHaveBeenCalled()
+  })
+})
+
+describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
+  async function filled(w: ReturnType<typeof mountView>) {
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+  }
+  it('TTS 실패: 버튼 문구가 실패를 말하고, "진행 창으로" 링크와 "목소리 없이 시작"이 보인다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'error', ttsError: 'boom' })
+    const w = mountView()
+    await filled(w)
+    expect(w.find('[data-test=start]').text()).toContain('목소리를 준비하지 못했습니다')
+    expect(w.find('[data-test=start-scroll-top]').exists()).toBe(true)
+    const voiceless = w.find('[data-test=start-voiceless]')
+    expect(voiceless.exists()).toBe(true)
+    const start = vi.spyOn(useInterviewStore(), 'start').mockResolvedValue()
+    await voiceless.trigger('click')
+    await flushPromises()
+    expect(m.voiceWanted).toBe(false)
+    expect(m.ready).toBe(true)
+    expect(start).toHaveBeenCalled() // 해제 즉시 시작까지
+  })
+  it('TTS가 TTS_STUCK_MS 넘게 준비 중이면 "목소리 없이 시작"이 나타난다', async () => {
+    vi.useFakeTimers()
+    try {
+      const m = useModelStore()
+      m.manifest = manifestWithTts
+      m.status = 'ready'
+      m.$patch({ ttsStatus: 'initializing', ttsReceived: 100, ttsTotal: 100 })
+      const w = mountView()
+      await filled(w)
+      expect(w.find('[data-test=start-voiceless]').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(TTS_STUCK_MS + 1)
+      await w.vm.$nextTick()
+      expect(w.find('[data-test=start-voiceless]').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it('Gemma 실패: 문구가 실패를 말하고 "진행 창으로" 링크가 진행 창으로 스크롤한다', async () => {
+    const m = useModelStore()
+    m.status = 'error'
+    m.error = 'gpu'
+    const w = mountView()
+    await filled(w)
+    expect(w.find('[data-test=start]').text()).toContain('면접관을 준비하지 못했습니다')
+    const root = w.find('.snap-root').element as HTMLElement
+    root.scrollTo = vi.fn()
+    await w.find('[data-test=start-scroll-top]').trigger('click')
+    expect(root.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }))
+  })
+  it('간단 이력서를 열어 두고 완성을 안 눌렀으면 문구가 그걸 짚어 준다', async () => {
+    const m = useModelStore()
+    m.manifest = { ...manifestWithTts, tts: null }
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    await fillProfile(w)
+    await w.find('[data-test=form-open]').trigger('click')
+    expect(w.find('[data-test=start]').text()).toContain("'이력서 완성'을 눌러 주세요")
   })
 })
