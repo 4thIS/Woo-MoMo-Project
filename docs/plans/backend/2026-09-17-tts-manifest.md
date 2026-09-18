@@ -10,6 +10,8 @@
 
 **Goal:** `/api/manifest`에 optional `tts` 필드(Supertonic 3 파일 목록·목소리·언어)를 additive로 추가하고, 파이에 파일을 배치해 `/models/tts/...`로 서빙되게 한다.
 
+> **갱신 노트(2026-09-18):** 구현 완료(PR #14) 기록이다. "`tts.baseUrl`은 `/models/`로 시작" 제약과 baseUrl 값 `/models/tts/supertonic-3/`는 2026-09-17 Hugging Face 전환으로 바뀌었다. 지금 baseUrl은 `https://huggingface.co/Supertone/supertonic-3/resolve/<커밋>/`이고, 파이의 `/srv/momo/models/tts/` 파일은 복귀용으로 남겨 둔다. 기준: `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`.
+
 **Architecture:** `schemas.py`에 `TtsFile`·`TtsManifest`를 추가하고 `Manifest.tts: TtsManifest | None = None`으로 붙인다(기존 필드 불변, `extra="forbid"` 유지). `data/manifest.json`에 실제 값을 넣고, 기동 시 검증·응답 테스트로 고정한다. nginx 변경 없음(기존 `/models/` alias가 하위 디렉터리를 그대로 서빙). 배포 절차·라이선스는 문서로.
 
 **Tech Stack:** Python 3.12, FastAPI, pydantic v2, pytest (기존)

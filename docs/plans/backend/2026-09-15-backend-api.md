@@ -9,6 +9,8 @@
 
 **Goal:** FastAPI로 `/api/manifest`, `/api/questions/{field}`, `/api/health` 세 엔드포인트를 `docs/API.md`와 일치하게 만들고, nginx + docker-compose로 라즈베리파이(arm64)에 올릴 수 있는 배포 구성을 만든다.
 
+> **갱신 노트(2026-09-18):** 이 plan은 구현 완료(머지) 기록이다. 아래의 "매니페스트 `url`은 `/models/`로 시작하는 상대 경로만 허용" 제약과 예시 값은 2026-09-17 Hugging Face 전환으로 바뀌었다. 지금은 `/models/` 또는 `https://huggingface.co/`를 허용하고 매니페스트는 HF 커밋 고정 주소를 쓴다. 기준: `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`, `docs/API.md`.
+
 **Architecture:** `backend/app/schemas.py`가 응답 형태의 단일 정의(pydantic v2). `backend/app/data.py`가 기동 시 `backend/data/*.json`을 읽어 스키마 검증 후 `app.state`에 보관하고, 라우터는 그 객체를 그대로 반환한다. 파일이 깨지면 기동 실패. `deploy/`는 nginx(정적 + `/models/` Range 서빙 + `/api/` 프록시)와 FastAPI 두 컨테이너를 docker-compose로 묶는다.
 
 **Tech Stack:** Python 3.12, uv, FastAPI, pydantic v2, uvicorn, pytest + httpx, ruff / nginx:alpine, docker compose
