@@ -31,9 +31,11 @@ const props = withDefaults(
     job: string
     elapsedMs?: number
     muted?: boolean
+    /** TTS 사용 중인지. 아니면(텍스트 전용) 음소거 토글과 합성 음성 안내를 숨긴다 */
+    voice?: boolean
     warning?: string
   }>(),
-  { muted: false },
+  { muted: false, voice: true },
 )
 const emit = defineEmits<{ 'react-done': []; end: []; 'toggle-mute': [] }>()
 
@@ -133,6 +135,7 @@ const sheet = (name: AnimName) => ANIMS[name]
       </div>
       <div class="right">
         <button
+          v-if="voice"
           type="button"
           class="mute press"
           :class="{ off: muted }"
@@ -172,6 +175,10 @@ const sheet = (name: AnimName) => ANIMS[name]
       />
     </div>
     <div class="desk" />
+    <!-- Supertonic 3 OpenRAIL-M 사용 제한: 기계 생성 음성임을 명시 (#34). 음소거와 무관하게 상시 표시 -->
+    <p v-if="voice" class="mono ai-voice" data-test="ai-voice">
+      면접관 음성은 AI로 합성한 목소리입니다 (Supertonic 3)
+    </p>
     <div class="candidate">
       <SpriteFrame
         :src="CANDIDATE_BACK.file"
@@ -240,6 +247,15 @@ const sheet = (name: AnimName) => ANIMS[name]
 }
 .mute.off {
   color: var(--text-3);
+}
+.ai-voice {
+  position: absolute;
+  left: var(--sp-4);
+  bottom: var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  z-index: 2;
 }
 .warning {
   margin: var(--sp-3) 0 0;

@@ -30,12 +30,24 @@ const manifest = {
   fallback: null,
 }
 
+const TTS = {
+  id: 'supertonic-3',
+  baseUrl: 'https://huggingface.co/x/resolve/abc/',
+  files: [
+    { path: 'onnx/a.onnx', size: 300_000_000 },
+    { path: 'onnx/b.onnx', size: 98_653_257 },
+  ],
+  voice: 'M2',
+  lang: 'ko',
+}
+
 const mountView = () =>
   mount(LandingView, {
     global: { stubs: { SpeechText: { props: ['text'], template: '<p>{{ text }}</p>' } } },
   })
 
 beforeEach(() => {
+  localStorage.clear()
   setActivePinia(createPinia())
   vi.mocked(getManifest).mockResolvedValue(manifest)
   vi.mocked(checkEnvironment).mockResolvedValue({
@@ -61,29 +73,55 @@ describe('LandingView', () => {
     expect(w.text()).not.toContain('합계')
     expect(w.text()).toContain('모델 다운로드에 동의하시겠습니까?')
   })
-  it('tts가 있으면 음성 모델(id·목소리·용량)과 합계를 매니페스트 값으로 보여주고 제목도 바뀐다 (#27)', async () => {
-    vi.mocked(getManifest).mockResolvedValue({
-      ...manifest,
-      tts: {
-        id: 'supertonic-3',
-        baseUrl: 'https://huggingface.co/x/resolve/abc/',
-        files: [
-          { path: 'onnx/a.onnx', size: 300_000_000 },
-          { path: 'onnx/b.onnx', size: 98_653_257 },
-        ],
-        voice: 'M2',
-        lang: 'ko',
-      },
-    })
+  it('tts가 있으면 표에 두 행(모델·음성 모델), 이름과 용량은 다른 열, 합계는 표 아래 한 줄 (#32)', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
     const w = mountView()
     await flushPromises()
-    const text = w.text()
-    expect(text).toContain('면접관 모델·목소리 다운로드에 동의하시겠습니까?')
-    expect(text).toContain('e4b · 약 2.8GB')
-    expect(text).toContain('음성 모델')
-    expect(text).toContain('supertonic-3 · 목소리 M2 · 약 380MB')
-    expect(text).toContain('합계')
-    expect(text).toContain('약 3.1GB')
+    expect(w.text()).toContain('면접관 모델·목소리 다운로드에 동의하시겠습니까?')
+    const rows = w.findAll('[data-test="model-row"]')
+    expect(rows).toHaveLength(2)
+    const cells = (i: number) => rows[i].findAll('td').map((c) => c.text())
+    expect(cells(0)).toEqual([
+      '',
+      'e4b',
+      '약 2.8GB',
+      '이 브라우저의 캐시',
+      '사이트 데이터 삭제로 언제든',
+    ])
+    expect(cells(1).slice(1, 3)).toEqual(['supertonic-3 (목소리 M2)', '약 380MB'])
+    expect(w.findAll('th').map((h) => h.text())).toEqual([
+      '받기',
+      '모델',
+      '용량',
+      '저장 위치',
+      '삭제',
+    ])
+    expect(w.find('[data-test="total"]').text()).toBe('합계 약 3.1GB')
+    expect(w.text()).toContain('음성은 브라우저에서 AI로 합성됩니다') // #34
+  })
+  it('tts가 없으면 한 행뿐, 합계·합성 안내 없음', async () => {
+    const w = mountView()
+    await flushPromises()
+    expect(w.findAll('[data-test="model-row"]')).toHaveLength(1)
+    expect(w.find('[data-test="total"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('AI로 합성')
+  })
+  it('체크박스: Gemma는 체크 고정(비활성), 목소리는 기본 체크이고 해제하면 합계·필요 용량이 모델만 (#36)', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
+    const w = mountView()
+    await flushPromises()
+    const gemma = w.find('[data-test="pick-model"]').element as HTMLInputElement
+    const voice = w.find('[data-test="pick-voice"]')
+    expect(gemma.checked).toBe(true)
+    expect(gemma.disabled).toBe(true)
+    expect((voice.element as HTMLInputElement).checked).toBe(true)
+    await voice.setValue(false)
+    expect(useModelStore().voiceWanted).toBe(false)
+    expect(w.find('[data-test="total"]').text()).toBe('합계 약 2.8GB')
+    expect(w.text()).not.toContain('AI로 합성')
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('필요 2.8GB')
   })
   it('장비 확인의 필요 용량은 모델 + 음성 모델 합계다 (#27)', async () => {
     vi.mocked(getManifest).mockResolvedValue({
