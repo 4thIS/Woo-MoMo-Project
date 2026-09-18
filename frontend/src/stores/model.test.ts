@@ -339,3 +339,51 @@ describe('model store — 전체 진행률 (#26)', () => {
     expect(s.overallProgress).toBe(100)
   })
 })
+
+describe('model store — 목소리 선택 (#36)', () => {
+  beforeEach(() => localStorage.clear())
+  it('기본은 목소리 포함. 해제하면 ttsEnabled·ttsSize·downloadSize가 모델만 기준이 된다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.voiceWanted).toBe(true)
+    expect(s.ttsEnabled).toBe(true)
+    s.setVoiceWanted(false)
+    expect(s.ttsEnabled).toBe(false)
+    expect(s.ttsSize).toBe(0)
+    expect(s.downloadSize).toBe(100)
+    expect(s.overallTotal).toBe(100)
+  })
+  it('해제 상태면 Gemma만으로 ready이고 loadTts는 initTts 없이 텍스트 전용으로 끝난다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    s.setVoiceWanted(false)
+    await s.download()
+    expect(initTts).not.toHaveBeenCalled()
+    expect(s.ttsStatus).toBe('ready')
+    expect(s.ready).toBe(true)
+  })
+  it('선택은 localStorage momo.voice에 남고 새 스토어가 읽는다', async () => {
+    const s = useModelStore()
+    s.setVoiceWanted(false)
+    expect(localStorage.getItem('momo.voice')).toBe('0')
+    setActivePinia(createPinia())
+    expect(useModelStore().voiceWanted).toBe(false)
+  })
+  it('manifest.tts가 없으면 선택과 무관하게 ttsEnabled false', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.voiceWanted).toBe(true)
+    expect(s.ttsEnabled).toBe(false)
+  })
+  it('해제해도 옛 캐시 정리 기준(currentCacheKeys)에는 TTS 파일이 남는다 — 다시 켤 때 재다운로드 방지', async () => {
+    localStorage.setItem('momo.voice', '0')
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(vi.mocked(pruneModels).mock.calls.at(-1)?.[0]).toContain(
+      '/models-cache/supertonic-3/models/tts/supertonic-3/a.onnx',
+    )
+  })
+})

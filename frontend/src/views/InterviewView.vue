@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
+import { useModelStore } from '@/stores/model'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
@@ -9,6 +10,7 @@ import AnswerInput from '@/components/interview/AnswerInput.vue'
 import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
+const model = useModelStore()
 
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const inputDisabled = computed(
@@ -69,6 +71,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :job="s.profile.job"
         :elapsed-ms="elapsedMs"
         :muted="s.muted"
+        :voice="model.ttsEnabled"
         :warning="s.ttsWarning ?? ''"
         @react-done="s.consumeReact()"
         @toggle-mute="s.toggleMuted()"

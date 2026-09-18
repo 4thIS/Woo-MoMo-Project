@@ -13,9 +13,29 @@ vi.mock('@/services/speech', () => ({
 vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
 vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
 import { useInterviewStore } from '@/stores/interview'
+import { useModelStore } from '@/stores/model'
 import InterviewView from './InterviewView.vue'
 
-beforeEach(() => setActivePinia(createPinia()))
+beforeEach(() => {
+  localStorage.clear()
+  setActivePinia(createPinia())
+})
+
+const TTS_MANIFEST = {
+  id: 'e4b',
+  url: '/m',
+  size: 1,
+  template: { turnStart: '', turnEnd: '', roles: {} },
+  systemPromptOverride: null,
+  fallback: null,
+  tts: {
+    id: 'supertonic-3',
+    baseUrl: '/t/',
+    files: [{ path: 'a', size: 1 }],
+    voice: 'M2',
+    lang: 'ko',
+  },
+}
 
 function mountWith(patch: Partial<ReturnType<typeof useInterviewStore>['$state']>) {
   const s = useInterviewStore()
@@ -29,6 +49,17 @@ function mountWith(patch: Partial<ReturnType<typeof useInterviewStore>['$state']
 }
 
 describe('InterviewView', () => {
+  it('TTS가 켜져 있으면 무대에 합성 음성 안내와 음소거 토글, 꺼져 있으면(텍스트 전용) 둘 다 없음 (#34·#36)', async () => {
+    const m = useModelStore()
+    m.manifest = TTS_MANIFEST
+    const { w } = mountWith({ messages: [{ role: 'model', text: 'q' }] })
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(true)
+    expect(w.find('[data-test="mute"]').exists()).toBe(true)
+    m.setVoiceWanted(false)
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(false)
+    expect(w.find('[data-test="mute"]').exists()).toBe(false)
+  })
   it('말풍선은 revealed(음성에 맞춰 드러난 부분)만 보인다', () => {
     const { w } = mountWith({
       messages: [{ role: 'model', text: '첫 질문입니다' }],
@@ -69,6 +100,7 @@ describe('InterviewView', () => {
     expect(w.find('[data-test="closing"]').exists()).toBe(true)
   })
   it('음소거 토글은 store.toggleMuted, 경고는 store.ttsWarning', async () => {
+    useModelStore().manifest = TTS_MANIFEST
     const { w, s } = mountWith({ ttsWarning: '음성을 만들지 못했습니다' })
     const toggle = vi.spyOn(s, 'toggleMuted').mockImplementation(() => undefined)
     expect(w.find('[data-test="tts-warning"]').text()).toBe('음성을 만들지 못했습니다')

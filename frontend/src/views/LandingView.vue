@@ -11,7 +11,6 @@ import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import StatCard from '@/components/ui/StatCard.vue'
-import KeyValueGrid from '@/components/ui/KeyValueGrid.vue'
 import SpeechText from '@/components/ui/SpeechText.vue'
 import Avatar from '@/components/ui/Avatar.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
@@ -75,7 +74,8 @@ async function onConsent(v: Consent) {
   envEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-/* 동의 창: 모델·음성 모델·합계는 전부 매니페스트에서 (하드코딩 없음). tts가 없으면 음성·합계 행을 뺀다 */
+/* 동의 창(#32·#36): 모델별 한 행(모델·용량·저장 위치·삭제) + 첫 열 체크박스. 값은 전부 매니페스트에서 (하드코딩 없음).
+ * Gemma는 필수라 체크 고정, 목소리(TTS)는 해제 가능(기본 켬, 선택은 스토어가 기억). tts가 없으면 1행뿐 */
 const sizeText = computed(() => (model.active ? formatSize(model.downloadSize) : '확인 중'))
 const tts = computed(() => model.manifest?.tts ?? null)
 const consentTitle = computed(() =>
@@ -83,22 +83,26 @@ const consentTitle = computed(() =>
     ? '면접관 모델·목소리 다운로드에 동의하시겠습니까?'
     : '모델 다운로드에 동의하시겠습니까?',
 )
-const kv = computed(() => [
+const CACHE_CELLS = ['이 브라우저의 캐시', '사이트 데이터 삭제로 언제든']
+const rows = computed(() => [
   {
-    key: '모델',
-    value: model.active ? `${model.active.id} · ${formatSize(model.active.size)}` : '확인 중',
+    test: 'model',
+    name: model.active?.id ?? '확인 중',
+    size: model.active ? formatSize(model.active.size) : '',
+    checked: true,
+    fixed: true,
   },
   ...(tts.value
     ? [
         {
-          key: '음성 모델',
-          value: `${tts.value.id} · 목소리 ${tts.value.voice} · ${formatSize(model.ttsSize)}`,
+          test: 'voice',
+          name: `${tts.value.id} (목소리 ${tts.value.voice})`,
+          size: formatSize(tts.value.files.reduce((n, f) => n + f.size, 0)),
+          checked: model.voiceWanted,
+          fixed: false,
         },
-        { key: '합계', value: sizeText.value },
       ]
     : []),
-  { key: '저장 위치', value: '이 브라우저의 캐시' },
-  { key: '삭제', value: '사이트 데이터 삭제로 언제든' },
 ])
 const storageText = computed(() => {
   if (!env.value) return '확인 중'
@@ -157,7 +161,46 @@ function startDownload() {
     <section class="snap">
       <div class="content">
         <PixelWindow :title="consentTitle">
-          <KeyValueGrid :items="kv" />
+          <table class="models mono">
+            <thead>
+              <tr>
+                <th><span class="sr">받기</span></th>
+                <th>모델</th>
+                <th>용량</th>
+                <th>저장 위치</th>
+                <th>삭제</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(r, i) in rows"
+                :key="r.test"
+                data-test="model-row"
+                :class="{ off: !r.checked }"
+              >
+                <td>
+                  <input
+                    type="checkbox"
+                    :data-test="`pick-${r.test}`"
+                    :checked="r.checked"
+                    :disabled="r.fixed"
+                    :aria-label="r.fixed ? `${r.name} (필수)` : `${r.name} 받기`"
+                    @change="model.setVoiceWanted(($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.size }}</td>
+                <td>{{ i === 0 ? CACHE_CELLS[0] : '〃' }}</td>
+                <td>{{ i === 0 ? CACHE_CELLS[1] : '〃' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-if="tts" class="mono meta sum">
+            <span data-test="total">합계 {{ sizeText }}</span>
+            <span v-if="model.ttsEnabled" data-test="ai-voice"
+              >음성은 브라우저에서 AI로 합성됩니다</span
+            >
+          </p>
           <p v-if="manifestTimedOut && !model.manifest" class="mono meta err">
             서버에 연결할 수 없습니다 — 새로고침해 주세요.
           </p>
@@ -335,6 +378,70 @@ function startDownload() {
 .note {
   margin: 0;
   color: var(--text-2);
+}
+.models {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+.models th,
+.models td {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  vertical-align: top;
+}
+.models th {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-weight: normal;
+  border-bottom: 2px solid var(--raise);
+}
+.models td {
+  color: var(--text);
+}
+.models tr.off td {
+  color: var(--text-3);
+}
+.models input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+.models input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.sum {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+@media (max-width: 640px) {
+  .models thead {
+    display: none;
+  }
+  .models tr {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 var(--sp-3);
+    padding: var(--sp-2) 0;
+    border-bottom: 2px solid var(--raise);
+  }
+  .models td:first-child {
+    grid-row: span 4;
+  }
 }
 .meta {
   margin: 0;

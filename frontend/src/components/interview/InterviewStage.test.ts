@@ -11,6 +11,7 @@ const base = {
   fieldLabel: 'IT',
   job: '백엔드',
   muted: false,
+  voice: true,
 }
 
 describe('InterviewStage', () => {
@@ -44,6 +45,18 @@ describe('InterviewStage', () => {
     expect(w.emitted('toggle-mute')).toHaveLength(1)
     await w.setProps({ muted: true })
     expect(w.find('[data-test="mute"]').attributes('aria-pressed')).toBe('true')
+  })
+  it('voice=false(텍스트 전용)면 음소거 토글과 합성 음성 안내가 없다 (#34·#36)', () => {
+    const w = mount(InterviewStage, { props: { ...base, voice: false } })
+    expect(w.find('[data-test="mute"]').exists()).toBe(false)
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(false)
+  })
+  it('voice=true면 음소거 상태와 무관하게 AI 합성 음성 안내가 항상 보인다 (#34)', async () => {
+    const w = mount(InterviewStage, { props: { ...base, voice: true } })
+    expect(w.find('[data-test="ai-voice"]').text()).toContain('AI로 합성한 목소리')
+    expect(w.find('[data-test="ai-voice"]').text()).toContain('Supertonic 3')
+    await w.setProps({ muted: true })
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(true)
   })
   it('경고 한 줄은 말풍선 아래에만, 없으면 렌더하지 않는다', async () => {
     const w = mount(InterviewStage, { props: base })

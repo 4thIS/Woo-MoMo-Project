@@ -31,6 +31,16 @@ function currentCacheKeys(m: Manifest): string[] {
   return keys
 }
 
+/** 목소리(TTS) 다운로드 선택(#36). 기본 켬. 기존 momo.muted와 같은 방식으로 기억한다 */
+const VOICE_KEY = 'momo.voice'
+function loadVoiceWanted(): boolean {
+  try {
+    return localStorage.getItem(VOICE_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
 export const useModelStore = defineStore('model', {
   state: () => ({
     status: 'idle' as ModelStatus,
@@ -45,12 +55,16 @@ export const useModelStore = defineStore('model', {
     ttsReceived: 0,
     ttsTotal: 0,
     ttsError: null as string | null,
+    voiceWanted: loadVoiceWanted(),
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
-    ttsEnabled: (s) => !!s.manifest?.tts,
-    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용 */
-    ttsSize: (s) => s.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0,
+    /** 매니페스트에 TTS가 있고 사용자가 목소리를 선택했을 때만. 해제하면 텍스트 전용 경로(tts null)와 같다 */
+    ttsEnabled: (s) => !!s.manifest?.tts && s.voiceWanted,
+    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용. 해제면 0 */
+    ttsSize(): number {
+      return this.ttsEnabled ? (this.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0) : 0
+    },
     /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
     downloadSize(): number {
       return (this.active?.size ?? 0) + this.ttsSize
@@ -76,7 +90,9 @@ export const useModelStore = defineStore('model', {
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
     /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready */
-    ready: (s) => s.status === 'ready' && (!s.manifest?.tts || s.ttsStatus === 'ready'),
+    ready(): boolean {
+      return this.status === 'ready' && (!this.ttsEnabled || this.ttsStatus === 'ready')
+    },
   },
   actions: {
     async loadManifest() {
@@ -143,7 +159,7 @@ export const useModelStore = defineStore('model', {
     },
     /** Gemma ready 뒤 TTS 파일을 받아 워커를 올리고 워밍업 한 문장을 돌린다. manifest.tts가 없으면 텍스트 전용으로 바로 ready */
     async loadTts() {
-      const cfg = this.manifest?.tts
+      const cfg = this.ttsEnabled ? this.manifest?.tts : null
       if (!cfg) {
         this.ttsStatus = 'ready'
         return
@@ -176,6 +192,14 @@ export const useModelStore = defineStore('model', {
       } catch (e) {
         this.ttsStatus = 'error'
         this.ttsError = e instanceof Error ? e.message : String(e)
+      }
+    },
+    setVoiceWanted(on: boolean) {
+      this.voiceWanted = on
+      try {
+        localStorage.setItem(VOICE_KEY, on ? '1' : '0')
+      } catch {
+        /* 사생활 모드 등 — 이번 세션만 유지 */
       }
     },
     retryTts() {
