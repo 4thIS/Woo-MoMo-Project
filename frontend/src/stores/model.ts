@@ -56,6 +56,8 @@ export const useModelStore = defineStore('model', {
     ttsTotal: 0,
     ttsError: null as string | null,
     voiceWanted: loadVoiceWanted(),
+    /** 재방문 판정(#33): 선택한 파일(모델 + 목소리)이 전부 캐시에 있는지. null = 아직 조회 전 */
+    cached: null as boolean | null,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
@@ -103,6 +105,7 @@ export const useModelStore = defineStore('model', {
         this.setActive(this.manifest)
         // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
         await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
+        await this.checkCached()
       } catch (e) {
         this.manifestError = e instanceof Error ? e.message : String(e)
       } finally {
@@ -194,8 +197,26 @@ export const useModelStore = defineStore('model', {
         this.ttsError = e instanceof Error ? e.message : String(e)
       }
     },
+    /** 현재 선택(모델 + 켜 둔 목소리)이 모두 캐시에 있으면 재방문. 조회 실패는 첫 방문으로 */
+    async checkCached() {
+      const m = this.manifest
+      if (!m || !this.active) {
+        this.cached = false
+        return
+      }
+      const wanted: [string, string][] = [[this.active.id, this.active.url]]
+      if (this.ttsEnabled && m.tts)
+        for (const f of m.tts.files) wanted.push([m.tts.id, m.tts.baseUrl + f.path])
+      try {
+        const hits = await Promise.all(wanted.map(([id, url]) => hasModel(id, url)))
+        this.cached = hits.every(Boolean)
+      } catch {
+        this.cached = false
+      }
+    },
     setVoiceWanted(on: boolean) {
       this.voiceWanted = on
+      if (this.manifest) void this.checkCached() // 목소리 선택이 바뀌면 재방문 여부도 달라진다
       try {
         localStorage.setItem(VOICE_KEY, on ? '1' : '0')
       } catch {
@@ -225,6 +246,7 @@ export const useModelStore = defineStore('model', {
       this.ttsStatus = 'idle'
       this.ttsReceived = 0
       this.ttsError = null
+      this.cached = false
     },
   },
 })
