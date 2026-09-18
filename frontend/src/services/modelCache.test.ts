@@ -14,11 +14,14 @@ function fakeCaches() {
   const store = new Map<string, Response>()
   const cache = {
     match: async (k: string) => store.get(k) ?? undefined,
-    put: async (k: string, r: Response) => void store.set(k, r),
+    // 실제 Cache API처럼 put은 바디를 끝까지 읽어 저장한다(스트리밍 Response도 여기서 소비된다)
+    put: async (k: string, r: Response) => void store.set(k, new Response(await r.arrayBuffer())),
     // 실제 Cache API처럼 키를 절대 URL을 가진 Request 모양으로 돌려준다
     keys: async () => [...store.keys()].map((k) => ({ url: new URL(k, location.href).href })),
-    delete: async (req: { url: string }) =>
-      store.delete(new URL(req.url).pathname + new URL(req.url).search),
+    delete: async (req: string | { url: string }) =>
+      store.delete(
+        typeof req === 'string' ? req : new URL(req.url).pathname + new URL(req.url).search,
+      ),
   }
   return { open: async () => cache, delete: async () => true, _store: store }
 }
@@ -71,6 +74,29 @@ describe('modelCache', () => {
       vi.fn(async () => streamOf([new Uint8Array(3)], 5)),
     )
     await expect(downloadModel('m1', '/models/a', 5, () => {})).rejects.toThrow('incomplete')
+    expect(await hasModel('m1', '/models/a')).toBe(false)
+  })
+
+  it('스트림이 중간에 끊기면 항목을 남기지 않는다', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array(3))
+        c.error(new Error('network down'))
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'Content-Length': '5' }),
+            body,
+          }) as Response,
+      ),
+    )
+    await expect(downloadModel('m1', '/models/a', 5, () => {})).rejects.toThrow('network down')
     expect(await hasModel('m1', '/models/a')).toBe(false)
   })
 

@@ -137,17 +137,20 @@ function frame(now: number) {
     }
   }
 
+  // 픽셀 아트: 소수 좌표로 그리면 매 프레임 서브픽셀 리샘플링으로 가장자리가 흔들린다 — 정수 픽셀로 스냅해 그린다
+  const sx = Math.round(scroll)
+  ctx.imageSmoothingEnabled = false
   ctx.clearRect(0, 0, W, H)
   ctx.fillStyle = colors.ink
-  for (let x = -(scroll % 24); x < W; x += 24) ctx.fillRect(x, GROUND + 3, 8, 1)
+  for (let x = -(sx % 24); x < W; x += 24) ctx.fillRect(x, GROUND + 3, 8, 1)
   ctx.fillStyle = colors.sky
-  for (let x = -((scroll * 0.3) % 90); x < W; x += 90) {
+  for (let x = -(Math.round(sx * 0.3) % 90); x < W; x += 90) {
     ctx.fillRect(x + 10, 14, 14, 3)
     ctx.fillRect(x + 14, 11, 8, 3)
   }
   const b = sheets.company2
   if (ready(b)) {
-    const bx = worldX(STAGES[STAGES.length - 1].at, 40) - scroll
+    const bx = Math.round(worldX(STAGES[STAGES.length - 1].at, 40)) - sx
     if (bx < W) ctx.drawImage(b.img, bx, GROUND - b.h + 2)
   }
   STAGES.forEach((s, i) => {
@@ -155,7 +158,7 @@ function frame(now: number) {
     const picking = once && once.name === s.once
     if (i <= state.stage && !(picking && idx < 4)) return
     const it = sheets[s.item]
-    const x = worldX(s.at, 18) - scroll
+    const x = Math.round(worldX(s.at, 18)) - sx
     if (ready(it) && x < W) ctx.drawImage(it.img, x, GROUND - it.h + 2)
   })
   if (ready(sheet))
