@@ -22,6 +22,27 @@ export type TtsStatus = 'idle' | 'downloading' | 'initializing' | 'ready' | 'err
 /** 준비 단계에서 한 번 미리 합성해 두는 문장 — 첫 질문의 합성이 워밍업 비용을 물지 않게 (spec 6절) */
 export const TTS_WARMUP_TEXT = '안녕하세요.'
 export const TTS_WARMUP_TIMEOUT_MS = 15_000
+/** 엔진·TTS 워커 초기화 상한(#41). GPU가 멈추면 영원히 initializing에 갇히므로 넘기면 error로 보내 다시 시도·폴백·목소리 없이 시작이 열리게 */
+export const INIT_TIMEOUT_MS = 90_000
+/** Gemma는 됐는데 목소리가 이만큼 넘게 준비 중이면 준비 화면이 "목소리 없이 시작"을 내민다 */
+export const TTS_STUCK_MS = 60_000
+
+let armLoadTimeout: (() => void) | null = null // loadTts의 워커 로드 타이머를 다운로드 완료 시점에 켜는 훅
+
+/** p가 ms 안에 끝나지 않으면 label 초기화 시간 초과로 거부한다 */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout>
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      t = setTimeout(
+        () =>
+          reject(new Error(`${label} 초기화가 ${Math.round(ms / 1000)}초 안에 끝나지 않았습니다`)),
+        ms,
+      )
+    }),
+  ]).finally(() => clearTimeout(t))
+}
 
 /** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일 전부) */
 function currentCacheKeys(m: Manifest): string[] {
@@ -179,7 +200,11 @@ export const useModelStore = defineStore('model', {
       try {
         const blob = await getModelBlob(this.active.id, this.active.url)
         if (!blob) throw new Error('cached model not found')
-        await initEngine(blob, { maxNumTokens: MAX_NUM_TOKENS })
+        await withTimeout(
+          initEngine(blob, { maxNumTokens: MAX_NUM_TOKENS }),
+          INIT_TIMEOUT_MS,
+          '면접관',
+        )
         this.status = 'ready'
         await this.loadTts()
       } catch (e) {
@@ -209,11 +234,38 @@ export const useModelStore = defineStore('model', {
       if (!this.cached) this.ttsReceived = 0 // 전부 캐시면 download()가 미리 채운 값을 유지한다
       try {
         const tick = throttled(this.ttsTotal, (r) => (this.ttsReceived = r))
-        await initTts(cfg, (r, t) => {
-          tick(r)
-          this.ttsTotal = t
-          this.ttsStatus = r < t ? 'downloading' : 'initializing'
+        // 상한은 워커 로드 구간에만 건다 — 다운로드는 진행률로 살아 있음을 알 수 있고 크기가 커서 시간을 정할 수 없다.
+        // 다운로드가 끝난 시점부터 INIT_TIMEOUT_MS 안에 loaded가 안 오면 워커를 버리고 error로
+        let loadTimer: ReturnType<typeof setTimeout> | null = null
+        const loadTimeout = new Promise<never>((_, reject) => {
+          const arm = () => {
+            if (loadTimer) return
+            loadTimer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `목소리 초기화가 ${Math.round(INIT_TIMEOUT_MS / 1000)}초 안에 끝나지 않았습니다`,
+                  ),
+                ),
+              INIT_TIMEOUT_MS,
+            )
+          }
+          armLoadTimeout = arm
         })
+        try {
+          await Promise.race([
+            initTts(cfg, (r, t) => {
+              tick(r)
+              this.ttsTotal = t
+              this.ttsStatus = r < t ? 'downloading' : 'initializing'
+              if (r >= t) armLoadTimeout?.()
+            }),
+            loadTimeout,
+          ])
+        } finally {
+          if (loadTimer) clearTimeout(loadTimer)
+          armLoadTimeout = null
+        }
         // 워밍업 실패·지연은 무시 — 실제 턴에서 다시 시도된다. 상한을 두어 첫 WebGPU 실행이 멈춰도 준비 화면이 갇히지 않게
         const warm = new AbortController()
         const t = setTimeout(() => warm.abort(), TTS_WARMUP_TIMEOUT_MS)
@@ -222,6 +274,7 @@ export const useModelStore = defineStore('model', {
           .finally(() => clearTimeout(t))
         this.ttsStatus = 'ready'
       } catch (e) {
+        disposeTts() // 시간 초과로 버린 워커가 세션(약 400MB)을 붙들고 있지 않게
         this.ttsStatus = 'error'
         this.ttsError = e instanceof Error ? e.message : String(e)
       }

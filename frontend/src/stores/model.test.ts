@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 vi.mock('@/services/api', () => ({ getManifest: vi.fn() }))
@@ -17,7 +17,7 @@ import { getManifest } from '@/services/api'
 import { downloadModel, getModelBlob, hasModel, pruneModels } from '@/services/modelCache'
 import { initEngine } from '@/services/llm'
 import { disposeTts, initTts, synthesize } from '@/services/tts'
-import { TTS_WARMUP_TEXT, useModelStore } from './model'
+import { INIT_TIMEOUT_MS, TTS_WARMUP_TEXT, useModelStore } from './model'
 
 const manifest = {
   id: 'e4b',
@@ -478,5 +478,53 @@ describe('model store — 캐시 히트 시작 상태·진행률 갱신 빈도',
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('model store — 초기화 상한 (#41)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('initEngine이 끝나지 않으면 INIT_TIMEOUT_MS 뒤 error로 보내 다시 시도·폴백이 열린다', async () => {
+    vi.mocked(initEngine).mockReturnValue(new Promise(() => {}))
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    await vi.advanceTimersByTimeAsync(INIT_TIMEOUT_MS - 1)
+    expect(s.status).toBe('initializing')
+    await vi.advanceTimersByTimeAsync(1)
+    await p
+    expect(s.status).toBe('error')
+    expect(s.initFailed).toBe(true)
+    expect(s.error).toContain('초기화')
+  })
+  it('initTts(워커 로드)가 끝나지 않으면 INIT_TIMEOUT_MS 뒤 ttsStatus error + disposeTts', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    // 실제 initTts처럼 다운로드(캐시 히트 포함)는 끝났다고 보고한 뒤 워커 로드에서 멈춘다 — 상한은 이 구간에만 건다
+    vi.mocked(initTts).mockImplementation((_cfg, onProgress) => {
+      onProgress?.(100, 100)
+      return new Promise(() => {})
+    })
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    await vi.advanceTimersByTimeAsync(INIT_TIMEOUT_MS + 1)
+    await p
+    expect(s.status).toBe('ready')
+    expect(s.ttsStatus).toBe('error')
+    expect(s.ttsError).toContain('초기화')
+    expect(disposeTts).toHaveBeenCalled()
+    expect(s.ready).toBe(false)
+  })
+  it('목소리를 해제하면 TTS가 실패·대기 중이어도 Gemma만으로 ready', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(initTts).mockReturnValue(new Promise(() => {}))
+    const s = useModelStore()
+    await s.loadManifest()
+    void s.download()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(s.ready).toBe(false)
+    s.setVoiceWanted(false)
+    expect(s.ready).toBe(true)
   })
 })
