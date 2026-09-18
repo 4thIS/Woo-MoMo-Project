@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
-  SCROLL_MAX,
-  TRACK,
+  SCROLL,
   advance,
+  approach,
   captionFor,
-  followScroll,
+  distanceAhead,
   overallFraction,
-  scrollProgress,
-  targetScroll,
+  progressRate,
 } from './progressStages'
 
 describe('progressStages', () => {
@@ -32,25 +31,53 @@ describe('progressStages', () => {
   })
 })
 
-describe('장면 스크롤 (#25)', () => {
-  it('목표 거리는 진행률에 비례하고 100%(회사 앞)에서 멈춘다', () => {
-    expect(targetScroll(0)).toBe(0)
-    expect(targetScroll(45)).toBe(TRACK * 0.45)
-    expect(targetScroll(100)).toBe(TRACK)
-    expect(targetScroll(120)).toBe(TRACK)
+describe('장면 (#25): 트레드밀 + 도착 예정 거리', () => {
+  it('진행 속도: 창 안의 첫·끝 표본으로 %/s, 표본이 모자라거나 안 변했으면 0', () => {
+    expect(progressRate([], 0)).toBe(0)
+    expect(progressRate([{ t: 0, p: 10 }], 100)).toBe(0)
+    expect(
+      progressRate(
+        [
+          { t: 0, p: 10 },
+          { t: 1000, p: 10.5 },
+          { t: 2000, p: 11 },
+        ],
+        2000,
+      ),
+    ).toBe(0.5)
+    // 4초 넘게 멈춤 → 창 밖 표본은 버려져 0
+    expect(
+      progressRate(
+        [
+          { t: 0, p: 10 },
+          { t: 1000, p: 11 },
+          { t: 6000, p: 11 },
+          { t: 7000, p: 11 },
+        ],
+        7000,
+      ),
+    ).toBe(0)
   })
-  it('한 프레임에 최대 속도 이상 움직이지 않는다 — 진행률이 튀어도 화면은 일정 속도', () => {
-    expect(followScroll(0, 800, 0.1)).toBe(SCROLL_MAX * 0.1)
-    expect(followScroll(0, 800, 1)).toBe(SCROLL_MAX)
+  it('남은 거리 = 도착까지 걸릴 초 × 걷는 속도. 지났으면 0, 속도 모르면 null', () => {
+    expect(distanceAhead(30, 20, 0.5)).toBe((10 / 0.5) * SCROLL) // 20초 뒤 → 800px
+    expect(distanceAhead(30, 30, 0.5)).toBe(0)
+    expect(distanceAhead(30, 45, 0.5)).toBe(0)
+    expect(distanceAhead(30, 20, 0)).toBeNull()
   })
-  it('목표에 가까우면 딱 목표에서 멈추고 뒤로는 가지 않는다', () => {
-    expect(followScroll(798, 800, 1)).toBe(800)
-    expect(followScroll(800, 800, 1)).toBe(800)
-    expect(followScroll(500, 300, 1)).toBe(500)
+  it('물건은 바닥과 같은 속도로 다가오고, 예상 위치가 맞으면 정확히 그 속도만 움직인다', () => {
+    // 목표가 base와 같으면 오차 0 → 딱 speed·dt만 이동
+    expect(approach(500, 500 - SCROLL * 0.1, 0.1)).toBeCloseTo(500 - SCROLL * 0.1)
+    // 속도를 모르면 바닥과 함께만
+    expect(approach(500, null, 0.1)).toBeCloseTo(500 - SCROLL * 0.1)
   })
-  it('스크롤을 진행률로 되돌려 물건 줍기 시점을 위치와 맞춘다', () => {
-    expect(scrollProgress(TRACK * 0.3)).toBe(30)
-    expect(scrollProgress(0)).toBe(0)
+  it('오차 보정은 점프하지 않는다: 가까워질 땐 최대 3배 속도, 멀어질 땐 절반 속도 이하', () => {
+    const dt = 0.1
+    const near = approach(500, 100, dt) // 400px 당겨야 함
+    expect(500 - near).toBeLessThanOrEqual(SCROLL * dt * 4 + 1e-9) // 바닥 1배 + 보정 3배
+    expect(500 - near).toBeGreaterThan(SCROLL * dt)
+    const far = approach(500, 900, dt) // 400px 밀려나야 함
+    expect(far).toBeLessThanOrEqual(500) // 뒤로 밀리는 속도(0.5배) < 바닥 속도(1배) → 그래도 다가온다
+    expect(far).toBeGreaterThan(500 - SCROLL * dt)
   })
 })
 

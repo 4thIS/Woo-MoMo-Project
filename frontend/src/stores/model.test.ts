@@ -29,6 +29,7 @@ const manifest = {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   setActivePinia(createPinia())
   vi.mocked(getManifest).mockResolvedValue(manifest)
   vi.mocked(hasModel).mockResolvedValue(false)
@@ -337,5 +338,145 @@ describe('model store — 전체 진행률 (#26)', () => {
     await s.loadManifest()
     s.received = 100
     expect(s.overallProgress).toBe(100)
+  })
+})
+
+describe('model store — 목소리 선택 (#36)', () => {
+  beforeEach(() => localStorage.clear())
+  it('기본은 목소리 포함. 해제하면 ttsEnabled·ttsSize·downloadSize가 모델만 기준이 된다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.voiceWanted).toBe(true)
+    expect(s.ttsEnabled).toBe(true)
+    s.setVoiceWanted(false)
+    expect(s.ttsEnabled).toBe(false)
+    expect(s.ttsSize).toBe(0)
+    expect(s.downloadSize).toBe(100)
+    expect(s.overallTotal).toBe(100)
+  })
+  it('해제 상태면 Gemma만으로 ready이고 loadTts는 initTts 없이 텍스트 전용으로 끝난다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    s.setVoiceWanted(false)
+    await s.download()
+    expect(initTts).not.toHaveBeenCalled()
+    expect(s.ttsStatus).toBe('ready')
+    expect(s.ready).toBe(true)
+  })
+  it('선택은 localStorage momo.voice에 남고 새 스토어가 읽는다', async () => {
+    const s = useModelStore()
+    s.setVoiceWanted(false)
+    expect(localStorage.getItem('momo.voice')).toBe('0')
+    setActivePinia(createPinia())
+    expect(useModelStore().voiceWanted).toBe(false)
+  })
+  it('manifest.tts가 없으면 선택과 무관하게 ttsEnabled false', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.voiceWanted).toBe(true)
+    expect(s.ttsEnabled).toBe(false)
+  })
+  it('해제해도 옛 캐시 정리 기준(currentCacheKeys)에는 TTS 파일이 남는다 — 다시 켤 때 재다운로드 방지', async () => {
+    localStorage.setItem('momo.voice', '0')
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(vi.mocked(pruneModels).mock.calls.at(-1)?.[0]).toContain(
+      '/models-cache/supertonic-3/models/tts/supertonic-3/a.onnx',
+    )
+  })
+})
+
+describe('model store — 재방문 판정 (#33)', () => {
+  it('매니페스트를 읽은 뒤 선택한 파일(모델 + TTS 전부)이 캐시에 있으면 cached=true', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    expect(s.cached).toBeNull()
+    await s.loadManifest()
+    expect(s.cached).toBe(true)
+    expect(hasModel).toHaveBeenCalledWith('e4b', '/models/e4b.litertlm')
+    expect(hasModel).toHaveBeenCalledWith('supertonic-3', '/models/tts/supertonic-3/a.onnx')
+    expect(hasModel).toHaveBeenCalledWith('supertonic-3', '/models/tts/supertonic-3/b.onnx')
+  })
+  it('모델만 있고 TTS 파일 하나라도 없으면 재방문이 아니다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockImplementation(async (_id, url) => !url.endsWith('b.onnx'))
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.cached).toBe(false)
+  })
+  it('목소리를 해제한 사람은 Gemma만 있어도 재방문이고, 다시 켜면 다시 판정한다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockImplementation(async (id) => id === 'e4b')
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.cached).toBe(false)
+    s.setVoiceWanted(false)
+    await vi.waitFor(() => expect(s.cached).toBe(true))
+    s.setVoiceWanted(true)
+    await vi.waitFor(() => expect(s.cached).toBe(false))
+  })
+  it('캐시 조회가 실패하면 첫 방문으로 본다', async () => {
+    vi.mocked(hasModel).mockRejectedValue(new Error('no caches'))
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.cached).toBe(false)
+  })
+  it('clearCache 뒤에는 첫 방문 흐름', async () => {
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.cached).toBe(true)
+    await s.clearCache()
+    expect(s.cached).toBe(false)
+  })
+})
+
+describe('model store — 캐시 히트 시작 상태·진행률 갱신 빈도', () => {
+  it('모델이 캐시에 있으면 download()는 hasModel을 기다리기 전에 received=size — 준비 화면이 0%로 마운트되지 않는다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.modelCached).toBe(true)
+    const p = s.download()
+    expect(s.received).toBe(100) // 동기: await 이전
+    expect(s.ttsReceived).toBe(100) // TTS도 캐시에 있으니 전체 100%에서 시작
+    await p
+    expect(downloadModel).not.toHaveBeenCalled()
+  })
+  it('모델만 캐시에 있으면 모델 몫만 채워 시작하고 TTS는 0부터', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(hasModel).mockImplementation(async (id) => id === 'e4b')
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.modelCached).toBe(true)
+    expect(s.cached).toBe(false)
+    void s.download()
+    expect(s.received).toBe(100)
+    expect(s.ttsReceived).toBe(0)
+  })
+  it('진행률은 100ms에 한 번만 스토어에 반영한다(마지막 값은 항상) — 청크마다 재렌더하지 않게', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(downloadModel).mockImplementation(async (_id, _url, _size, onProgress) => {
+        for (let r = 1; r <= 99; r++) onProgress(r) // 같은 순간에 99번
+        vi.advanceTimersByTime(150)
+        onProgress(100)
+      })
+      const s = useModelStore()
+      await s.loadManifest()
+      const seen: number[] = []
+      s.$subscribe((_m, st) => seen.push(st.received), { detached: true, flush: 'sync' })
+      await s.download()
+      const received = seen.filter((v, i) => v !== seen[i - 1])
+      expect(received.filter((v) => v > 0 && v < 100)).toHaveLength(1) // 1만 통과
+      expect(s.received).toBe(100)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

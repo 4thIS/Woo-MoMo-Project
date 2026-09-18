@@ -31,6 +31,30 @@ function currentCacheKeys(m: Manifest): string[] {
   return keys
 }
 
+/** 진행률을 스토어에 반영하는 최소 간격(ms). 네트워크 청크마다(초당 수백~수천 번) 재렌더하면 준비 장면이 끊긴다 */
+export const PROGRESS_TICK_MS = 100
+/** onProgress를 간격으로 묶는다. 마지막 값(done)은 항상 통과시켜야 하므로 호출 쪽이 total을 알려준다 */
+function throttled(total: number, set: (r: number) => void): (r: number) => void {
+  let last = 0
+  return (r) => {
+    const now = Date.now()
+    if (r >= total || now - last >= PROGRESS_TICK_MS) {
+      last = now
+      set(r)
+    }
+  }
+}
+
+/** 목소리(TTS) 다운로드 선택(#36). 기본 켬. 기존 momo.muted와 같은 방식으로 기억한다 */
+const VOICE_KEY = 'momo.voice'
+function loadVoiceWanted(): boolean {
+  try {
+    return localStorage.getItem(VOICE_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
 export const useModelStore = defineStore('model', {
   state: () => ({
     status: 'idle' as ModelStatus,
@@ -45,12 +69,20 @@ export const useModelStore = defineStore('model', {
     ttsReceived: 0,
     ttsTotal: 0,
     ttsError: null as string | null,
+    voiceWanted: loadVoiceWanted(),
+    /** 재방문 판정(#33): 선택한 파일(모델 + 목소리)이 전부 캐시에 있는지. null = 아직 조회 전 */
+    cached: null as boolean | null,
+    /** 모델 파일만 따로: download()가 캐시 조회를 기다리는 동안 준비 화면이 0%로 시작하지 않게 미리 채우는 데 쓴다 */
+    modelCached: null as boolean | null,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
-    ttsEnabled: (s) => !!s.manifest?.tts,
-    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용 */
-    ttsSize: (s) => s.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0,
+    /** 매니페스트에 TTS가 있고 사용자가 목소리를 선택했을 때만. 해제하면 텍스트 전용 경로(tts null)와 같다 */
+    ttsEnabled: (s) => !!s.manifest?.tts && s.voiceWanted,
+    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용. 해제면 0 */
+    ttsSize(): number {
+      return this.ttsEnabled ? (this.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0) : 0
+    },
     /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
     downloadSize(): number {
       return (this.active?.size ?? 0) + this.ttsSize
@@ -76,7 +108,9 @@ export const useModelStore = defineStore('model', {
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
     /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready */
-    ready: (s) => s.status === 'ready' && (!s.manifest?.tts || s.ttsStatus === 'ready'),
+    ready(): boolean {
+      return this.status === 'ready' && (!this.ttsEnabled || this.ttsStatus === 'ready')
+    },
   },
   actions: {
     async loadManifest() {
@@ -87,6 +121,7 @@ export const useModelStore = defineStore('model', {
         this.setActive(this.manifest)
         // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
         await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
+        await this.checkCached()
       } catch (e) {
         this.manifestError = e instanceof Error ? e.message : String(e)
       } finally {
@@ -97,6 +132,8 @@ export const useModelStore = defineStore('model', {
       this.active = { id: ref.id, url: ref.url, size: ref.size }
       this.total = ref.size
       this.received = 0
+      this.modelCached = null // 다른 모델 — 캐시 여부는 다시 봐야 안다
+      this.cached = null
     },
     async download() {
       if (!this.active) {
@@ -110,12 +147,22 @@ export const useModelStore = defineStore('model', {
       // 캐시 조회 동안에도 준비 화면이 look_up(초기화) 장면을 보이도록 먼저 initializing으로 둔다.
       // 캐시 미스면 downloading으로 내려간다 (spec 4.2: 캐시 히트면 downloading을 건너뛴다)
       this.status = 'initializing'
+      // 매니페스트 때 캐시를 이미 확인했다면 조회를 기다리지 않고 채워 둔다 — 준비 장면이 0%에서 다시 걸어오지 않게
+      if (this.modelCached) this.received = size
+      if (this.cached) this.ttsReceived = this.ttsSize
       try {
         if (await hasModel(id, url)) {
           this.received = size
         } else {
           this.status = 'downloading'
-          await downloadModel(id, url, size, (r) => (this.received = r), undefined)
+          this.received = 0
+          await downloadModel(
+            id,
+            url,
+            size,
+            throttled(size, (r) => (this.received = r)),
+            undefined,
+          )
         }
         this.status = 'downloaded'
       } catch (e) {
@@ -143,7 +190,7 @@ export const useModelStore = defineStore('model', {
     },
     /** Gemma ready 뒤 TTS 파일을 받아 워커를 올리고 워밍업 한 문장을 돌린다. manifest.tts가 없으면 텍스트 전용으로 바로 ready */
     async loadTts() {
-      const cfg = this.manifest?.tts
+      const cfg = this.ttsEnabled ? this.manifest?.tts : null
       if (!cfg) {
         this.ttsStatus = 'ready'
         return
@@ -158,11 +205,12 @@ export const useModelStore = defineStore('model', {
         return
       this.ttsStatus = 'initializing' // 캐시 조회 중에도 진행 창이 look_up을 유지하도록
       this.ttsError = null
-      this.ttsReceived = 0
       this.ttsTotal = cfg.files.reduce((n, f) => n + f.size, 0)
+      if (!this.cached) this.ttsReceived = 0 // 전부 캐시면 download()가 미리 채운 값을 유지한다
       try {
+        const tick = throttled(this.ttsTotal, (r) => (this.ttsReceived = r))
         await initTts(cfg, (r, t) => {
-          this.ttsReceived = r
+          tick(r)
           this.ttsTotal = t
           this.ttsStatus = r < t ? 'downloading' : 'initializing'
         })
@@ -178,6 +226,35 @@ export const useModelStore = defineStore('model', {
         this.ttsError = e instanceof Error ? e.message : String(e)
       }
     },
+    /** 현재 선택(모델 + 켜 둔 목소리)이 모두 캐시에 있으면 재방문. 조회 실패는 첫 방문으로 */
+    async checkCached() {
+      const m = this.manifest
+      if (!m || !this.active) {
+        this.cached = false
+        this.modelCached = false
+        return
+      }
+      const wanted: [string, string][] = [[this.active.id, this.active.url]]
+      if (this.ttsEnabled && m.tts)
+        for (const f of m.tts.files) wanted.push([m.tts.id, m.tts.baseUrl + f.path])
+      try {
+        const hits = await Promise.all(wanted.map(([id, url]) => hasModel(id, url)))
+        this.modelCached = hits[0]
+        this.cached = hits.every(Boolean)
+      } catch {
+        this.modelCached = false
+        this.cached = false
+      }
+    },
+    setVoiceWanted(on: boolean) {
+      this.voiceWanted = on
+      if (this.manifest) void this.checkCached() // 목소리 선택이 바뀌면 재방문 여부도 달라진다
+      try {
+        localStorage.setItem(VOICE_KEY, on ? '1' : '0')
+      } catch {
+        /* 사생활 모드 등 — 이번 세션만 유지 */
+      }
+    },
     retryTts() {
       return this.loadTts()
     },
@@ -188,6 +265,7 @@ export const useModelStore = defineStore('model', {
       if (!this.manifest?.fallback) return
       await disposeEngine()
       this.setActive(this.manifest.fallback)
+      await this.checkCached()
       await this.download()
     },
     async clearCache() {
@@ -201,6 +279,8 @@ export const useModelStore = defineStore('model', {
       this.ttsStatus = 'idle'
       this.ttsReceived = 0
       this.ttsError = null
+      this.cached = false
+      this.modelCached = false
     },
   },
 })
