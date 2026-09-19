@@ -3,7 +3,7 @@
 **이력서가 내 컴퓨터를 떠나지 않는, 브라우저 속 AI 면접관**
 
 - 서비스: **https://momo.ssenu.cloud**
-- 원티드 AI 활용 공모전 출품작
+- 원티드 AI 해커톤 출품작
 
 ![첫 화면](docs/images/01-landing.png)
 
@@ -122,8 +122,8 @@ pnpm dev
 
 | 이름 | 역할 |
 |---|---|
-| 박찬우 [@ssenu](https://github.com/ssenu) | 백엔드·API 계약·배포 |
-| 이몬타 [@leemonta9482](https://github.com/leemonta9482) | 프론트엔드·브라우저 AI 실행·음성·픽셀 그래픽 |
+| 박찬우 [@ssenu](https://github.com/ssenu) | 백엔드·API 계약·배포, 브라우저 LLM 실행(Gemma 4 · LiteRT-LM WebGPU), 음성 인식, 면접관 프롬프트·면접 진행 |
+| 이우진 [@leemonta9482](https://github.com/leemonta9482) | 프론트엔드 화면(랜딩·준비·리포트), 면접관 목소리(Supertonic 3 TTS), 모델 다운로드·캐시, PDF 이력서 읽기, 픽셀 그래픽 |
 
 ## 라이선스 고지
 
