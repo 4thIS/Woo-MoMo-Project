@@ -17,7 +17,7 @@
 | 사람 | 계정 | 영역 | 책임 |
 |------|------|------|------|
 | 박찬우 | @ssenu | `backend/` | FastAPI 구현, RAG 확장, 계약(매니페스트·API 응답) 소유 |
-| 이몬타 | @leemonta9482 | `frontend/` | Vue 화면·LLM 실행·음성·도트 그래픽 구현 |
+| 이우진 | @leemonta9482 | `frontend/` | Vue 화면·LLM 실행·음성·도트 그래픽 구현 |
 | 공동 | @ssenu @leemonta9482 | `deploy/` `docs/` `finetune/` | 인프라·CI·문서·파인튜닝 트랙 (둘 다 관리, 변경 시 서로 리뷰) |
 
 - 설계(spec/plan)는 둘이 합의해 확정한다. 확정된 문서가 리포에 커밋되면 그것이 기준이다.
