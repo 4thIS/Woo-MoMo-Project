@@ -49,6 +49,8 @@ const fileName = computed(() =>
   voice.value ? (model.manifest?.tts?.id ?? '') : (model.active?.url.split('/').pop() ?? ''),
 )
 const ttsError = computed(() => voice.value && model.ttsStatus === 'error')
+/* 체크리스트 "목소리 준비" 완료 표시 — 교체 중이면 아직 아니다 */
+const voiceReady = computed(() => model.ttsStatus === 'ready' && !model.voiceSwitching)
 /* 남은 시간: 최근 표본 속도로 추정 */
 const eta = ref('')
 const samples: { t: number; r: number }[] = []
@@ -391,16 +393,18 @@ async function clearAndRetry() {
         <!-- 시작 -->
         <div class="interviewer-row">
           <span class="mono" data-test="interviewer-chip">면접관: {{ interviewerName }}</span>
+          <!-- 면접 시작을 기다리는 동안(busy)은 잠근다 — 면접은 옛 페르소나로 고정되는데 목소리만 바뀌지 않게 -->
           <button
             type="button"
             class="mono link press"
             data-test="change-interviewer"
+            :disabled="busy"
             @click="pickerOpen = !pickerOpen"
           >
             {{ pickerOpen ? '닫기' : '바꾸기' }}
           </button>
         </div>
-        <InterviewerPicker v-if="pickerOpen" />
+        <InterviewerPicker v-if="pickerOpen && !busy" />
         <div class="start-row">
           <ul class="mono checklist">
             <li>
@@ -425,9 +429,11 @@ async function clearAndRetry() {
             <li v-if="model.ttsEnabled">
               <i
                 :class="{
-                  ok: model.ttsStatus === 'ready',
-                  wait: model.ttsStatus !== 'ready',
-                  blink: model.ttsStatus !== 'ready' && model.ttsStatus !== 'error',
+                  ok: voiceReady,
+                  wait: !voiceReady,
+                  blink:
+                    model.voiceSwitching ||
+                    (model.ttsStatus !== 'ready' && model.ttsStatus !== 'error'),
                 }"
               />
               목소리 준비 · {{ interviewerName }} ({{
