@@ -11,12 +11,17 @@ vi.mock('@/services/modelCache', () => ({
   cacheKey: (id: string, url: string) => `/models-cache/${id}${url}`,
 }))
 vi.mock('@/services/llm', () => ({ initEngine: vi.fn(), disposeEngine: vi.fn() }))
-vi.mock('@/services/tts', () => ({ initTts: vi.fn(), synthesize: vi.fn(), disposeTts: vi.fn() }))
+vi.mock('@/services/tts', () => ({
+  initTts: vi.fn(),
+  synthesize: vi.fn(),
+  disposeTts: vi.fn(),
+  setTtsVoice: vi.fn(async () => {}),
+}))
 
 import { getManifest } from '@/services/api'
 import { downloadModel, getModelBlob, hasModel, pruneModels } from '@/services/modelCache'
 import { initEngine } from '@/services/llm'
-import { disposeTts, initTts, synthesize } from '@/services/tts'
+import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
 import { INIT_TIMEOUT_MS, TTS_WARMUP_TEXT, useModelStore } from './model'
 
 const manifest = {
@@ -526,5 +531,252 @@ describe('model store — 초기화 상한 (#41)', () => {
     expect(s.ready).toBe(false)
     s.setVoiceWanted(false)
     expect(s.ready).toBe(true)
+  })
+})
+
+import { interviewerById } from '@/interviewers'
+import { useInterviewerStore } from './interviewer'
+
+const VOICE_IDS = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
+/** 엔진 90 + 목소리(10 + 순번). M2 = 16 */
+const ttsV = {
+  id: 'supertonic-3',
+  baseUrl: '/models/tts/supertonic-3/',
+  files: [
+    { path: 'onnx/a.onnx', size: 60 },
+    { path: 'onnx/b.onnx', size: 30 },
+    { path: 'voice_styles/M2.json', size: 16 },
+  ],
+  voice: 'M2',
+  lang: 'ko',
+  voices: VOICE_IDS.map((id, i) => ({ id, path: `voice_styles/${id}.json`, size: 10 + i })),
+}
+const voiceSize = (id: string) => ttsV.voices.find((v) => v.id === id)!.size
+const gentleVoice = () => interviewerById('gentle')!.voiceId
+const sharpVoice = () => interviewerById('sharp')!.voiceId
+
+describe('model store — 면접관 목소리 (tts.voices)', () => {
+  beforeEach(() => vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: ttsV }))
+
+  it('선택이 없으면 기본 목소리(M2): 엔진 + M2, ttsSize = 90 + 16', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.ttsSelection?.voice).toBe('M2')
+    expect(s.ttsSelection?.files.map((f) => f.path)).toEqual([
+      'onnx/a.onnx',
+      'onnx/b.onnx',
+      'voice_styles/M2.json',
+    ])
+    expect(s.ttsSize).toBe(106)
+    expect(s.ttsVoiceSize).toBe(16)
+  })
+  it('면접관을 고르면 그 목소리 파일로 바뀌고 용량도 따라간다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.chooseInterviewer('gentle')
+    expect(s.ttsSelection?.voice).toBe(gentleVoice())
+    expect(s.ttsSelection?.files.at(-1)?.path).toBe(`voice_styles/${gentleVoice()}.json`)
+    expect(s.ttsSize).toBe(90 + voiceSize(gentleVoice()))
+  })
+  it('initTts에는 엔진 + 고른 목소리만 넘긴다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.chooseInterviewer('sharp')
+    await s.download()
+    const cfg = vi.mocked(initTts).mock.calls[0][0]
+    expect(cfg.voice).toBe(sharpVoice())
+    expect(cfg.files.map((f) => f.path)).toEqual([
+      'onnx/a.onnx',
+      'onnx/b.onnx',
+      `voice_styles/${sharpVoice()}.json`,
+    ])
+  })
+  it('캐시 정리는 목소리 10개를 모두 남긴다(중복 없이)', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    const keys = vi.mocked(pruneModels).mock.calls[0][0]
+    for (const id of VOICE_IDS)
+      expect(keys).toContain(
+        `/models-cache/supertonic-3/models/tts/supertonic-3/voice_styles/${id}.json`,
+      )
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+  it('재방문 판정은 모델 + 엔진만 본다: 고른 목소리가 없어도 cached=true, voiceCached=false', async () => {
+    localStorage.setItem('momo.interviewer', 'gentle')
+    vi.mocked(hasModel).mockImplementation(async (_id, url) => !url.includes('voice_styles/'))
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.cached).toBe(true)
+    expect(s.voiceCached).toBe(false)
+  })
+  it('재방문 + 고른 목소리 없음: 진행률은 엔진까지만 미리 채워 100% 미만에서 시작하고, 받으면 100%', async () => {
+    localStorage.setItem('momo.interviewer', 'gentle')
+    vi.mocked(hasModel).mockImplementation(async (_id, url) => !url.includes('voice_styles/'))
+    let finish!: () => void
+    vi.mocked(initTts).mockImplementation(async (cfg, onProgress) => {
+      const total = cfg.files.reduce((n, f) => n + f.size, 0)
+      onProgress?.(60, total) // 캐시 히트 파일도 누적으로 보고된다 — 뒤로 가면 안 된다
+      await new Promise<void>((r) => (finish = r))
+      onProgress?.(total, total)
+    })
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    expect(s.ttsReceived).toBe(90) // 엔진만
+    expect(s.overallProgress).toBeLessThan(100)
+    await vi.waitFor(() => expect(initTts).toHaveBeenCalled())
+    expect(s.ttsReceived).toBe(90) // 60을 보고받아도 뒤로 가지 않는다
+    finish()
+    await p
+    expect(s.overallProgress).toBe(100)
+  })
+  it('재방문 + 목소리까지 캐시: 100%에서 시작', async () => {
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    await s.loadManifest()
+    void s.download()
+    expect(s.ttsReceived).toBe(106)
+  })
+  it('재방문인데 저장된 선택이 없으면 기본 면접관을 자동 선택한다', async () => {
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(useInterviewerStore().id).toBe('standard')
+  })
+  it('첫 방문(캐시 없음)이면 자동 선택하지 않는다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(useInterviewerStore().id).toBeNull()
+  })
+  it('TTS가 준비된 뒤 면접관을 바꾸면 목소리 파일만 받아 setTtsVoice로 교체한다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.loadedVoice).toBe('M2')
+    vi.mocked(downloadModel).mockClear()
+    await s.chooseInterviewer('gentle')
+    const url = `/models/tts/supertonic-3/voice_styles/${gentleVoice()}.json`
+    expect(downloadModel).toHaveBeenCalledWith(
+      'supertonic-3',
+      url,
+      voiceSize(gentleVoice()),
+      expect.any(Function),
+    )
+    expect(setTtsVoice).toHaveBeenCalledWith(gentleVoice(), {
+      path: `voice_styles/${gentleVoice()}.json`,
+      size: voiceSize(gentleVoice()),
+      url,
+      cacheKey: `/models-cache/supertonic-3${url}`,
+    })
+    expect(s.loadedVoice).toBe(gentleVoice())
+    expect(s.ready).toBe(true)
+  })
+  it('바꾸는 동안에는 ready가 false', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    let release!: () => void
+    vi.mocked(setTtsVoice).mockReturnValueOnce(new Promise<void>((r) => (release = r)))
+    const p = s.chooseInterviewer('gentle')
+    await vi.waitFor(() => expect(s.voiceSwitching).toBe(true))
+    expect(s.ready).toBe(false)
+    release()
+    await p
+    expect(s.ready).toBe(true)
+  })
+  it('교체에 실패하면 이전 목소리를 유지하고 선택도 되돌린다(voiceError)', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.chooseInterviewer('standard')
+    await s.download()
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    await s.chooseInterviewer('sharp')
+    expect(s.loadedVoice).toBe('M2')
+    expect(s.voiceError).toContain('bad style')
+    expect(useInterviewerStore().id).toBe('standard')
+  })
+  it('텍스트 전용(목소리 해제)이면 면접관을 바꿔도 목소리 교체를 하지 않는다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    s.setVoiceWanted(false)
+    await s.download()
+    await s.chooseInterviewer('gentle')
+    expect(setTtsVoice).not.toHaveBeenCalled()
+  })
+  it('TTS 로딩 중에 면접관을 바꾸면 로딩이 끝난 뒤 새 목소리로 맞춘다', async () => {
+    let release!: () => void
+    vi.mocked(initTts).mockReturnValueOnce(new Promise<void>((r) => (release = r)))
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    await vi.waitFor(() => expect(s.ttsStatus).toBe('initializing'))
+    await s.chooseInterviewer('sharp')
+    expect(setTtsVoice).not.toHaveBeenCalled()
+    release()
+    await p
+    expect(setTtsVoice).toHaveBeenCalledWith(sharpVoice(), expect.anything())
+    expect(s.loadedVoice).toBe(sharpVoice())
+  })
+  it('빠르게 두 번 고르고 두 번째 교체가 실패하면, 실제 로드된 목소리의 면접관으로 되돌린다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.loadedVoice).toBe('M2')
+    let release!: () => void
+    vi.mocked(setTtsVoice).mockReturnValueOnce(new Promise((r) => (release = r)))
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    const p1 = s.chooseInterviewer('gentle')
+    await vi.waitFor(() => expect(s.voiceSwitching).toBe(true))
+    const p2 = s.chooseInterviewer('sharp')
+    release()
+    await Promise.all([p1, p2])
+    expect(s.loadedVoice).toBe(gentleVoice())
+    expect(useInterviewerStore().id).toBe('gentle')
+    expect(s.voiceError).toContain('bad style')
+  })
+  it('로딩 중에 고르고 로드 뒤 교체가 실패하면 기본 면접관으로 되돌린다', async () => {
+    let release!: () => void
+    vi.mocked(initTts).mockReturnValueOnce(new Promise<void>((r) => (release = r)))
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    const s = useModelStore()
+    await s.loadManifest()
+    const p = s.download()
+    await vi.waitFor(() => expect(s.ttsStatus).toBe('initializing'))
+    await s.chooseInterviewer('sharp')
+    release()
+    await p
+    expect(s.loadedVoice).toBe('M2')
+    expect(useInterviewerStore().id).toBe('standard')
+    expect(s.voiceError).toContain('bad style')
+    expect(s.ready).toBe(true)
+  })
+  it('교체가 끝나면 전체 진행률은 100', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    await s.chooseInterviewer('gentle')
+    expect(s.overallProgress).toBe(100)
+  })
+  it('텍스트 전용으로 준비된 뒤(워커 없음) 목소리를 다시 켜고 골라도 오류가 나지 않는다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    s.setVoiceWanted(false)
+    await s.download()
+    s.setVoiceWanted(true)
+    await s.chooseInterviewer('gentle')
+    expect(setTtsVoice).not.toHaveBeenCalled()
+    expect(s.voiceError).toBeNull()
+    expect(useInterviewerStore().id).toBe('gentle')
+  })
+  it('clearCache는 목소리 상태를 초기화한다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    await s.chooseInterviewer('gentle')
+    await s.clearCache()
+    expect(s.voiceCached).toBe(false)
+    expect(s.loadedVoice).toBeNull()
+    expect(s.voiceSwitching).toBe(false)
+    expect(s.voiceError).toBeNull()
   })
 })
