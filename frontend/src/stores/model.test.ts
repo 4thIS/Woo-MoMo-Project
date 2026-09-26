@@ -33,7 +33,10 @@ const manifest = {
   fallback: { id: 'e2b', url: '/models/e2b.litertlm', size: 50 },
 }
 
+/** 목소리 목록 경고(spec 7절) — voices 없는 옛 매니페스트 테스트가 많아 출력은 막고 호출만 본다 */
+let warn: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
+  warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   localStorage.clear()
   setActivePinia(createPinia())
   vi.mocked(getManifest).mockResolvedValue(manifest)
@@ -51,6 +54,7 @@ beforeEach(() => {
     durationMs: 0,
   })
 })
+afterEach(() => warn.mockRestore())
 
 describe('model store', () => {
   it('매니페스트를 읽어 total을 세팅한다', async () => {
@@ -925,5 +929,29 @@ describe('model store — 목소리 교체 상한', () => {
     expect(s.ready).toBe(false)
     s.setVoiceWanted(false)
     expect(s.ready).toBe(true)
+  })
+})
+
+describe('model store — 목소리 목록 경고 (spec 7절)', () => {
+  it('tts.voices가 없으면 매니페스트 로드당 한 번 경고한다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    await useModelStore().loadManifest()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('M2')
+  })
+  it('면접관 목소리가 목록에 없으면 빠진 id를 한 메시지에 모아 한 번 경고한다', async () => {
+    const voices = ttsV.voices.filter((v) => v.id !== gentleVoice() && v.id !== sharpVoice())
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: { ...ttsV, voices } })
+    await useModelStore().loadManifest()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain(gentleVoice())
+    expect(warn.mock.calls[0][0]).toContain(sharpVoice())
+  })
+  it('면접관 목소리가 모두 있거나 tts가 없으면 경고하지 않는다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: ttsV })
+    await useModelStore().loadManifest()
+    vi.mocked(getManifest).mockResolvedValue(manifest)
+    await useModelStore().loadManifest()
+    expect(warn).not.toHaveBeenCalled()
   })
 })

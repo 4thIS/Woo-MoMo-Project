@@ -374,9 +374,11 @@ export const useInterviewStore = defineStore('interview', {
       // abort()가 항상 inflight를 기다리므로 generate()의 꼬리(refreshTokens 등)와
       // 리포트 send가 겹치지 않는다
       await this.abort()
+      // 프롬프트 override(파인튜닝 모델)가 있으면 페르소나 미적용 — 리포트 말투도 뺀다(spec 5.1·7절)
+      const override = useModelStore().manifest?.systemPromptOverride
       try {
         const raw = await session.send(
-          buildReportInstruction(PERSONAS[this.sessionInterviewer.id]),
+          buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.id]),
           (d) => (this.reportRaw += d),
         )
         this.reportRaw = raw

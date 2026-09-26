@@ -13,7 +13,7 @@ import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef, TtsManifest } from '@/types/api'
 import { overallFraction } from '@/utils/progressStages'
 import { pickVoice, resolveTts, voiceFiles } from '@/utils/ttsVoices'
-import { DEFAULT_INTERVIEWER, type InterviewerId } from '@/interviewers'
+import { DEFAULT_INTERVIEWER, INTERVIEWERS, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from './interviewer'
 
 export const MAX_NUM_TOKENS = 8192
@@ -56,6 +56,22 @@ function withDeadline<T>(
 /** p가 ms 안에 끝나지 않으면 label 초기화 시간 초과로 거부한다 */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return withDeadline(p, ms, `${label} 초기화가 ${Math.round(ms / 1000)}초 안에 끝나지 않았습니다`)
+}
+
+/** spec 7절: tts.voices가 없거나 면접관 목소리가 목록에 없으면 기본 목소리로 합성한다(페르소나는 그대로) — 빠진 것을 한 번에 알린다 */
+function warnMissingVoices(t: TtsManifest | null | undefined): void {
+  if (!t) return
+  if (!t.voices?.length) {
+    console.warn(`tts.voices가 없어 모든 면접관을 기본 목소리 ${t.voice}로 합성합니다`)
+    return
+  }
+  const missing = [...new Set(INTERVIEWERS.map((iv) => iv.voiceId))].filter(
+    (id) => !t.voices!.some((v) => v.id === id),
+  )
+  if (missing.length)
+    console.warn(
+      `tts.voices에 면접관 목소리 ${missing.join(', ')}가 없어 기본 목소리 ${t.voice}로 합성합니다`,
+    )
 }
 
 /** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일·목소리 전부). 한 번 받은 목소리는 남긴다 */
@@ -185,6 +201,7 @@ export const useModelStore = defineStore('model', {
       this.manifestError = null
       try {
         this.manifest = await getManifest()
+        warnMissingVoices(this.manifest.tts)
         this.setActive(this.manifest)
         // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
         await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
