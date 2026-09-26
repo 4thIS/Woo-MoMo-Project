@@ -9,9 +9,12 @@ import {
   pruneModels,
 } from '@/services/modelCache'
 import { disposeEngine, initEngine } from '@/services/llm'
-import { disposeTts, initTts, synthesize } from '@/services/tts'
-import type { Manifest, ModelRef } from '@/types/api'
+import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
+import type { Manifest, ModelRef, TtsManifest } from '@/types/api'
 import { overallFraction } from '@/utils/progressStages'
+import { pickVoice, resolveTts, voiceFiles } from '@/utils/ttsVoices'
+import { DEFAULT_INTERVIEWER, type InterviewerId } from '@/interviewers'
+import { useInterviewerStore } from './interviewer'
 
 export const MAX_NUM_TOKENS = 8192
 
@@ -44,12 +47,14 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]).finally(() => clearTimeout(t))
 }
 
-/** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일 전부) */
+/** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일·목소리 전부). 한 번 받은 목소리는 남긴다 */
 function currentCacheKeys(m: Manifest): string[] {
   const keys = [cacheKey(m.id, m.url)]
   if (m.fallback) keys.push(cacheKey(m.fallback.id, m.fallback.url))
-  if (m.tts) for (const f of m.tts.files) keys.push(cacheKey(m.tts.id, m.tts.baseUrl + f.path))
-  return keys
+  if (m.tts)
+    for (const f of [...m.tts.files, ...voiceFiles(m.tts)])
+      keys.push(cacheKey(m.tts.id, m.tts.baseUrl + f.path))
+  return [...new Set(keys)]
 }
 
 /** 진행률을 스토어에 반영하는 최소 간격(ms). 네트워크 청크마다(초당 수백~수천 번) 재렌더하면 준비 장면이 끊긴다 */
@@ -95,14 +100,38 @@ export const useModelStore = defineStore('model', {
     cached: null as boolean | null,
     /** 모델 파일만 따로: download()가 캐시 조회를 기다리는 동안 준비 화면이 0%로 시작하지 않게 미리 채우는 데 쓴다 */
     modelCached: null as boolean | null,
+    /** 고른 목소리 파일이 캐시에 있는지 — 재방문 판정(cached)과 별개. 진행률 미리 채우기에만 쓴다 */
+    voiceCached: null as boolean | null,
+    /** 워커가 지금 쓰는 목소리 id */
+    loadedVoice: null as string | null,
+    /** 면접관을 바꿔 목소리를 교체하는 중 — 이 동안은 면접을 시작하지 않는다 */
+    voiceSwitching: false,
+    voiceError: null as string | null,
   }),
   getters: {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
     /** 매니페스트에 TTS가 있고 사용자가 목소리를 선택했을 때만. 해제하면 텍스트 전용 경로(tts null)와 같다 */
     ttsEnabled: (s) => !!s.manifest?.tts && s.voiceWanted,
-    /** TTS 파일 합계(바이트). loadTts 전에도 매니페스트에서 바로 안다 — 동의 창·전체 진행률용. 해제면 0 */
+    /** 고른 면접관의 목소리 id. 선택이 없으면 null → 매니페스트 기본 목소리 */
+    wantedVoiceId(): string | null {
+      return useInterviewerStore().current?.voiceId ?? null
+    },
+    /** 받을 TTS 설정(엔진 + 고른 목소리). 목소리 체크(voiceWanted)와 무관 — 동의 창 행 표시에도 쓴다 */
+    ttsSelection(): TtsManifest | null {
+      const t = this.manifest?.tts
+      return t ? resolveTts(t, this.wantedVoiceId) : null
+    },
+    ttsSelectionSize(): number {
+      return this.ttsSelection?.files.reduce((n, f) => n + f.size, 0) ?? 0
+    },
+    /** 고른 목소리 파일 크기. voices가 없으면 0(목소리 파일이 엔진 목록에 들어 있다) */
+    ttsVoiceSize(): number {
+      const t = this.manifest?.tts
+      return t ? (pickVoice(t, this.wantedVoiceId)?.size ?? 0) : 0
+    },
+    /** 받을 TTS 합계(바이트). 목소리 해제면 0 — 동의 창·전체 진행률용 */
     ttsSize(): number {
-      return this.ttsEnabled ? (this.manifest?.tts?.files.reduce((n, f) => n + f.size, 0) ?? 0) : 0
+      return this.ttsEnabled ? this.ttsSelectionSize : 0
     },
     /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
     downloadSize(): number {
@@ -128,9 +157,13 @@ export const useModelStore = defineStore('model', {
     },
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
-    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready */
+    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready + 목소리 교체 중이 아님 */
     ready(): boolean {
-      return this.status === 'ready' && (!this.ttsEnabled || this.ttsStatus === 'ready')
+      return (
+        this.status === 'ready' &&
+        (!this.ttsEnabled || this.ttsStatus === 'ready') &&
+        !this.voiceSwitching
+      )
     },
   },
   actions: {
@@ -143,6 +176,12 @@ export const useModelStore = defineStore('model', {
         // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
         await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
         await this.checkCached()
+        // 이 기능 배포 전에 모델을 받아 둔 사용자: 선택 저장값이 없으면 기본 면접관(M2 — 이미 캐시에 있다) (spec 3.3)
+        const iv = useInterviewerStore()
+        if (this.cached && !iv.id) {
+          iv.select(DEFAULT_INTERVIEWER)
+          await this.checkVoiceCached()
+        }
       } catch (e) {
         this.manifestError = e instanceof Error ? e.message : String(e)
       } finally {
@@ -170,7 +209,11 @@ export const useModelStore = defineStore('model', {
       this.status = 'initializing'
       // 매니페스트 때 캐시를 이미 확인했다면 조회를 기다리지 않고 채워 둔다 — 준비 장면이 0%에서 다시 걸어오지 않게
       if (this.modelCached) this.received = size
-      if (this.cached) this.ttsReceived = this.ttsSize
+      // TTS는 실제로 캐시에 있는 만큼만 미리 채운다 — 고른 목소리가 없으면 그 몫은 실제 수신으로(spec 4.3)
+      if (this.cached)
+        this.ttsReceived = this.ttsEnabled
+          ? this.ttsSize - (this.voiceCached ? 0 : this.ttsVoiceSize)
+          : 0
       try {
         if (await hasModel(id, url)) {
           this.received = size
@@ -215,7 +258,7 @@ export const useModelStore = defineStore('model', {
     },
     /** Gemma ready 뒤 TTS 파일을 받아 워커를 올리고 워밍업 한 문장을 돌린다. manifest.tts가 없으면 텍스트 전용으로 바로 ready */
     async loadTts() {
-      const cfg = this.ttsEnabled ? this.manifest?.tts : null
+      const cfg = this.ttsEnabled ? this.ttsSelection : null
       if (!cfg) {
         this.ttsStatus = 'ready'
         return
@@ -233,7 +276,11 @@ export const useModelStore = defineStore('model', {
       this.ttsTotal = cfg.files.reduce((n, f) => n + f.size, 0)
       if (!this.cached) this.ttsReceived = 0 // 전부 캐시면 download()가 미리 채운 값을 유지한다
       try {
-        const tick = throttled(this.ttsTotal, (r) => (this.ttsReceived = r))
+        // 미리 채운 값에서 뒤로 가지 않는다(캐시 히트 파일도 initTts가 0부터 누적 보고한다)
+        const tick = throttled(
+          this.ttsTotal,
+          (r) => (this.ttsReceived = Math.max(this.ttsReceived, r)),
+        )
         // 상한은 워커 로드 구간에만 건다 — 다운로드는 진행률로 살아 있음을 알 수 있고 크기가 커서 시간을 정할 수 없다.
         // 다운로드가 끝난 시점부터 INIT_TIMEOUT_MS 안에 loaded가 안 오면 워커를 버리고 error로
         let loadTimer: ReturnType<typeof setTimeout> | null = null
@@ -272,24 +319,30 @@ export const useModelStore = defineStore('model', {
         await synthesize(TTS_WARMUP_TEXT, warm.signal)
           .catch(() => undefined)
           .finally(() => clearTimeout(t))
+        this.loadedVoice = cfg.voice
         this.ttsStatus = 'ready'
+        await this.syncVoice() // 로딩 중에 면접관이 바뀌었으면 새 목소리로 맞춘다
       } catch (e) {
         disposeTts() // 시간 초과로 버린 워커가 세션(약 400MB)을 붙들고 있지 않게
         this.ttsStatus = 'error'
         this.ttsError = e instanceof Error ? e.message : String(e)
       }
     },
-    /** 현재 선택(모델 + 켜 둔 목소리)이 모두 캐시에 있으면 재방문. 조회 실패는 첫 방문으로 */
+    /** 재방문 판정: 모델 + TTS 엔진(목소리 해제면 모델만). 고른 목소리 파일은 따로 voiceCached로 본다 */
     async checkCached() {
       const m = this.manifest
       if (!m || !this.active) {
         this.cached = false
         this.modelCached = false
+        this.voiceCached = false
         return
       }
+      const sel = this.ttsEnabled ? this.ttsSelection : null
+      const voicePath = m.tts ? pickVoice(m.tts, this.wantedVoiceId)?.path : undefined
       const wanted: [string, string][] = [[this.active.id, this.active.url]]
-      if (this.ttsEnabled && m.tts)
-        for (const f of m.tts.files) wanted.push([m.tts.id, m.tts.baseUrl + f.path])
+      if (sel)
+        for (const f of sel.files)
+          if (f.path !== voicePath) wanted.push([sel.id, sel.baseUrl + f.path])
       try {
         const hits = await Promise.all(wanted.map(([id, url]) => hasModel(id, url)))
         this.modelCached = hits[0]
@@ -298,6 +351,61 @@ export const useModelStore = defineStore('model', {
         this.modelCached = false
         this.cached = false
       }
+      await this.checkVoiceCached()
+    },
+    /** 고른 목소리 파일이 캐시에 있는지. voices가 없으면(엔진에 포함) true */
+    async checkVoiceCached() {
+      const t = this.manifest?.tts
+      const v = t ? pickVoice(t, this.wantedVoiceId) : null
+      if (!t || !v) {
+        this.voiceCached = true
+        return
+      }
+      try {
+        this.voiceCached = await hasModel(t.id, t.baseUrl + v.path)
+      } catch {
+        this.voiceCached = false
+      }
+    },
+    /** 준비된 워커의 목소리를 고른 면접관 목소리로 맞춘다. 실패하면 false(이전 목소리 유지) */
+    async syncVoice(): Promise<boolean> {
+      const sel = this.ttsEnabled ? this.ttsSelection : null
+      if (
+        !sel ||
+        this.ttsStatus !== 'ready' ||
+        this.voiceSwitching ||
+        sel.voice === this.loadedVoice
+      )
+        return true
+      const file = sel.files[sel.files.length - 1] // resolveTts가 목소리 파일을 맨 뒤에 둔다
+      const url = sel.baseUrl + file.path
+      this.voiceSwitching = true
+      this.voiceError = null
+      try {
+        if (!(await hasModel(sel.id, url))) await downloadModel(sel.id, url, file.size, () => {})
+        await setTtsVoice(sel.voice, {
+          path: file.path,
+          size: file.size,
+          url,
+          cacheKey: cacheKey(sel.id, url),
+        })
+        this.loadedVoice = sel.voice
+        this.voiceCached = true
+      } catch (e) {
+        this.voiceError = `목소리를 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`
+        return false
+      } finally {
+        this.voiceSwitching = false
+      }
+      return this.syncVoice() // 바꾸는 동안 또 다른 면접관을 골랐으면 이어서 맞춘다
+    },
+    /** 면접관 고르기(랜딩·준비 화면 공용): 선택 → 목소리 캐시 확인 → 준비된 워커면 목소리 교체 */
+    async chooseInterviewer(id: InterviewerId) {
+      const iv = useInterviewerStore()
+      const prev = iv.id
+      iv.select(id)
+      await this.checkVoiceCached()
+      if (!(await this.syncVoice()) && prev) iv.select(prev) // 이전 목소리 유지 — 선택도 되돌린다(spec 7절)
     },
     setVoiceWanted(on: boolean) {
       this.voiceWanted = on
@@ -334,6 +442,10 @@ export const useModelStore = defineStore('model', {
       this.ttsError = null
       this.cached = false
       this.modelCached = false
+      this.voiceCached = false
+      this.loadedVoice = null
+      this.voiceSwitching = false
+      this.voiceError = null
     },
   },
 })
