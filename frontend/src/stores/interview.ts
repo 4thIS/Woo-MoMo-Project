@@ -4,7 +4,15 @@ import { truncateResume } from '@/utils/truncate'
 import { useModelStore, MAX_NUM_TOKENS } from './model'
 import { startSession, type LlmSession } from '@/services/llm'
 import { buildSystemPrompt, KICKOFF } from '@/prompts/interviewer'
-import { REPORT_INSTRUCTION } from '@/prompts/report'
+import { buildReportInstruction } from '@/prompts/report'
+import { PERSONAS } from '@/prompts/personas'
+import {
+  DEFAULT_INTERVIEWER,
+  interviewerById,
+  type Interviewer,
+  type InterviewerId,
+} from '@/interviewers'
+import { useInterviewerStore } from './interviewer'
 import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { hasEndPhrase } from '@/utils/endDetector'
@@ -85,6 +93,8 @@ export const useInterviewStore = defineStore('interview', {
     reportStatus: 'idle' as 'idle' | 'writing' | 'done' | 'error',
     startedAt: null as number | null,
     endedAt: null as number | null,
+    /** 이 면접의 면접관 — start()에서 고정(spec 3.5) */
+    interviewerId: null as InterviewerId | null,
   }),
   getters: {
     profileDone: (s) => s.profile.field !== null && s.profile.job.trim().length > 0,
@@ -106,6 +116,9 @@ export const useInterviewStore = defineStore('interview', {
     overLimit: (s) => s.tokenCount > TOKEN_LIMIT,
     /** 면접관 차례(생성·합성 대기·재생). 이 동안 지원자 입력과 답변 타이머는 멈춘다 */
     interviewerTurn: (s) => s.generating || s.speaking || s.stage === 'thinking',
+    /** 진행 중·끝난 면접의 면접관. 시작 전이면 기본 면접관 */
+    sessionInterviewer: (s): Interviewer =>
+      interviewerById(s.interviewerId) ?? interviewerById(DEFAULT_INTERVIEWER)!,
   },
   actions: {
     goto(phase: Phase) {
@@ -140,12 +153,17 @@ export const useInterviewStore = defineStore('interview', {
       starting = true
       try {
         const model = useModelStore()
+        const ivStore = useInterviewerStore()
+        ivStore.stopPreview() // 미리 듣기가 면접관 목소리와 겹치지 않게
+        const chosen = ivStore.current ?? interviewerById(DEFAULT_INTERVIEWER)!
+        this.interviewerId = chosen.id
         const prompt = buildSystemPrompt({
           fieldLabel: FIELD_LABELS[this.profile.field],
           job: this.profile.job,
           resumeText: this.resumeText,
           fallbackQuestions: this.fallbackQuestions,
           override: model.manifest?.systemPromptOverride,
+          persona: PERSONAS[chosen.id],
         })
         if (session) await session.dispose().catch(() => undefined)
         systemPrompt = prompt
@@ -357,7 +375,10 @@ export const useInterviewStore = defineStore('interview', {
       // 리포트 send가 겹치지 않는다
       await this.abort()
       try {
-        const raw = await session.send(REPORT_INSTRUCTION, (d) => (this.reportRaw += d))
+        const raw = await session.send(
+          buildReportInstruction(PERSONAS[this.sessionInterviewer.id]),
+          (d) => (this.reportRaw += d),
+        )
         this.reportRaw = raw
         this.report = parseReport(raw)
         this.reportStatus = 'done'
@@ -393,6 +414,7 @@ export const useInterviewStore = defineStore('interview', {
       this.fallbackQuestions = []
       this.startedAt = null
       this.endedAt = null
+      this.interviewerId = null
       this.phase = 'prepare'
     },
   },
