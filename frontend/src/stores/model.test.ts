@@ -855,6 +855,58 @@ describe('model store — 목소리 교체 되돌림', () => {
     await s.chooseInterviewer('standard')
     expect(s.voiceError).toBeNull()
   })
+  it('되돌리는 사이(캐시 확인 대기 중)에 방금 실패한 면접관을 다시 고르면 이어서 다시 맞춘다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.loadedVoice).toBe('M2')
+    // gentle 교체는 실패하고, 그 되돌림의 캐시 확인(hasModel)이 멈춰 있는 동안 같은 gentle을 다시 고른다
+    let releaseCheck: (() => void) | null = null
+    let blockNext = false
+    vi.mocked(hasModel).mockImplementation(async () => {
+      if (blockNext) {
+        blockNext = false
+        await new Promise<void>((r) => (releaseCheck = r))
+      }
+      return false
+    })
+    vi.mocked(setTtsVoice).mockImplementationOnce(async () => {
+      blockNext = true
+      throw new Error('bad style')
+    })
+    const p1 = s.chooseInterviewer('gentle')
+    await vi.waitFor(() => expect(releaseCheck).not.toBeNull())
+    expect(s.voiceSwitching).toBe(true)
+    await s.chooseInterviewer('gentle') // 방금 실패한 면접관을 다시 고름 — 목소리가 같아 보여도 어긋나면 안 된다
+    releaseCheck!()
+    await p1
+    expect(useInterviewerStore().id).toBe('gentle')
+    expect(s.loadedVoice).toBe(gentleVoice())
+    expect(s.loadedInterviewerId).toBe('gentle')
+    expect(vi.mocked(setTtsVoice).mock.calls.filter((c) => c[0] === gentleVoice()).length).toBe(2) // 실패 + 재시도
+  })
+})
+
+describe('model store — 같은 목소리를 공유하는 면접관', () => {
+  beforeEach(() => vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: ttsV }))
+
+  it('목소리가 같아 조기 반환해도 로드된 면접관은 갱신한다(spec 7절 저하 경우)', async () => {
+    // gentle 목소리를 목록에서 빼 기본 목소리(M2)로 대체되게 한다 — standard와 목소리가 같아진다
+    const voices = ttsV.voices.filter((v) => v.id !== gentleVoice())
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: { ...ttsV, voices } })
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.loadedVoice).toBe('M2')
+    expect(s.loadedInterviewerId).toBe('standard')
+    await s.chooseInterviewer('gentle')
+    expect(setTtsVoice).not.toHaveBeenCalled() // 목소리가 같아 조기 반환
+    expect(s.loadedInterviewerId).toBe('gentle') // 수정 전에는 'standard'로 남는다
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    await s.chooseInterviewer('sharp')
+    expect(useInterviewerStore().id).toBe('gentle') // gentle로 되돌아간다(수정 전엔 standard로 되돌아감)
+    expect(s.voiceError).toContain('bad style')
+  })
 })
 
 describe('model store — 목소리 교체 상한', () => {

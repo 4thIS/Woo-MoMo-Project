@@ -408,11 +408,16 @@ export const useModelStore = defineStore('model', {
         this.ttsStatus !== 'ready' ||
         this.voiceSwitching ||
         // ttsStatus가 ready인데 로드된 목소리가 없으면 워커가 없는 상태(텍스트 전용으로 준비됨 등) — 바꿀 대상이 없다
-        this.loadedVoice === null ||
-        sel.voice === this.loadedVoice
+        this.loadedVoice === null
       )
         return true
       const selInterviewer = useInterviewerStore().id ?? DEFAULT_INTERVIEWER
+      if (sel.voice === this.loadedVoice) {
+        // 목소리는 그대로라 워커를 건드릴 필요는 없지만, 같은 목소리를 공유하는 면접관으로 바뀐 것도
+        // "로드됨"으로 기억해 둔다(spec 7절 저하 경우) — 안 그러면 다음 교체 실패가 이 면접관이 아니라 이전 면접관으로 되돌아간다
+        this.loadedInterviewerId = selInterviewer
+        return true
+      }
       const file = sel.files[sel.files.length - 1] // resolveTts가 목소리 파일을 맨 뒤에 둔다
       const url = sel.baseUrl + file.path
       this.voiceSwitching = true
@@ -471,9 +476,12 @@ export const useModelStore = defineStore('model', {
         this.voiceSwitching = false
       }
       if (!failed) return this.syncVoice() // 바꾸는 동안 또 다른 면접관을 골랐으면 이어서 맞춘다
-      // 되돌리는 사이(캐시 확인 대기)에 고른 면접관은 syncVoice가 조기 반환해 버려졌다 — 방금 실패한 목소리가 아니면 이어서 맞춘다
-      const now = this.ttsEnabled ? this.ttsSelection?.voice : undefined
-      if (now && now !== this.loadedVoice && now !== sel.voice) await this.syncVoice()
+      // 되돌리는 사이(캐시 확인 대기)에 고른 면접관은 syncVoice가 조기 반환해 버려졌다 — 되돌린 면접관과 다르면 이어서 맞춘다
+      if (
+        this.loadedInterviewerId &&
+        (useInterviewerStore().id ?? DEFAULT_INTERVIEWER) !== this.loadedInterviewerId
+      )
+        await this.syncVoice()
       return false
     },
     /** 면접관 고르기(랜딩·준비 화면 공용): 선택 → 목소리 캐시 확인 → 준비된 워커면 목소리 교체(실패 시 되돌림은 syncVoice가 한다) */
