@@ -36,7 +36,19 @@
       { "path": "voice_styles/M2.json", "size": 292055 }
     ],
     "voice": "M2",
-    "lang": "ko"
+    "lang": "ko",
+    "voices": [
+      { "id": "F1", "path": "voice_styles/F1.json", "size": 292046 },
+      { "id": "F2", "path": "voice_styles/F2.json", "size": 292423 },
+      { "id": "F3", "path": "voice_styles/F3.json", "size": 290794 },
+      { "id": "F4", "path": "voice_styles/F4.json", "size": 291808 },
+      { "id": "F5", "path": "voice_styles/F5.json", "size": 291479 },
+      { "id": "M1", "path": "voice_styles/M1.json", "size": 291748 },
+      { "id": "M2", "path": "voice_styles/M2.json", "size": 292055 },
+      { "id": "M3", "path": "voice_styles/M3.json", "size": 290198 },
+      { "id": "M4", "path": "voice_styles/M4.json", "size": 291522 },
+      { "id": "M5", "path": "voice_styles/M5.json", "size": 291469 }
+    ]
   }
 }
 ```
@@ -50,6 +62,7 @@
 | `systemPromptOverride` | string \| null | null이면 프론트 내장 시스템 프롬프트 사용. 파인튜닝 모델은 짧은 프롬프트로 대체 가능 |
 | `fallback` | object \| null | 초기화 실패 시 재시도할 경량 모델. 없으면 null |
 | `tts` | object \| null | 면접관 음성(TTS) 모델. null이면 프론트는 음성 단계를 건너뛴다. `id`(캐시 키), `baseUrl`(`/models/` 또는 `https://huggingface.co/`로 시작·`/`로 끝), `files[]`(`path` 상대경로·`size` 바이트), `voice`(프리셋명), `lang`(언어 코드). 파일 URL = `baseUrl + path` |
+| `tts.voices` | array \| null | 받을 수 있는 목소리 목록(2026-09-26 추가). 항목 `{ id, path, size }`, 파일 URL = `baseUrl + path`. **엔진 파일 = `files` 중 경로가 `voices[].path`에 없는 것**이다. 새 프론트는 엔진 + 고른 목소리 하나만 받는다. `files` 안의 기본 목소리 파일은 `voices`를 모르는 옛 프론트 호환용이다. 기본 `voice`는 항상 이 목록에 있다. null이면 기본 `voice`만 쓴다 |
 
 ## GET /api/questions/{field}
 
@@ -82,6 +95,8 @@
 `tts`는 additive로 추가됨(2026-09-17). 기존 필드 불변.
 
 2026-09-17: `url`·`fallback.url`·`tts.baseUrl` 값을 파이(`/models/`)에서 Hugging Face로 전환. 응답 형태 불변, 허용 접두사만 확장. 이유와 파이 서빙 복귀 절차(파인튜닝 모델 포함): `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`
+
+2026-09-26: `tts.voices` additive 추가(면접관별 목소리). 기존 필드 불변. `docs/specs/backend/2026-09-26-tts-voices-design.md`
 
 ## 하지 않는 것
 
