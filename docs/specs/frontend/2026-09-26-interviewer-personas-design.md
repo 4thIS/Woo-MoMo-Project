@@ -109,7 +109,7 @@ export function interviewerById(id: string | null): Interviewer | null
   - 합성 큐에 이미 들어온 요청은 옛 목소리로 끝내고, 그 뒤 요청부터 새 목소리를 쓴다.
 - `model.chooseInterviewer(id)`(랜딩·준비 화면 공용): 선택 → `voiceCached` 확인 → `syncVoice()`.
   - `syncVoice`: TTS가 `ready`이고 로드된 목소리와 다르면, 목소리 파일이 캐시에 없을 때 `downloadModel`로 받고 `setVoice`를 보낸다. 로딩 중이면 `loadTts`가 끝난 뒤 다시 맞추고, 텍스트 전용이면 아무것도 하지 않는다.
-  - 교체 중(`voiceSwitching`)에는 `ready`가 아니다. 교체 전체에 `VOICE_SWITCH_TIMEOUT_MS`(30초) 상한을 둔다(7절).
+  - 교체 중(`voiceSwitching`)에는 `ready`가 아니다(목소리를 끈 경우는 예외 — "목소리 없이 시작"은 교체 중에도 시작할 수 있다). 교체 전체에 `VOICE_SWITCH_TIMEOUT_MS`(30초) 상한을 둔다(7절).
   - 되돌림 기준은 실제로 목소리를 올린 면접관(`loadedInterviewerId`)이다. 교체 중에 다른 면접관을 고르면 끝난 뒤 이어서 맞춘다.
 - **캐시 정리**(`currentCacheKeys`): `tts.voices` 10개의 키를 모두 남긴다. 다시 그 면접관으로 돌아가도 새로 받지 않게 하려는 것이다.
 - **재방문 판정**(`checkCached`): 모델 + 엔진 파일만 본다(`cached`). 고른 목소리 파일의 캐시 여부는 **따로** `voiceCached`로 기록한다.
