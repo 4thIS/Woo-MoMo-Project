@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { interviewerById } from '@/interviewers'
 import InterviewStage from './InterviewStage.vue'
 
 const base = {
@@ -134,5 +135,18 @@ describe('InterviewStage 1회 재생', () => {
     await w.vm.$nextTick()
     expect(srcOf(w, 'right')).toContain('right_writing')
     vi.restoreAllMocks()
+  })
+})
+
+describe('InterviewStage — 면접관', () => {
+  it('centerSprites를 주면 가운데 자리는 그 면접관 시트, 좌우는 그대로', () => {
+    const sp = interviewerById('gentle')!.sprites
+    const w = mount(InterviewStage, { props: { ...base, centerSprites: sp } })
+    expect(w.find('[data-char="center"]').attributes('style')).toContain('gentle/center_idle.png')
+    expect(w.find('[data-char="left"]').attributes('style')).toContain('left_idle.png')
+  })
+  it('면접관 이름을 상단 태그에 붙인다', () => {
+    const w = mount(InterviewStage, { props: { ...base, interviewerName: '온화한 선배' } })
+    expect(w.text()).toContain('IT · 백엔드 · 면접관: 온화한 선배')
   })
 })

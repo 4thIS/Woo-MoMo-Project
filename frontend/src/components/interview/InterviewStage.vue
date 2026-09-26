@@ -5,9 +5,9 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import SpeakerIcon from '@/components/ui/icons/SpeakerIcon.vue'
 import type { Stage } from '@/stores/interview'
+import type { CenterSprites } from '@/interviewers'
 import { formatClock } from '@/utils/timing'
 import {
-  ANIMS,
   CANDIDATE_BACK,
   CANDIDATE_SCALE,
   FPS,
@@ -15,6 +15,7 @@ import {
   REACT,
   SCALE,
   baseAnims,
+  sheetFor,
   watchAnim,
   type AnimName,
   type Char,
@@ -34,6 +35,9 @@ const props = withDefaults(
     /** TTS 사용 중인지. 아니면(텍스트 전용) 음소거 토글과 합성 음성 안내를 숨긴다 */
     voice?: boolean
     warning?: string
+    /** 가운데(말하는) 면접관 시트 — 없으면 기본 면접관 */
+    centerSprites?: CenterSprites
+    interviewerName?: string
   }>(),
   { muted: false, voice: true },
 )
@@ -121,14 +125,17 @@ const anims = computed(() => {
     right: over.right ?? base.right,
   }
 })
-const sheet = (name: AnimName) => ANIMS[name]
+const sheet = (name: AnimName) => sheetFor(name, props.centerSprites)
 </script>
 
 <template>
   <section class="stage" aria-label="면접실">
     <div class="topbar">
       <div class="left">
-        <PixelTag tone="muted">{{ fieldLabel }} · {{ job }}</PixelTag>
+        <PixelTag tone="muted"
+          >{{ fieldLabel }} · {{ job
+          }}<template v-if="interviewerName"> · 면접관: {{ interviewerName }}</template></PixelTag
+        >
         <span class="mono clock" data-test="clock" aria-label="경과 시간">{{
           formatClock(elapsedMs ?? 0)
         }}</span>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import manifest from '../../../public/sprites/interviewers/manifest.json'
-import { ANIMS, LIFE, REACT, baseAnims, watchAnim } from './interviewerAnims'
+import { interviewerById } from '@/interviewers'
+import { ANIMS, LIFE, REACT, baseAnims, sheetFor, watchAnim } from './interviewerAnims'
 
 describe('interviewerAnims', () => {
   it('대기·듣기·생각 중 기본은 idle 셋', () => {
@@ -40,5 +41,25 @@ describe('interviewerAnims', () => {
       if (name.endsWith('_idle')) expect(a.loop).toBe(true)
     }
     expect(m.candidate_back.frames).toBe(1)
+  })
+})
+
+describe('sheetFor', () => {
+  it('센터 스프라이트가 없으면 기존 ANIMS 그대로', () => {
+    expect(sheetFor('center_nod')).toEqual(ANIMS.center_nod)
+  })
+  it('가운데 동작은 고른 면접관 시트로, loop 규칙은 ANIMS를 따른다', () => {
+    const sp = interviewerById('gentle')!.sprites
+    expect(sheetFor('center_question', sp)).toEqual({
+      file: sp.question.file,
+      frames: sp.question.frames,
+      loop: true,
+    })
+    expect(sheetFor('center_nod', sp).loop).toBe(false)
+  })
+  it('좌우 배석자는 센터 스프라이트와 무관하다', () => {
+    const sp = interviewerById('sharp')!.sprites
+    expect(sheetFor('left_idle', sp)).toEqual(ANIMS.left_idle)
+    expect(sheetFor('right_writing', sp)).toEqual(ANIMS.right_writing)
   })
 })

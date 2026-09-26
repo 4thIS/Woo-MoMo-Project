@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { useModelStore } from '@/stores/model'
+import { useInterviewerStore } from '@/stores/interviewer'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
@@ -11,6 +12,8 @@ import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
 const model = useModelStore()
+const iv = useInterviewerStore()
+onMounted(() => void iv.probeSprites()) // 새 면접관 스프라이트가 없으면 기본 면접관 시트로(spec 7절)
 
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const inputDisabled = computed(
@@ -73,6 +76,8 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :muted="s.muted"
         :voice="model.ttsEnabled"
         :warning="s.ttsWarning ?? ''"
+        :center-sprites="iv.spritesFor(s.sessionInterviewer.id)"
+        :interviewer-name="s.sessionInterviewer.name"
         @react-done="s.consumeReact()"
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"

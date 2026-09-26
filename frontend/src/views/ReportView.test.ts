@@ -295,3 +295,15 @@ describe('ReportView — 60초 제한 표시', () => {
     expect(writeText.mock.calls[0][0]).toContain('- 1분 30초 · q1 (30초 초과)')
   })
 })
+
+describe('ReportView — 면접관', () => {
+  it('헤더 태그에 이 면접의 면접관 이름', () => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'writing',
+      profile: { field: 'it', job: '백엔드' },
+      interviewerId: 'sharp',
+    })
+    expect(mount(ReportView).text()).toContain('면접관: 날카로운 압박 면접관')
+  })
+})
