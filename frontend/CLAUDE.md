@@ -16,8 +16,10 @@
 frontend/src/
 ├── views/        # 화면 4개: LandingView, PrepareView, InterviewView, ReportView
 ├── components/   # 재사용 UI: components/ui/*, components/interview/{InterviewStage,ChatLog,AnswerInput}
-├── services/     # 외부 세계 접점: llm.ts, modelCache.ts, pdf.ts, speech.ts, api.ts
-├── stores/       # Pinia: model.ts(다운로드·초기화), interview.ts(단계·프로필·대화·리포트)
+├── interviewers/ # 면접관 정의(순수 데이터) + voices.json(목소리·미리 듣기 문장, 생성 스크립트와 공용)
+├── workers/      # tts.worker.ts(Supertonic, onnxruntime-web) + ttsProtocol.ts
+├── services/     # 외부 세계 접점: llm.ts, modelCache.ts, pdf.ts, speech.ts, api.ts, preview.ts, sprites.ts
+├── stores/       # Pinia: model.ts(다운로드·초기화), interview.ts(단계·프로필·대화·리포트), interviewer.ts(면접관 선택)
 ├── prompts/      # 시스템 프롬프트·리포트 지시문: interviewer.ts, report.ts (계층 규율 경로)
 └── utils/        # 순수 함수: thoughts.ts, tokens.ts, endDetector.ts, goodAnswer.ts, reportParser.ts
 ```

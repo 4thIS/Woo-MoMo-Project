@@ -52,7 +52,10 @@ function printReport() {
     <header class="head">
       <h1 class="display">면접 리포트</h1>
       <div class="meta">
-        <PixelTag tone="muted">{{ fieldLabel }} · {{ s.profile.job }}</PixelTag>
+        <PixelTag tone="muted"
+          >{{ fieldLabel }} · {{ s.profile.job }} · 면접관:
+          {{ s.sessionInterviewer.name }}</PixelTag
+        >
         <PixelTag v-if="s.reportStatus === 'done' && s.report" tone="muted"
           >질문 {{ nQ }} · 꼬리질문 {{ nFollow }}</PixelTag
         >

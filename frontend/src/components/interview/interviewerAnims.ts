@@ -1,4 +1,5 @@
 import type { Stage } from '@/stores/interview'
+import type { CenterRole, CenterSprites } from '@/interviewers'
 
 export type Char = 'left' | 'center' | 'right'
 export type AnimName =
@@ -77,4 +78,15 @@ export const LIFE: Partial<
     center: { anims: ['center_nod'], every: [6_000, 10_000] },
     right: { anims: ['right_writing'], every: [5_000, 9_000] },
   },
+}
+
+/** 동작 시트: 가운데 동작은 고른 면접관 스프라이트(역할별)로 푼다. loop는 동작 규칙이라 ANIMS를 따른다(spec 4.6) */
+export function sheetFor(
+  name: AnimName,
+  center?: CenterSprites,
+): { file: string; frames: number; loop: boolean } {
+  const a = ANIMS[name]
+  if (!center || !name.startsWith('center_')) return a
+  const s = center[name.slice('center_'.length) as CenterRole]
+  return { file: s.file, frames: s.frames, loop: a.loop }
 }

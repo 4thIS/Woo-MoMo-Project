@@ -103,13 +103,14 @@ export function interviewerById(id: string | null): Interviewer | null
 - **고른 목소리** `ttsVoice`: 면접관의 `voiceId`가 `tts.voices`에 있으면 그것, 아니면 `tts.voice`(기본)
 - **받을 TTS 파일** = 엔진 파일(`files` − `voices` 경로) + 고른 목소리 파일 1개. `voices`가 없으면 지금처럼 `files` 전체를 받는다.
   - `ttsSize`·`downloadSize`·합산 진행률·필요 용량은 모두 이 목록 기준이다.
-- `initTts(cfg, voice, onProgress)`: 워커 `load` 메시지의 `voice`에 고른 목소리 ID를, `files`에 위 목록을 넣는다. 워커는 지금처럼 `voice_styles/{voice}.json`을 찾는다.
+- `resolveTts(tts, voiceId)`(`utils/ttsVoices.ts`)가 `voice`를 고른 목소리 ID로, `files`를 위 목록(목소리 파일은 맨 뒤)으로 바꾼 설정을 만든다. `initTts(cfg, onProgress)`는 그대로 이 설정을 워커 `load`에 넘기고, 워커는 지금처럼 `voice_styles/{voice}.json`을 찾는다.
 - **워커 `setVoice`** (`ttsProtocol.ts`):
   - `{ type: 'setVoice'; voice: string; file: TtsLoadFile }` → 목소리 JSON만 읽어 스타일 텐서를 교체하고 `{ type: 'voiceSet' }`로 응답한다. ONNX 세션은 그대로 둔다.
   - 합성 큐에 이미 들어온 요청은 옛 목소리로 끝내고, 그 뒤 요청부터 새 목소리를 쓴다.
-- `model.changeVoice(id)`:
-  - 목소리 파일이 캐시에 없으면 `downloadModel`로 받는다.
-  - TTS가 `ready`면 `setVoice`를 보내고, 로딩 중이면 다음 로드에 반영하고, 텍스트 전용이면 아무것도 하지 않는다.
+- `model.chooseInterviewer(id)`(랜딩·준비 화면 공용): 선택 → `voiceCached` 확인 → `syncVoice()`.
+  - `syncVoice`: TTS가 `ready`이고 로드된 목소리와 다르면, 목소리 파일이 캐시에 없을 때 `downloadModel`로 받고 `setVoice`를 보낸다. 로딩 중이면 `loadTts`가 끝난 뒤 다시 맞추고, 텍스트 전용이면 아무것도 하지 않는다.
+  - 교체 중(`voiceSwitching`)에는 `ready`가 아니다(목소리를 끈 경우는 예외 — "목소리 없이 시작"은 교체 중에도 시작할 수 있다). 교체 전체에 `VOICE_SWITCH_TIMEOUT_MS`(30초) 상한을 둔다(7절).
+  - 되돌림 기준은 실제로 목소리를 올린 면접관(`loadedInterviewerId`)이다. 교체 중에 다른 면접관을 고르면 끝난 뒤 이어서 맞춘다.
 - **캐시 정리**(`currentCacheKeys`): `tts.voices` 10개의 키를 모두 남긴다. 다시 그 면접관으로 돌아가도 새로 받지 않게 하려는 것이다.
 - **재방문 판정**(`checkCached`): 모델 + 엔진 파일만 본다(`cached`). 고른 목소리 파일의 캐시 여부는 **따로** `voiceCached`로 기록한다.
 - **진행률 미리 채우기(`download()`)는 실제로 캐시에 있는 파일만큼만** 한다. 지금 코드(`model.ts:173`, `if (this.cached) this.ttsReceived = this.ttsSize`)처럼 TTS 전체를 채우면, 재방문인데 고른 목소리가 캐시에 없을 때 진행 장면이 100%에서 시작하고 290KB는 진행률 없이 받아진다(모델만 캐시된 재방문에서 줍기 동작이 통째로 생략되던 문제와 같은 원인).
@@ -121,7 +122,7 @@ export function interviewerById(id: string | null): Interviewer | null
 - 재생 실패(파일 없음·디코딩 실패)면 `false`를 반환한다. 화면에 "미리 듣기를 재생할 수 없습니다"만 보이고, 선택은 그대로 된다.
 
 ### 4.5 화면 컴포넌트
-- `components/InterviewerPicker.vue` (신규): props `modelValue: InterviewerId | null`, emits `update:modelValue`. 3명 카드(애니메이션·이름·소개)를 그린다. 스피커 버튼은 없다. 카드 클릭·키보드 선택 = 선택 + 포커스 + 재생. 랜딩과 준비 화면 "바꾸기"에서 같이 쓴다.
+- `components/InterviewerPicker.vue` (신규): props 없이 스토어(`useInterviewerStore`, `model.chooseInterviewer`)로 선택한다. 3명 카드(애니메이션·이름·소개)를 그린다. 스피커 버튼은 없다. 카드 클릭·키보드 선택 = 선택 + 포커스 + 재생. 랜딩과 준비 화면 "바꾸기"에서 같이 쓴다.
 - `LandingView`: 두 번째 창을 Picker로 바꾼다. 첫 방문은 선택 전 동의 선택지를 비활성으로 두고 안내를 보인다. 재방문(`cached`)인데 저장된 선택이 없으면 `standard`를 자동 선택한다(3.3). 목소리 행·재방문 한 줄에 면접관 이름을 넣는다.
 - `PrepareView`: 시작 영역에 면접관 칩과 "바꾸기"를 두고, 목소리 준비 줄에 이름을 넣는다.
 - `InterviewStage`·`ReportView`: 태그에 면접관 이름을 넣는다.
@@ -144,7 +145,7 @@ export function interviewerById(id: string | null): Interviewer | null
   }
   ```
 - `buildSystemPrompt(i)`는 `persona`를 받아 위 네 자리만 채운다. 진행 규칙의 나머지(질문 5개, 종료 문장, 면접 중 평가 금지, 번호 금지, 머리말·이모지 금지)는 공통이다.
-- `buildReportInstruction(persona)`는 `REPORT_INSTRUCTION` 뒤에 `reportTone`을 한 줄 덧붙인다. JSON 예시·필드·"두세 문장" 분량은 그대로다.
+- `buildReportInstruction(persona)`는 `REPORT_INSTRUCTION`의 JSON 예시 바로 앞에 `reportTone`을 한 줄 넣는다. JSON 예시·필드·"두세 문장" 분량은 그대로다.
 - `systemPromptOverride`(매니페스트)가 있으면 지금처럼 그것이 우선이고 페르소나는 적용되지 않는다(파인튜닝 모델용).
 
 ### 5.2 페르소나 문구 (초안 — 리허설에서 다듬는다)
@@ -198,6 +199,7 @@ export function interviewerById(id: string | null): Interviewer | null
 | `tts.voices` 없음 / `voiceId`가 목록에 없음 | 기본 `tts.voice`로 합성(`console.warn` 한 번), 페르소나는 그대로 |
 | 목소리 파일 다운로드 실패 | 기존 TTS 실패 경로(다시 시도 / 목소리 없이 시작) |
 | `setVoice` 실패(바꾸기) | 이전 목소리를 유지하고 "목소리를 바꾸지 못했습니다" 경고. 면접관 선택은 되돌린다 |
+| 바꾸기가 30초 안에 안 끝남 | 목소리 파일 다운로드에서 멈췄으면 중단하고 위와 같이 되돌린다. 워커가 응답하지 않으면 워커를 버리고 TTS 실패 경로(다시 시도 / 목소리 없이 시작)로 간다 |
 | 저장된 `momo.interviewer`가 정의에 없음 | 선택 안 됨(첫 방문처럼). 단 재방문(`cached`)이면 `standard` 자동 선택(3.3) |
 | 새 면접관 스프라이트 로드 실패 | 그 역할은 `standard` 스프라이트로 대체 |
 | `systemPromptOverride` 있음 | 페르소나 미적용(기존 동작), 태그의 면접관 이름은 그대로 |
@@ -218,14 +220,14 @@ export function interviewerById(id: string | null): Interviewer | null
   - `checkCached`의 `cached`는 목소리 파일을 보지 않고, `voiceCached`는 고른 목소리만 본다.
   - 재방문 + 고른 목소리 캐시 없음: `download()` 직후 합산 진행률이 100% 미만이고(목소리분이 빠짐), 목소리 수신에 따라 100%가 된다.
   - 재방문 + 목소리까지 캐시: 지금처럼 100%로 시작한다.
-  - `changeVoice`가 상태별로 동작한다(ready → setVoice, 로딩 중 → 다음 로드, 텍스트 전용 → 무동작).
+  - `chooseInterviewer`·`syncVoice`가 상태별로 동작한다(ready → setVoice, 로딩 중 → 로드 뒤 맞춤, 텍스트 전용 → 무동작). 실패·시간 초과 시 되돌림.
 - `services/tts`·워커 프로토콜
   - `setVoice` → `voiceSet`
   - 실패 시 이전 목소리 유지
   - 큐에 남은 요청은 옛 목소리
 - `services/preview`: 새 재생이 이전 재생을 멈춘다. 실패하면 `false`를 반환한다. 끝나면 `onEnded`를 부른다. `momo.muted`를 읽지 않는다.
 - `InterviewerPicker`
-  - 클릭 → `update:modelValue` + 미리 듣기 호출(음소거 저장값과 무관하게 항상)
+  - 클릭 → 선택(`chooseInterviewer`) + 미리 듣기 호출(음소거 저장값과 무관하게 항상)
   - 같은 카드 재클릭 → 처음부터 다시 재생
   - 재생 중 캐릭터 `question` 반복, `onEnded` 뒤 `idle`
   - 방향키·Space 선택도 재생

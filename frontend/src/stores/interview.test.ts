@@ -762,6 +762,17 @@ describe('interview store — 면접관 페르소나', () => {
     expect(sess.sent).toContain(buildReportInstruction(PERSONAS.gentle))
     expect(sess.sent).not.toContain(REPORT_INSTRUCTION)
   })
+  it('매니페스트에 systemPromptOverride가 있으면 리포트도 말투 없이 기본 지시문 그대로(spec 5.1·7절)', async () => {
+    useInterviewerStore().select('sharp')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    useModelStore().manifest!.systemPromptOverride = '파인튜닝 모델 전용 프롬프트'
+    await s.start()
+    await s.finish()
+    expect(sess.sent.at(-1)).toBe(REPORT_INSTRUCTION)
+  })
   it('시작하면 미리 듣기를 멈추고, reset은 면접관 스냅샷을 비운다', async () => {
     const iv = useInterviewerStore()
     iv.$patch({ playingId: 'gentle' })
