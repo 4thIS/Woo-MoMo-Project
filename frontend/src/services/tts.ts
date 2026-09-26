@@ -31,9 +31,17 @@ const spawn = () =>
     ? factory()
     : new Worker(new URL('../workers/tts.worker.ts', import.meta.url), { type: 'module' })
 
+/** 진행 중인 setTtsVoice. 새 요청·dispose·워커 오류면 거부한다 */
+let voicePending: { resolve: () => void; reject: (e: unknown) => void } | null = null
+function failVoice(e: unknown) {
+  voicePending?.reject(e)
+  voicePending = null
+}
+
 function fail(e: unknown) {
   for (const p of pending.values()) p.reject(e)
   pending.clear()
+  failVoice(e)
 }
 
 /** 파일을 순서대로 내려받아 캐시에 넣고(있으면 건너뜀) 워커를 띄워 세션을 만든다 */
@@ -95,6 +103,11 @@ export function initTts(
               sampleRate: m.sampleRate,
               durationMs: Math.round((m.samples.length / m.sampleRate) * 1000),
             })
+          } else if (m.type === 'voiceSet') {
+            voicePending?.resolve()
+            voicePending = null
+          } else if (m.type === 'voiceError') {
+            failVoice(new Error(m.message)) // 워커는 이전 목소리로 살아 있다 — 종료하지 않는다
           }
         }
         w.onerror = (e) => {
@@ -154,6 +167,18 @@ export function synthesize(text: string, signal?: AbortSignal): Promise<AudioCli
       },
     })
     w.postMessage({ type: 'synthesize', id, text } satisfies MainToWorker)
+  })
+}
+
+/** 준비된 워커의 목소리만 바꾼다(spec 4.3). 이전 목소리 요청은 superseded로 거부한다 */
+export function setTtsVoice(voice: string, file: TtsLoadFile): Promise<void> {
+  if (!worker || !loaded)
+    return Promise.reject(new Error('TTS가 초기화되지 않았습니다 (not loaded)'))
+  failVoice(new Error('TTS voice superseded'))
+  const w = worker
+  return new Promise<void>((resolve, reject) => {
+    voicePending = { resolve, reject }
+    w.postMessage({ type: 'setVoice', voice, file } satisfies MainToWorker)
   })
 }
 

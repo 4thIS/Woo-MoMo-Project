@@ -10,7 +10,7 @@ vi.mock('@/services/modelCache', () => ({
   ),
 }))
 import { downloadModel, hasModel } from '@/services/modelCache'
-import { __setWorkerFactory, disposeTts, initTts, synthesize } from './tts'
+import { __setWorkerFactory, disposeTts, initTts, setTtsVoice, synthesize } from './tts'
 import type { MainToWorker, WorkerToMain } from '@/workers/ttsProtocol'
 
 /** 가짜 워커: 보낸 메시지를 기록하고, 테스트가 응답을 주입한다 */
@@ -239,5 +239,56 @@ describe('synthesize', () => {
     disposeTts()
     expect(w.terminated).toBe(true)
     await expect(p).rejects.toThrow()
+  })
+})
+
+const voiceFile = {
+  path: 'voice_styles/F1.json',
+  size: 11,
+  url: '/models/tts/supertonic-3/voice_styles/F1.json',
+  cacheKey: '/models-cache/supertonic-3/models/tts/supertonic-3/voice_styles/F1.json',
+}
+async function loadedWorker() {
+  const { p } = await startInit()
+  w.reply({ type: 'loaded' })
+  await p
+  return w
+}
+
+describe('setTtsVoice', () => {
+  it('로드 전이면 거부한다', async () => {
+    await expect(setTtsVoice('F1', voiceFile)).rejects.toThrow('not loaded')
+  })
+  it('워커에 setVoice를 보내고 voiceSet이면 끝난다', async () => {
+    const worker = await loadedWorker()
+    const p = setTtsVoice('F1', voiceFile)
+    expect(worker.sent.at(-1)).toEqual({ type: 'setVoice', voice: 'F1', file: voiceFile })
+    worker.reply({ type: 'voiceSet', voice: 'F1' })
+    await expect(p).resolves.toBeUndefined()
+  })
+  it('voiceError면 거부하지만 워커는 살아 있고 합성은 계속된다', async () => {
+    const worker = await loadedWorker()
+    const p = setTtsVoice('F1', voiceFile)
+    worker.reply({ type: 'voiceError', voice: 'F1', message: 'bad style' })
+    await expect(p).rejects.toThrow('bad style')
+    expect(worker.terminated).toBe(false)
+    const s = synthesize('안녕하세요')
+    const id = (worker.sent.at(-1) as { id: number }).id
+    worker.reply({ type: 'audio', id, samples: new Float32Array(10), sampleRate: 10 })
+    await expect(s).resolves.toMatchObject({ durationMs: 1000 })
+  })
+  it('새 setTtsVoice가 오면 이전 요청은 superseded로 거부된다', async () => {
+    const worker = await loadedWorker()
+    const first = setTtsVoice('F1', voiceFile)
+    const second = setTtsVoice('M4', { ...voiceFile, path: 'voice_styles/M4.json' })
+    await expect(first).rejects.toThrow('superseded')
+    worker.reply({ type: 'voiceSet', voice: 'M4' })
+    await expect(second).resolves.toBeUndefined()
+  })
+  it('disposeTts는 대기 중인 setTtsVoice를 거부한다', async () => {
+    await loadedWorker()
+    const p = setTtsVoice('F1', voiceFile)
+    disposeTts()
+    await expect(p).rejects.toThrow('disposed')
   })
 })
