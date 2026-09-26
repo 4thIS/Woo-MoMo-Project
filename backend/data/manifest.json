@@ -27,6 +27,17 @@
     ],
     "voice": "M2",
     "lang": "ko",
-    "voices": null
+    "voices": [
+      { "id": "F1", "path": "voice_styles/F1.json", "size": 292046 },
+      { "id": "F2", "path": "voice_styles/F2.json", "size": 292423 },
+      { "id": "F3", "path": "voice_styles/F3.json", "size": 290794 },
+      { "id": "F4", "path": "voice_styles/F4.json", "size": 291808 },
+      { "id": "F5", "path": "voice_styles/F5.json", "size": 291479 },
+      { "id": "M1", "path": "voice_styles/M1.json", "size": 291748 },
+      { "id": "M2", "path": "voice_styles/M2.json", "size": 292055 },
+      { "id": "M3", "path": "voice_styles/M3.json", "size": 290198 },
+      { "id": "M4", "path": "voice_styles/M4.json", "size": 291522 },
+      { "id": "M5", "path": "voice_styles/M5.json", "size": 291469 }
+    ]
   }
 }
