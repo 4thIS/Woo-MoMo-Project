@@ -26,6 +26,7 @@
       { "path": "voice_styles/M2.json", "size": 292055 }
     ],
     "voice": "M2",
-    "lang": "ko"
+    "lang": "ko",
+    "voices": null
   }
 }

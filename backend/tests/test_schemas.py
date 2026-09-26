@@ -165,3 +165,54 @@ def test_tts_requires_at_least_one_file_and_positive_size():
 def test_tts_rejects_unknown_keys():
     with pytest.raises(ValidationError):
         Manifest.model_validate(_manifest(tts={**TTS, "steps": 8}))
+
+
+VOICES = [
+    {"id": "F1", "path": "voice_styles/F1.json", "size": 292046},
+    {"id": "M2", "path": "voice_styles/M2.json", "size": 292055},
+]
+
+
+def test_tts_voices_default_to_none():
+    m = Manifest.model_validate(_manifest(tts=TTS))
+    assert m.tts is not None and m.tts.voices is None
+
+
+def test_tts_parses_voices():
+    m = Manifest.model_validate(_manifest(tts={**TTS, "voices": VOICES}))
+    assert m.tts is not None and m.tts.voices is not None
+    assert [v.id for v in m.tts.voices] == ["F1", "M2"]
+    assert m.tts.voices[1].path == "voice_styles/M2.json"
+
+
+def test_tts_voices_reject_empty_list():
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": []}))
+
+
+def test_tts_voices_reject_duplicate_ids():
+    dup = [*VOICES, {"id": "F1", "path": "voice_styles/F1b.json", "size": 1}]
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": dup}))
+
+
+def test_tts_voices_must_include_default_voice():
+    only_f1 = [VOICES[0]]  # 기본 voice는 "M2"
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": only_f1}))
+
+
+@pytest.mark.parametrize(
+    "voice",
+    [
+        {"id": "M2", "path": "/voice_styles/M2.json", "size": 1},
+        {"id": "M2", "path": "voice_styles/../M2.json", "size": 1},
+        {"id": "M2", "path": "", "size": 1},
+        {"id": "M2", "path": "voice_styles/M2.json", "size": 0},
+        {"id": "", "path": "voice_styles/M2.json", "size": 1},
+        {"id": "M2", "path": "voice_styles/M2.json", "size": 1, "extra": "x"},
+    ],
+)
+def test_tts_voice_rejects_bad_entries(voice):
+    with pytest.raises(ValidationError):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": [voice]}))
