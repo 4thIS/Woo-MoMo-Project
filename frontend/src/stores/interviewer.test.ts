@@ -84,7 +84,11 @@ describe('stores/interviewer — 스프라이트 대체', () => {
     const s = useInterviewerStore()
     await Promise.all([s.probeSprites(), s.probeSprites()])
     expect(probeImage).toHaveBeenCalledTimes(2 * CENTER_ROLES.length)
-    expect(vi.mocked(probeImage).mock.calls.every(([u]) => !u.startsWith('/sprites/interviewers/center_'))).toBe(true)
+    expect(
+      vi
+        .mocked(probeImage)
+        .mock.calls.every(([u]) => !u.startsWith('/sprites/interviewers/center_')),
+    ).toBe(true)
   })
   it('안 뜨는 파일의 역할만 기본 면접관 시트로 바꾼다', async () => {
     vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('gentle/center_nod.png'))
