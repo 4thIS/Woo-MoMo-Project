@@ -5,6 +5,8 @@ import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/store
 import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
+import { useInterviewerStore } from '@/stores/interviewer'
+import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
@@ -18,6 +20,10 @@ const model = useModelStore()
 const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
 useSectionWheel(root)
+const iv = useInterviewerStore()
+/* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
+const pickerOpen = ref(false)
+const interviewerName = computed(() => iv.current?.name ?? '기본 면접관')
 
 const fieldItems = (Object.keys(FIELD_LABELS) as Field[]).map((value) => ({
   value,
@@ -380,6 +386,18 @@ async function clearAndRetry() {
         </PixelWindow>
 
         <!-- 시작 -->
+        <div class="interviewer-row">
+          <span class="mono" data-test="interviewer-chip">면접관: {{ interviewerName }}</span>
+          <button
+            type="button"
+            class="mono link press"
+            data-test="change-interviewer"
+            @click="pickerOpen = !pickerOpen"
+          >
+            {{ pickerOpen ? '닫기' : '바꾸기' }}
+          </button>
+        </div>
+        <InterviewerPicker v-if="pickerOpen" />
         <div class="start-row">
           <ul class="mono checklist">
             <li>
@@ -409,12 +427,14 @@ async function clearAndRetry() {
                   blink: model.ttsStatus !== 'ready' && model.ttsStatus !== 'error',
                 }"
               />
-              목소리 준비 ({{
-                model.ttsStatus === 'ready'
-                  ? '완료'
-                  : model.ttsStatus === 'error'
-                    ? '실패'
-                    : `${model.ttsProgress}%`
+              목소리 준비 · {{ interviewerName }} ({{
+                model.voiceSwitching
+                  ? '바꾸는 중'
+                  : model.ttsStatus === 'ready'
+                    ? '완료'
+                    : model.ttsStatus === 'error'
+                      ? '실패'
+                      : `${model.ttsProgress}%`
               }})
             </li>
           </ul>
@@ -441,6 +461,9 @@ async function clearAndRetry() {
               ▲ 진행 창으로
             </button>
           </div>
+          <p v-if="model.voiceError" class="mono start-error" data-test="voice-error">
+            {{ model.voiceError }}
+          </p>
           <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
         </div>
       </div>
@@ -577,6 +600,12 @@ async function clearAndRetry() {
   color: var(--text-2);
   max-height: 120px;
   overflow: hidden;
+}
+.interviewer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
 }
 .start-row {
   display: flex;
