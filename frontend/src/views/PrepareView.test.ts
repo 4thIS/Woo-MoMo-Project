@@ -405,6 +405,27 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
       vi.useRealTimers()
     }
   })
+  it('목소리 교체가 TTS_STUCK_MS 넘게 이어져도 "목소리 없이 시작"이 나타나고, 누르면 바로 시작한다', async () => {
+    vi.useFakeTimers()
+    try {
+      const m = useModelStore()
+      m.manifest = manifestWithTts
+      m.status = 'ready'
+      m.$patch({ ttsStatus: 'ready', voiceSwitching: true })
+      const w = mountView()
+      await filled(w)
+      expect(w.find('[data-test=start-voiceless]').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(TTS_STUCK_MS + 1)
+      await w.vm.$nextTick()
+      const voiceless = w.find('[data-test=start-voiceless]')
+      expect(voiceless.exists()).toBe(true)
+      const start = vi.spyOn(useInterviewStore(), 'start').mockResolvedValue()
+      await voiceless.trigger('click')
+      expect(start).toHaveBeenCalled() // 교체가 끝나지 않았어도 목소리 해제로 열린다
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('Gemma 실패: 문구가 실패를 말하고 "진행 창으로" 링크가 진행 창으로 스크롤한다', async () => {
     const m = useModelStore()
     m.status = 'error'

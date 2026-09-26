@@ -158,11 +158,14 @@ const blockedByError = computed(
 function scrollToProgress() {
   root.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
-/* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중이면 텍스트 전용으로 바로 시작할 길을 연다 */
+/* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중(목소리 교체 중 포함)이면 텍스트 전용으로 바로 시작할 길을 연다 */
 const ttsStuck = ref(false)
 let stuckTimer: ReturnType<typeof setTimeout> | null = null
 watch(
-  () => model.status === 'ready' && model.ttsEnabled && model.ttsStatus !== 'ready',
+  () =>
+    model.status === 'ready' &&
+    model.ttsEnabled &&
+    (model.ttsStatus !== 'ready' || model.voiceSwitching),
   (waiting) => {
     if (stuckTimer) clearTimeout(stuckTimer)
     stuckTimer = null

@@ -22,7 +22,7 @@ import { getManifest } from '@/services/api'
 import { downloadModel, getModelBlob, hasModel, pruneModels } from '@/services/modelCache'
 import { initEngine } from '@/services/llm'
 import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
-import { INIT_TIMEOUT_MS, TTS_WARMUP_TEXT, useModelStore } from './model'
+import { INIT_TIMEOUT_MS, TTS_WARMUP_TEXT, VOICE_SWITCH_TIMEOUT_MS, useModelStore } from './model'
 
 const manifest = {
   id: 'e4b',
@@ -661,6 +661,7 @@ describe('model store — 면접관 목소리 (tts.voices)', () => {
       url,
       voiceSize(gentleVoice()),
       expect.any(Function),
+      expect.any(AbortSignal), // 교체 상한을 넘기면 중단한다
     )
     expect(setTtsVoice).toHaveBeenCalledWith(gentleVoice(), {
       path: `voice_styles/${gentleVoice()}.json`,
@@ -849,5 +850,80 @@ describe('model store — 목소리 교체 되돌림', () => {
     expect(s.voiceError).toContain('bad style')
     await s.chooseInterviewer('standard')
     expect(s.voiceError).toBeNull()
+  })
+})
+
+describe('model store — 목소리 교체 상한', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: ttsV })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('워커가 목소리 교체에 응답하지 않으면 상한 뒤 워커를 버리고 목소리 실패(error)로 — 선택은 그대로', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    vi.mocked(disposeTts).mockClear()
+    vi.mocked(setTtsVoice).mockReturnValueOnce(new Promise(() => {}))
+    const p = s.chooseInterviewer('gentle')
+    await vi.advanceTimersByTimeAsync(VOICE_SWITCH_TIMEOUT_MS - 1)
+    expect(s.voiceSwitching).toBe(true)
+    await vi.advanceTimersByTimeAsync(1)
+    await p
+    expect(s.voiceSwitching).toBe(false)
+    expect(s.ttsStatus).toBe('error')
+    expect(s.ttsError).toContain('목소리 교체')
+    expect(disposeTts).toHaveBeenCalled()
+    expect(s.loadedVoice).toBeNull()
+    expect(s.loadedInterviewerId).toBeNull()
+    expect(s.voiceError).toBeNull() // 실패는 진행 창(ttsError)이 보여 준다
+    expect(useInterviewerStore().id).toBe('gentle')
+    expect(s.ready).toBe(false)
+    // 다시 시도는 고른 목소리로 새 워커를 올린다
+    await s.retryTts()
+    expect(vi.mocked(initTts).mock.calls.at(-1)?.[0].voice).toBe(gentleVoice())
+    expect(s.ttsStatus).toBe('ready')
+    expect(s.loadedVoice).toBe(gentleVoice())
+    expect(s.loadedInterviewerId).toBe('gentle')
+  })
+  it('목소리 파일 다운로드가 끝나지 않으면 상한 뒤 중단하고 로드된 면접관으로 되돌린다(워커는 그대로)', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    let signal: AbortSignal | undefined
+    let finishDownload!: () => void
+    // 중단 신호를 무시하고 늦게 끝나는 다운로드 — 포기한 교체가 뒤늦게 워커를 건드리지 않는지도 본다
+    vi.mocked(downloadModel).mockImplementationOnce((_id, _url, _size, _onProgress, sig) => {
+      signal = sig
+      return new Promise<void>((r) => (finishDownload = r))
+    })
+    vi.mocked(disposeTts).mockClear()
+    const p = s.chooseInterviewer('gentle')
+    await vi.advanceTimersByTimeAsync(VOICE_SWITCH_TIMEOUT_MS)
+    await p
+    expect(signal?.aborted).toBe(true)
+    expect(s.voiceSwitching).toBe(false)
+    expect(useInterviewerStore().id).toBe('standard')
+    expect(s.voiceError).toContain('목소리 교체')
+    expect(s.ttsStatus).toBe('ready')
+    expect(s.loadedVoice).toBe('M2')
+    expect(disposeTts).not.toHaveBeenCalled()
+    expect(s.ready).toBe(true)
+    finishDownload()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(setTtsVoice).not.toHaveBeenCalled()
+  })
+  it('목소리를 해제하면 교체 중이어도 Gemma만으로 ready — "목소리 없이 시작"이 막히지 않게', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    vi.mocked(setTtsVoice).mockReturnValueOnce(new Promise(() => {}))
+    void s.chooseInterviewer('gentle')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(s.voiceSwitching).toBe(true)
+    expect(s.ready).toBe(false)
+    s.setVoiceWanted(false)
+    expect(s.ready).toBe(true)
   })
 })

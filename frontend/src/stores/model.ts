@@ -29,22 +29,33 @@ export const TTS_WARMUP_TIMEOUT_MS = 15_000
 export const INIT_TIMEOUT_MS = 90_000
 /** Gemma는 됐는데 목소리가 이만큼 넘게 준비 중이면 준비 화면이 "목소리 없이 시작"을 내민다 */
 export const TTS_STUCK_MS = 60_000
+/** 면접관 목소리 교체(목소리 파일 다운로드 + 워커 교체) 상한. 멈추면 voiceSwitching에 갇혀 시작할 길이 없다 */
+export const VOICE_SWITCH_TIMEOUT_MS = 30_000
 
 let armLoadTimeout: (() => void) | null = null // loadTts의 워커 로드 타이머를 다운로드 완료 시점에 켜는 훅
 
-/** p가 ms 안에 끝나지 않으면 label 초기화 시간 초과로 거부한다 */
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+/** p가 ms 안에 끝나지 않으면 message로 거부한다. 거부 직전에 onTimeout을 부른다 */
+function withDeadline<T>(
+  p: Promise<T>,
+  ms: number,
+  message: string,
+  onTimeout?: () => void,
+): Promise<T> {
   let t: ReturnType<typeof setTimeout>
   return Promise.race([
     p,
     new Promise<never>((_, reject) => {
-      t = setTimeout(
-        () =>
-          reject(new Error(`${label} 초기화가 ${Math.round(ms / 1000)}초 안에 끝나지 않았습니다`)),
-        ms,
-      )
+      t = setTimeout(() => {
+        onTimeout?.()
+        reject(new Error(message))
+      }, ms)
     }),
   ]).finally(() => clearTimeout(t))
+}
+
+/** p가 ms 안에 끝나지 않으면 label 초기화 시간 초과로 거부한다 */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return withDeadline(p, ms, `${label} 초기화가 ${Math.round(ms / 1000)}초 안에 끝나지 않았습니다`)
 }
 
 /** 현재 매니페스트가 가리키는 파일들의 캐시 키(모델·폴백·TTS 파일·목소리 전부). 한 번 받은 목소리는 남긴다 */
@@ -159,12 +170,12 @@ export const useModelStore = defineStore('model', {
     },
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
-    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready + 목소리 교체 중이 아님 */
+    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready + 목소리 교체 중이 아님.
+     *  목소리를 해제하면 교체 중이어도 열린다 — "목소리 없이 시작"이 교체에 막히지 않게 */
     ready(): boolean {
       return (
         this.status === 'ready' &&
-        (!this.ttsEnabled || this.ttsStatus === 'ready') &&
-        !this.voiceSwitching
+        (!this.ttsEnabled || (this.ttsStatus === 'ready' && !this.voiceSwitching))
       )
     },
   },
@@ -390,14 +401,31 @@ export const useModelStore = defineStore('model', {
       this.voiceSwitching = true
       this.voiceError = null
       let failed = false
+      // 다운로드 + 워커 교체 전체에 상한 — 넘기면 다운로드는 중단하고, 어느 단계에서 멈췄는지(stage)로 뒷정리를 가른다
+      const ac = new AbortController()
+      let stage = 'download' as 'download' | 'voice' // 아래 async 안에서 바뀐다 — 좁혀지지 않게 단언
+      let timedOut = false
       try {
-        if (!(await hasModel(sel.id, url))) await downloadModel(sel.id, url, file.size, () => {})
-        await setTtsVoice(sel.voice, {
-          path: file.path,
-          size: file.size,
-          url,
-          cacheKey: cacheKey(sel.id, url),
-        })
+        await withDeadline(
+          (async () => {
+            if (!(await hasModel(sel.id, url)))
+              await downloadModel(sel.id, url, file.size, () => {}, ac.signal)
+            if (ac.signal.aborted) return // 상한을 넘겨 포기한 교체 — 뒤늦게 워커를 건드리지 않는다
+            stage = 'voice'
+            await setTtsVoice(sel.voice, {
+              path: file.path,
+              size: file.size,
+              url,
+              cacheKey: cacheKey(sel.id, url),
+            })
+          })(),
+          VOICE_SWITCH_TIMEOUT_MS,
+          `목소리 교체가 ${Math.round(VOICE_SWITCH_TIMEOUT_MS / 1000)}초 안에 끝나지 않았습니다`,
+          () => {
+            timedOut = true
+            ac.abort()
+          },
+        )
         this.loadedVoice = sel.voice
         this.loadedInterviewerId = selInterviewer
         this.voiceCached = true
@@ -405,7 +433,18 @@ export const useModelStore = defineStore('model', {
         this.ttsReceived = Math.max(this.ttsReceived, this.ttsSize)
       } catch (e) {
         failed = true
-        this.voiceError = `목소리를 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`
+        const msg = e instanceof Error ? e.message : String(e)
+        if (timedOut && stage === 'voice') {
+          // 워커가 교체에 응답하지 않는다 — 믿을 수 없으니 버리고 목소리 실패로(준비 화면의 다시 시도·목소리 없이 시작).
+          // 되돌릴 로드된 목소리가 없으니 선택은 그대로 — retryTts가 고른 목소리로 새로 올린다
+          disposeTts()
+          this.ttsStatus = 'error'
+          this.ttsError = msg
+          this.loadedVoice = null
+          this.loadedInterviewerId = null
+          return false
+        }
+        this.voiceError = `목소리를 바꾸지 못했습니다: ${msg}`
         // 선택도 실제로 로드된 목소리의 면접관으로 되돌린다(spec 7절) — 다른 선택이 끼어들어도 "실제 로드된 것"을 기준으로 삼는다
         if (this.loadedInterviewerId) {
           useInterviewerStore().select(this.loadedInterviewerId)
