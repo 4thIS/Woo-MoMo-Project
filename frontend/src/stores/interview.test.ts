@@ -725,3 +725,51 @@ describe('startBlockReason — 실패와 대기를 구분한다 (#41)', () => {
     expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
   })
 })
+
+import { useInterviewerStore } from './interviewer'
+import { PERSONAS } from '@/prompts/personas'
+import { buildReportInstruction } from '@/prompts/report'
+
+describe('interview store — 면접관 페르소나', () => {
+  it('시작할 때 고른 면접관을 고정하고 그 페르소나로 프롬프트를 만든다(이후 선택을 바꿔도 그대로)', async () => {
+    useInterviewerStore().select('sharp')
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('sharp')
+    expect(s.sessionInterviewer.name).toBe('날카로운 압박 면접관')
+    expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
+    useInterviewerStore().select('gentle')
+    expect(s.sessionInterviewer.id).toBe('sharp')
+  })
+  it('선택이 없으면 기본 면접관 — 온화·압박 성격 문장이 없다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('standard')
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).not.toContain(PERSONAS.gentle.character!)
+    expect(prompt).not.toContain(PERSONAS.sharp.character!)
+  })
+  it('리포트는 면접관 말투 지시문으로 요청한다', async () => {
+    useInterviewerStore().select('gentle')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(sess.sent).toContain(buildReportInstruction(PERSONAS.gentle))
+    expect(sess.sent).not.toContain(REPORT_INSTRUCTION)
+  })
+  it('시작하면 미리 듣기를 멈추고, reset은 면접관 스냅샷을 비운다', async () => {
+    const iv = useInterviewerStore()
+    iv.$patch({ playingId: 'gentle' })
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(iv.playingId).toBeNull()
+    await s.reset()
+    expect(s.interviewerId).toBeNull()
+  })
+})
