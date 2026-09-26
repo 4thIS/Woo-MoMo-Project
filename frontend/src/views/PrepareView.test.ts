@@ -42,9 +42,11 @@ import { clearModels } from '@/services/modelCache'
 import { warmUpAudio } from '@/services/audio'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
+import { useInterviewerStore } from '@/stores/interviewer'
 import PrepareView from './PrepareView.vue'
 
-const mountView = () => mount(PrepareView, { global: { stubs: { PixelProgress: true } } })
+const mountView = () =>
+  mount(PrepareView, { global: { stubs: { PixelProgress: true, InterviewerPicker: true } } })
 
 /** ① 지원 정보(분야 IT + 직무)를 채우고 직무 입력을 떠나 ② 이력서 단계로 넘어간다 */
 async function fillProfile(w: ReturnType<typeof mountView>) {
@@ -313,7 +315,7 @@ describe('PrepareView — 목소리 준비', () => {
     expect(stub.attributes('received')).toBe('140')
     expect(stub.attributes('total')).toBe('200')
     expect(stub.attributes('filename')).toBe('supertonic-3')
-    expect(w.text()).toContain('목소리 준비 (40%)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관 (40%)')
     expect((w.find('[data-test="start"]').element as HTMLButtonElement).disabled).toBe(true)
   })
   it('TTS 실패면 error 단계 + 원인, 다시 시도는 retryTts만 부른다', async () => {
@@ -325,7 +327,7 @@ describe('PrepareView — 목소리 준비', () => {
     const retry = vi.spyOn(m, 'retry').mockResolvedValue()
     const w = mount(PrepareView)
     expect(w.text()).toContain('size mismatch')
-    expect(w.text()).toContain('목소리 준비 (실패)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관 (실패)')
     await w.find('[data-test="retry-tts"]').trigger('click')
     expect(retryTts).toHaveBeenCalled()
     expect(retry).not.toHaveBeenCalled()
@@ -424,5 +426,30 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     await fillProfile(w)
     await w.find('[data-test=form-open]').trigger('click')
     expect(w.find('[data-test=start]').text()).toContain("'이력서 완성'을 눌러 주세요")
+  })
+})
+
+describe('PrepareView — 면접관', () => {
+  it('시작 영역에 면접관 칩, "바꾸기"로 고르기 패널을 연다', async () => {
+    useInterviewerStore().select('sharp')
+    const w = mountView()
+    expect(w.find('[data-test="interviewer-chip"]').text()).toContain('날카로운 압박 면접관')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(false)
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
+    expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
+  })
+  it('목소리 준비 줄에 면접관 이름, 교체 중이면 "바꾸는 중", 실패면 안내', async () => {
+    useInterviewerStore().select('gentle')
+    const model = useModelStore()
+    model.manifest = manifestWithTts
+    const w = mountView()
+    expect(w.find('.checklist').text()).toContain('목소리 준비 · 온화한 선배')
+    model.$patch({ status: 'ready', ttsStatus: 'ready', voiceSwitching: true })
+    await w.vm.$nextTick()
+    expect(w.find('.checklist').text()).toContain('바꾸는 중')
+    model.$patch({ voiceSwitching: false, voiceError: '목소리를 바꾸지 못했습니다: x' })
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="voice-error"]').text()).toContain('목소리를 바꾸지 못했습니다')
   })
 })

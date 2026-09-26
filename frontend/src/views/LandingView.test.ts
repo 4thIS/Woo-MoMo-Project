@@ -16,6 +16,11 @@ vi.mock('@/services/llm', () => ({
   initEngine: vi.fn(async () => {}),
   disposeEngine: vi.fn(async () => {}),
 }))
+vi.mock('@/services/preview', () => ({
+  playPreview: vi.fn(async () => true),
+  stopPreview: vi.fn(),
+}))
+vi.mock('@/services/sprites', () => ({ probeImage: vi.fn(async () => true) }))
 
 import { checkEnvironment } from '@/services/gpuCheck'
 import { downloadModel, hasModel } from '@/services/modelCache'
@@ -49,8 +54,12 @@ const mountView = () =>
     global: { stubs: { SpeechText: { props: ['text'], template: '<p>{{ text }}</p>' } } },
   })
 
+const consentRadios = (w: ReturnType<typeof mountView>) =>
+  w.findAll('[aria-label="다운로드 동의"] [role=radio]')
+
 beforeEach(() => {
   localStorage.clear()
+  localStorage.setItem('momo.interviewer', 'standard')
   setActivePinia(createPinia())
   vi.mocked(getManifest).mockResolvedValue(manifest)
   vi.mocked(checkEnvironment).mockResolvedValue({
@@ -91,7 +100,7 @@ describe('LandingView', () => {
       '이 브라우저의 캐시',
       '사이트 데이터 삭제로 언제든',
     ])
-    expect(cells(1).slice(1, 3)).toEqual(['supertonic-3 (목소리 M2)', '약 380MB'])
+    expect(cells(1).slice(1, 3)).toEqual(['supertonic-3 (목소리: 기본 면접관)', '약 380MB'])
     expect(w.findAll('th').map((h) => h.text())).toEqual([
       '받기',
       '모델',
@@ -107,7 +116,7 @@ describe('LandingView', () => {
     await flushPromises()
     expect(w.findAll('[data-test="model-row"]')).toHaveLength(1)
     expect(w.find('[data-test="total"]').exists()).toBe(false)
-    expect(w.text()).not.toContain('AI로 합성')
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(false)
   })
   it('체크박스: Gemma는 체크 고정(비활성), 목소리는 기본 체크이고 해제하면 합계·필요 용량이 모델만 (#36)', async () => {
     vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
@@ -121,8 +130,8 @@ describe('LandingView', () => {
     await voice.setValue(false)
     expect(useModelStore().voiceWanted).toBe(false)
     expect(w.find('[data-test="total"]').text()).toBe('합계 약 2.8GB')
-    expect(w.text()).not.toContain('AI로 합성')
-    await w.findAll('[role=radio]')[0].trigger('click')
+    expect(w.find('[data-test="ai-voice"]').exists()).toBe(false)
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.text()).toContain('필요 2.8GB')
   })
@@ -145,7 +154,7 @@ describe('LandingView', () => {
     })
     const w = mountView()
     await flushPromises()
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.text()).toContain('필요 3.1GB')
   })
@@ -154,7 +163,7 @@ describe('LandingView', () => {
     const w = mountView()
     await flushPromises()
     expect(w.find('[data-test=env]').exists()).toBe(false)
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.find('[data-test=env]').exists()).toBe(true)
     expect(w.text()).toContain('Test GPU')
@@ -170,7 +179,7 @@ describe('LandingView', () => {
     })
     const w = mountView()
     await flushPromises()
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.text()).toContain('실행 불가')
     expect(w.text()).toContain('Chrome')
@@ -186,7 +195,7 @@ describe('LandingView', () => {
     })
     const w = mountView()
     await flushPromises()
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.text()).toContain('그래픽 가속')
     expect(w.text()).toContain('chrome://settings/system')
@@ -207,7 +216,7 @@ describe('LandingView', () => {
     const w = mountView()
     await flushPromises()
     expect(w.text()).not.toContain('서버에 연결할 수 없습니다')
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.text()).not.toContain('출전 가능')
     expect((w.find('[data-test=start-download]').element as HTMLButtonElement).disabled).toBe(true)
@@ -216,7 +225,7 @@ describe('LandingView', () => {
   it('내려받기 시작 → 다운로드 시작 + prepare로 이동', async () => {
     const w = mountView()
     await flushPromises()
-    await w.findAll('[role=radio]')[0].trigger('click')
+    await consentRadios(w)[0].trigger('click')
     await flushPromises()
     await w.find('[data-test=start-download]').trigger('click')
     await flushPromises()
@@ -239,7 +248,7 @@ describe('LandingView — 재방문 (#33)', () => {
     expect(consent.exists()).toBe(true)
     expect(consent.text()).toContain('e4b · supertonic-3')
     expect(consent.text()).toContain('이 브라우저에 저장됨')
-    expect(w.find('[role=radio]').exists()).toBe(false) // 동의를 다시 고르지 않는다
+    expect(consentRadios(w).length > 0).toBe(false) // 동의를 다시 고르지 않는다
     expect(checkEnvironment).toHaveBeenCalled()
     const env = w.find('[data-test="revisit-env"]')
     expect(env.text()).toContain('WebGPU')
@@ -267,7 +276,7 @@ describe('LandingView — 재방문 (#33)', () => {
     const w = mountView()
     await flushPromises()
     expect(w.find('[data-test="revisit-consent"]').exists()).toBe(false)
-    expect(w.find('[role=radio]').exists()).toBe(true)
+    expect(consentRadios(w).length > 0).toBe(true)
   })
   it('재방문이면 이미 받아 둔 것이라 저장 공간이 부족해도 막지 않는다', async () => {
     vi.mocked(checkEnvironment).mockResolvedValue({
@@ -294,5 +303,64 @@ describe('LandingView — 재방문 (#33)', () => {
     expect(w.find('[data-test="revisit-env"]').exists()).toBe(false)
     expect(w.find('[data-test="fix-webgpu"]').exists()).toBe(true)
     expect(w.find('[data-test="go-prepare"]').exists()).toBe(false)
+  })
+})
+
+describe('LandingView — 면접관 고르기', () => {
+  it('고르기 창에 면접관 3명 카드가 있다', async () => {
+    const w = mountView()
+    await flushPromises()
+    expect(w.findAll('[data-test^="interviewer-"]')).toHaveLength(3)
+  })
+  it('첫 방문(선택 없음)에는 동의 선택지가 비활성이고 "면접관을 먼저 골라 주세요"', async () => {
+    localStorage.removeItem('momo.interviewer')
+    setActivePinia(createPinia())
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="pick-first"]').text()).toContain('면접관을 먼저 골라 주세요')
+    await consentRadios(w)[0].trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="env"]').exists()).toBe(false)
+    await w.find('[data-test="interviewer-gentle"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="pick-first"]').exists()).toBe(false)
+    await consentRadios(w)[0].trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="env"]').exists()).toBe(true)
+  })
+  it('목소리 행: 고른 면접관 이름, 용량은 엔진 + 고른 목소리', async () => {
+    vi.mocked(getManifest).mockResolvedValue({
+      ...manifest,
+      tts: {
+        ...TTS,
+        files: [...TTS.files, { path: 'voice_styles/M2.json', size: 300_000 }],
+        voices: [
+          { id: 'M2', path: 'voice_styles/M2.json', size: 300_000 },
+          { id: 'F1', path: 'voice_styles/F1.json', size: 290_000 },
+        ],
+      },
+    })
+    const w = mountView()
+    await flushPromises()
+    const voiceRow = w.findAll('[data-test="model-row"]')[1]
+    expect(voiceRow.text()).toContain('supertonic-3 (목소리: 기본 면접관)')
+    expect(useModelStore().ttsSelectionSize).toBe(300_000_000 + 98_653_257 + 300_000)
+  })
+  it('재방문 한 줄에 면접관 이름이 붙는다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="revisit-consent"]').text()).toContain('면접관: 기본 면접관')
+  })
+  it('재방문인데 저장된 선택이 없으면 기본 면접관이 자동 선택되어 "바로 준비하기"가 열린다', async () => {
+    localStorage.removeItem('momo.interviewer')
+    setActivePinia(createPinia())
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
+    vi.mocked(hasModel).mockResolvedValue(true)
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="interviewer-standard"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-test="go-prepare"]').attributes('disabled')).toBeUndefined()
   })
 })

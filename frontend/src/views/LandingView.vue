@@ -12,11 +12,13 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import StatCard from '@/components/ui/StatCard.vue'
 import SpeechText from '@/components/ui/SpeechText.vue'
-import Avatar from '@/components/ui/Avatar.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
+import InterviewerPicker from '@/components/InterviewerPicker.vue'
+import { useInterviewerStore } from '@/stores/interviewer'
 
 const model = useModelStore()
 const interview = useInterviewStore()
+const iv = useInterviewerStore()
 
 /* 히어로 페이드: 스크롤 진행률 0→1 (스크롤 컨테이너는 .snap-root인 루트 요소) */
 const root = ref<HTMLElement | null>(null)
@@ -50,6 +52,8 @@ const consentItems = [
 ]
 const introEl = ref<HTMLElement | null>(null)
 const envEl = ref<HTMLElement | null>(null)
+/* 첫 방문은 면접관을 골라야 동의할 수 있다(spec 3.1). 재방문은 스토어가 기본 면접관을 자동 선택한다 */
+const needPick = computed(() => !iv.id)
 
 /* 장비 확인 */
 const env = ref<EnvCheck | null>(null)
@@ -73,7 +77,8 @@ const revisitLine = computed(() => {
     .filter(Boolean)
     .join(' · ')
   const voice = model.manifest?.tts && !model.ttsEnabled ? ' · 목소리 없음(텍스트만)' : ''
-  return `${names}${voice} — 이 브라우저에 저장됨`
+  const who = iv.current ? ` · 면접관: ${iv.current.name}` : ''
+  return `${names}${voice}${who} — 이 브라우저에 저장됨`
 })
 watch(
   revisit,
@@ -118,8 +123,8 @@ const rows = computed(() => [
     ? [
         {
           test: 'voice',
-          name: `${tts.value.id} (목소리 ${tts.value.voice})`,
-          size: formatSize(tts.value.files.reduce((n, f) => n + f.size, 0)),
+          name: `${tts.value.id} (목소리: ${iv.current?.name ?? tts.value.voice})`,
+          size: formatSize(model.ttsSelectionSize),
           checked: model.voiceWanted,
           fixed: false,
         },
@@ -165,19 +170,16 @@ function startDownload() {
     <!-- 2. 면접관 소개 -->
     <section ref="introEl" class="snap">
       <div class="content">
-        <PixelWindow>
-          <div class="intro">
-            <Avatar src="/sprites/interviewers/center_idle.png" :frames="15" />
-            <div class="intro-text">
-              <PixelTag>면접관</PixelTag>
-              <SpeechText
-                text="반갑습니다. 저는 여러분의 이력서 PDF를 읽고 질문 다섯 개를 준비합니다. 답변이 흥미로우면 꼬리질문도 하죠. 말로 답해도 되고 글로 답해도 됩니다. 끝나면 점수 대신 문항별 피드백을 드리겠습니다."
-              />
-              <p class="note">
-                단, 저는 서버가 아니라 이 브라우저 안에서 움직입니다. 그래서 처음 한 번은 제 몸(모델
-                파일)을 내려받아야 합니다.
-              </p>
-            </div>
+        <PixelWindow title="오늘의 면접관을 골라 주세요">
+          <div class="intro-text">
+            <SpeechText
+              text="반갑습니다. 저희 셋 중 한 명이 여러분의 이력서를 읽고 질문 다섯 개를 준비합니다. 카드를 누르면 목소리를 들어 볼 수 있어요. 끝나면 점수 대신 문항별 피드백을 드리겠습니다."
+            />
+            <InterviewerPicker />
+            <p class="note">
+              단, 저희는 서버가 아니라 이 브라우저 안에서 움직입니다. 그래서 처음 한 번은 몸(모델
+              파일)을 내려받아야 합니다.
+            </p>
           </div>
         </PixelWindow>
       </div>
@@ -246,10 +248,14 @@ function startDownload() {
             <ChoiceMenu
               :items="consentItems"
               :model-value="consent"
+              :disabled="needPick"
               aria-label="다운로드 동의"
               @update:model-value="onConsent"
             />
-            <p class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
+            <p v-if="needPick" class="mono meta err" data-test="pick-first">
+              면접관을 먼저 골라 주세요
+            </p>
+            <p v-else class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
           </template>
           <p v-else class="mono meta">이력서·대화·리포트는 이 브라우저를 떠나지 않습니다.</p>
         </PixelWindow>
@@ -417,11 +423,6 @@ function startDownload() {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-}
-.intro {
-  display: flex;
-  gap: var(--sp-8);
-  align-items: flex-start;
 }
 .intro-text {
   display: flex;
