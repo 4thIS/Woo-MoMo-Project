@@ -776,7 +776,78 @@ describe('model store — 면접관 목소리 (tts.voices)', () => {
     await s.clearCache()
     expect(s.voiceCached).toBe(false)
     expect(s.loadedVoice).toBeNull()
+    expect(s.loadedInterviewerId).toBeNull()
     expect(s.voiceSwitching).toBe(false)
+    expect(s.voiceError).toBeNull()
+  })
+})
+
+describe('model store — 목소리 교체 되돌림', () => {
+  beforeEach(() => vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: ttsV }))
+
+  it('목소리를 올린 면접관 id를 기억한다: 선택이 없으면 기본 면접관, 교체에 성공하면 새 면접관', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    expect(s.loadedInterviewerId).toBeNull()
+    await s.download()
+    expect(s.loadedInterviewerId).toBe('standard')
+    await s.chooseInterviewer('gentle')
+    expect(s.loadedInterviewerId).toBe('gentle')
+  })
+  it('로딩 중에 선택이 바뀌어도 실제로 올린 목소리의 면접관(cfg를 만들 때의 선택)을 기억한다', async () => {
+    let release!: () => void
+    vi.mocked(initTts).mockReturnValueOnce(new Promise<void>((r) => (release = r)))
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.chooseInterviewer('gentle')
+    const p = s.download()
+    await vi.waitFor(() => expect(s.ttsStatus).toBe('initializing'))
+    await s.chooseInterviewer('sharp')
+    release()
+    await p
+    expect(s.loadedVoice).toBe(gentleVoice())
+    expect(s.loadedInterviewerId).toBe('gentle')
+    expect(useInterviewerStore().id).toBe('gentle') // 교체 실패 → 로드된 면접관으로 되돌림
+  })
+  it('되돌리는 사이(캐시 확인 대기 중)에 다른 면접관을 고르면 끝난 뒤 그 목소리로 맞춘다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.loadedVoice).toBe('M2')
+    // 첫 교체(gentle)는 실패하고, 그 되돌림의 캐시 확인(hasModel)이 멈춰 있는 동안 sharp를 고른다
+    let releaseCheck: (() => void) | null = null
+    let blockNext = false
+    vi.mocked(hasModel).mockImplementation(async () => {
+      if (blockNext) {
+        blockNext = false
+        await new Promise<void>((r) => (releaseCheck = r))
+      }
+      return false
+    })
+    vi.mocked(setTtsVoice).mockImplementationOnce(async () => {
+      blockNext = true
+      throw new Error('bad style')
+    })
+    const p1 = s.chooseInterviewer('gentle')
+    await vi.waitFor(() => expect(releaseCheck).not.toBeNull())
+    expect(s.voiceSwitching).toBe(true)
+    await s.chooseInterviewer('sharp') // 교체 중이라 syncVoice는 바로 돌아온다
+    releaseCheck!()
+    await p1
+    expect(s.loadedVoice).toBe(sharpVoice())
+    expect(useInterviewerStore().id).toBe('sharp')
+    expect(s.voiceSwitching).toBe(false)
+    expect(s.ready).toBe(true)
+  })
+  it('교체 실패 뒤 로드된 면접관을 다시 고르면 실패 안내가 사라진다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    vi.mocked(setTtsVoice).mockRejectedValueOnce(new Error('bad style'))
+    await s.chooseInterviewer('sharp')
+    expect(s.voiceError).toContain('bad style')
+    await s.chooseInterviewer('standard')
     expect(s.voiceError).toBeNull()
   })
 })

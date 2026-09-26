@@ -13,7 +13,7 @@ import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef, TtsManifest } from '@/types/api'
 import { overallFraction } from '@/utils/progressStages'
 import { pickVoice, resolveTts, voiceFiles } from '@/utils/ttsVoices'
-import { DEFAULT_INTERVIEWER, INTERVIEWERS, type InterviewerId } from '@/interviewers'
+import { DEFAULT_INTERVIEWER, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from './interviewer'
 
 export const MAX_NUM_TOKENS = 8192
@@ -104,6 +104,8 @@ export const useModelStore = defineStore('model', {
     voiceCached: null as boolean | null,
     /** 워커가 지금 쓰는 목소리 id */
     loadedVoice: null as string | null,
+    /** 그 목소리를 고른 면접관 — 교체 실패 때 선택을 이 면접관으로 되돌린다 */
+    loadedInterviewerId: null as InterviewerId | null,
     /** 면접관을 바꿔 목소리를 교체하는 중 — 이 동안은 면접을 시작하지 않는다 */
     voiceSwitching: false,
     voiceError: null as string | null,
@@ -259,6 +261,8 @@ export const useModelStore = defineStore('model', {
     /** Gemma ready 뒤 TTS 파일을 받아 워커를 올리고 워밍업 한 문장을 돌린다. manifest.tts가 없으면 텍스트 전용으로 바로 ready */
     async loadTts() {
       const cfg = this.ttsEnabled ? this.ttsSelection : null
+      // 로딩 중에 선택이 바뀔 수 있으니 cfg와 같은 순간의 선택을 잡아 둔다(선택이 없으면 기본 목소리 = 기본 면접관)
+      const cfgInterviewer = useInterviewerStore().id ?? DEFAULT_INTERVIEWER
       if (!cfg) {
         this.ttsStatus = 'ready'
         return
@@ -320,6 +324,7 @@ export const useModelStore = defineStore('model', {
           .catch(() => undefined)
           .finally(() => clearTimeout(t))
         this.loadedVoice = cfg.voice
+        this.loadedInterviewerId = cfgInterviewer
         this.ttsStatus = 'ready'
         await this.syncVoice() // 로딩 중에 면접관이 바뀌었으면 새 목소리로 맞춘다
       } catch (e) {
@@ -374,14 +379,17 @@ export const useModelStore = defineStore('model', {
         !sel ||
         this.ttsStatus !== 'ready' ||
         this.voiceSwitching ||
-        this.loadedVoice === null || // 워커가 없다(텍스트 전용으로 준비됨) — 바꿀 대상이 없다. 다음 loadTts가 맞는 목소리를 받는다
+        // ttsStatus가 ready인데 로드된 목소리가 없으면 워커가 없는 상태(텍스트 전용으로 준비됨 등) — 바꿀 대상이 없다
+        this.loadedVoice === null ||
         sel.voice === this.loadedVoice
       )
         return true
+      const selInterviewer = useInterviewerStore().id ?? DEFAULT_INTERVIEWER
       const file = sel.files[sel.files.length - 1] // resolveTts가 목소리 파일을 맨 뒤에 둔다
       const url = sel.baseUrl + file.path
       this.voiceSwitching = true
       this.voiceError = null
+      let failed = false
       try {
         if (!(await hasModel(sel.id, url))) await downloadModel(sel.id, url, file.size, () => {})
         await setTtsVoice(sel.voice, {
@@ -391,29 +399,31 @@ export const useModelStore = defineStore('model', {
           cacheKey: cacheKey(sel.id, url),
         })
         this.loadedVoice = sel.voice
+        this.loadedInterviewerId = selInterviewer
         this.voiceCached = true
         // 새 목소리만큼 ttsSize가 늘어도 그 다운로드는 진행률에 반영되지 않았다(no-op 콜백) — 전체 진행률이 100 밑으로 처지지 않게 맞춘다
         this.ttsReceived = Math.max(this.ttsReceived, this.ttsSize)
       } catch (e) {
+        failed = true
         this.voiceError = `목소리를 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`
         // 선택도 실제로 로드된 목소리의 면접관으로 되돌린다(spec 7절) — 다른 선택이 끼어들어도 "실제 로드된 것"을 기준으로 삼는다
-        const t = this.manifest?.tts
-        const owner = t
-          ? INTERVIEWERS.find((iv) => pickVoice(t, iv.voiceId)?.id === this.loadedVoice)
-          : null
-        if (owner) {
-          useInterviewerStore().select(owner.id)
+        if (this.loadedInterviewerId) {
+          useInterviewerStore().select(this.loadedInterviewerId)
           await this.checkVoiceCached()
         }
-        return false
       } finally {
         this.voiceSwitching = false
       }
-      return this.syncVoice() // 바꾸는 동안 또 다른 면접관을 골랐으면 이어서 맞춘다
+      if (!failed) return this.syncVoice() // 바꾸는 동안 또 다른 면접관을 골랐으면 이어서 맞춘다
+      // 되돌리는 사이(캐시 확인 대기)에 고른 면접관은 syncVoice가 조기 반환해 버려졌다 — 방금 실패한 목소리가 아니면 이어서 맞춘다
+      const now = this.ttsEnabled ? this.ttsSelection?.voice : undefined
+      if (now && now !== this.loadedVoice && now !== sel.voice) await this.syncVoice()
+      return false
     },
     /** 면접관 고르기(랜딩·준비 화면 공용): 선택 → 목소리 캐시 확인 → 준비된 워커면 목소리 교체(실패 시 되돌림은 syncVoice가 한다) */
     async chooseInterviewer(id: InterviewerId) {
       const iv = useInterviewerStore()
+      this.voiceError = null // 지난 교체 실패 안내 — 로드된 면접관을 다시 고르면 syncVoice가 조기 반환해 남는다
       iv.select(id)
       await this.checkVoiceCached()
       await this.syncVoice()
@@ -455,6 +465,7 @@ export const useModelStore = defineStore('model', {
       this.modelCached = false
       this.voiceCached = false
       this.loadedVoice = null
+      this.loadedInterviewerId = null
       this.voiceSwitching = false
       this.voiceError = null
     },
