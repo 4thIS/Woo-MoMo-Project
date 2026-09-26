@@ -291,4 +291,40 @@ describe('setTtsVoice', () => {
     disposeTts()
     await expect(p).rejects.toThrow('disposed')
   })
+  it('이전 요청의 늦은 응답은 새 요청을 끝내지 않는다', async () => {
+    const worker = await loadedWorker()
+    const first = setTtsVoice('F1', voiceFile)
+    const second = setTtsVoice('M4', { ...voiceFile, path: 'voice_styles/M4.json' })
+    await expect(first).rejects.toThrow('superseded')
+    let settled = false
+    second.then(
+      () => (settled = true),
+      () => (settled = true),
+    )
+    worker.reply({ type: 'voiceSet', voice: 'F1' }) // 밀려난 F1 요청의 늦은 응답 — second(M4)를 건드리면 안 된다
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    worker.reply({ type: 'voiceSet', voice: 'M4' })
+    await expect(second).resolves.toBeUndefined()
+    expect(settled).toBe(true)
+  })
+  it('이전 요청의 늦은 실패는 새 요청을 거부하지 않는다', async () => {
+    const worker = await loadedWorker()
+    const first = setTtsVoice('F1', voiceFile)
+    const second = setTtsVoice('M4', { ...voiceFile, path: 'voice_styles/M4.json' })
+    await expect(first).rejects.toThrow('superseded')
+    let settled = false
+    second.then(
+      () => (settled = true),
+      () => (settled = true),
+    )
+    worker.reply({ type: 'voiceError', voice: 'F1', message: 'x' }) // 밀려난 F1 요청의 늦은 실패 — second(M4)를 거부하면 안 된다
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    worker.reply({ type: 'voiceSet', voice: 'M4' })
+    await expect(second).resolves.toBeUndefined()
+    expect(settled).toBe(true)
+  })
 })

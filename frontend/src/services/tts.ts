@@ -31,8 +31,8 @@ const spawn = () =>
     ? factory()
     : new Worker(new URL('../workers/tts.worker.ts', import.meta.url), { type: 'module' })
 
-/** 진행 중인 setTtsVoice. 새 요청·dispose·워커 오류면 거부한다 */
-let voicePending: { resolve: () => void; reject: (e: unknown) => void } | null = null
+/** 진행 중인 setTtsVoice. 새 요청·dispose·워커 오류면 거부한다. voice로 밀려난 요청의 늦은 응답을 가려낸다 */
+let voicePending: { voice: string; resolve: () => void; reject: (e: unknown) => void } | null = null
 function failVoice(e: unknown) {
   voicePending?.reject(e)
   voicePending = null
@@ -104,10 +104,14 @@ export function initTts(
               durationMs: Math.round((m.samples.length / m.sampleRate) * 1000),
             })
           } else if (m.type === 'voiceSet') {
-            voicePending?.resolve()
-            voicePending = null
+            if (m.voice === voicePending?.voice) {
+              voicePending.resolve()
+              voicePending = null
+            } // 밀려난 이전 요청의 늦은 응답 — 무시한다(현재 대기 중인 요청의 목소리가 아니다)
           } else if (m.type === 'voiceError') {
-            failVoice(new Error(m.message)) // 워커는 이전 목소리로 살아 있다 — 종료하지 않는다
+            if (m.voice === voicePending?.voice) {
+              failVoice(new Error(m.message)) // 워커는 이전 목소리로 살아 있다 — 종료하지 않는다
+            } // 밀려난 이전 요청의 늦은 실패 — 현재 대기 중인 요청을 거부하지 않는다
           }
         }
         w.onerror = (e) => {
@@ -177,7 +181,7 @@ export function setTtsVoice(voice: string, file: TtsLoadFile): Promise<void> {
   failVoice(new Error('TTS voice superseded'))
   const w = worker
   return new Promise<void>((resolve, reject) => {
-    voicePending = { resolve, reject }
+    voicePending = { voice, resolve, reject }
     w.postMessage({ type: 'setVoice', voice, file } satisfies MainToWorker)
   })
 }
