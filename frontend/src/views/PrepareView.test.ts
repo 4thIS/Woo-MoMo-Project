@@ -315,7 +315,7 @@ describe('PrepareView — 목소리 준비', () => {
     expect(stub.attributes('received')).toBe('140')
     expect(stub.attributes('total')).toBe('200')
     expect(stub.attributes('filename')).toBe('supertonic-3')
-    expect(w.text()).toContain('목소리 준비 · 기본 면접관 (40%)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관(여) (40%)')
     expect((w.find('[data-test="start"]').element as HTMLButtonElement).disabled).toBe(true)
   })
   it('TTS 실패면 error 단계 + 원인, 다시 시도는 retryTts만 부른다', async () => {
@@ -327,7 +327,7 @@ describe('PrepareView — 목소리 준비', () => {
     const retry = vi.spyOn(m, 'retry').mockResolvedValue()
     const w = mount(PrepareView)
     expect(w.text()).toContain('size mismatch')
-    expect(w.text()).toContain('목소리 준비 · 기본 면접관 (실패)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관(여) (실패)')
     await w.find('[data-test="retry-tts"]').trigger('click')
     expect(retryTts).toHaveBeenCalled()
     expect(retry).not.toHaveBeenCalled()
@@ -459,6 +459,10 @@ describe('PrepareView — 면접관', () => {
     await w.find('[data-test="change-interviewer"]').trigger('click')
     expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
     expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
+  })
+  it('선택이 없으면 칩은 실제로 쓰일 기본 면접관 이름을 보인다', () => {
+    const w = mountView()
+    expect(w.find('[data-test="interviewer-chip"]').text()).toBe('면접관: 기본 면접관(여)')
   })
   it('목소리 준비 줄에 면접관 이름, 교체 중이면 "바꾸는 중", 실패면 안내', async () => {
     useInterviewerStore().select('m1')

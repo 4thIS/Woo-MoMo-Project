@@ -15,6 +15,7 @@ import SpeechText from '@/components/ui/SpeechText.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 
 const model = useModelStore()
 const interview = useInterviewStore()
@@ -123,7 +124,7 @@ const rows = computed(() => [
     ? [
         {
           test: 'voice',
-          name: `${tts.value.id} (목소리: ${iv.current?.name ?? tts.value.voice})`,
+          name: `${tts.value.id} (목소리: ${(iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).name})`,
           size: formatSize(model.ttsSelectionSize),
           checked: model.voiceWanted,
           fixed: false,
