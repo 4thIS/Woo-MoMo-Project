@@ -1,0 +1,44 @@
+{
+ "center_armscross": {
+  "file": "center_armscross.png",
+  "frames": 28,
+  "w": 92,
+  "h": 92
+ },
+ "center_idle": {
+  "file": "center_idle.png",
+  "frames": 16,
+  "w": 92,
+  "h": 92
+ },
+ "center_lookside": {
+  "file": "center_lookside.png",
+  "frames": 12,
+  "w": 92,
+  "h": 92
+ },
+ "center_question": {
+  "file": "center_question.png",
+  "frames": 8,
+  "w": 92,
+  "h": 92
+ },
+ "center_question_in": {
+  "file": "center_question_in.png",
+  "frames": 8,
+  "w": 92,
+  "h": 92
+ },
+ "center_question_out": {
+  "file": "center_question_out.png",
+  "frames": 8,
+  "w": 92,
+  "h": 92
+ },
+ "center_watch": {
+  "file": "center_watch.png",
+  "frames": 12,
+  "w": 92,
+  "h": 92
+ }
+}
