@@ -5,7 +5,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import SpeakerIcon from '@/components/ui/icons/SpeakerIcon.vue'
 import type { Stage } from '@/stores/interview'
-import type { CenterSprites } from '@/interviewers'
+import { CENTER_FRAME_PX, type CenterSprites } from '@/interviewers'
 import { formatClock } from '@/utils/timing'
 import {
   CANDIDATE_BACK,
@@ -171,8 +171,8 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites)
         v-for="c in CHARS"
         :key="c"
         :src="sheet(anims[c]).file"
-        :frame-w="32"
-        :frame-h="32"
+        :frame-w="CENTER_FRAME_PX"
+        :frame-h="CENTER_FRAME_PX"
         :frames="sheet(anims[c]).frames"
         :loop="sheet(anims[c]).loop"
         :scale="SCALE"

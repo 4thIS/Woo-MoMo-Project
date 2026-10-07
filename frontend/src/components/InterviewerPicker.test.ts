@@ -45,6 +45,13 @@ describe('InterviewerPicker', () => {
     expect(w.text()).toContain('근거를 보여 주세요')
     expect(radios.every((r) => r.attributes('aria-checked') === 'false')).toBe(true)
   })
+  it('카드 캐릭터는 64 프레임 × 2 = 128px', () => {
+    const w = mount(InterviewerPicker)
+    for (const id of ['m1', 'f3', 'm2', 'f2']) {
+      const st = (card(w, id).find('.sprite').element as HTMLElement).style
+      expect([st.width, st.height], id).toEqual(['128px', '128px'])
+    }
+  })
   it('카드를 누르면 선택 + 포커스 강조 + 그 목소리 미리 듣기(음소거 저장값과 무관)', async () => {
     localStorage.setItem('momo.muted', '1')
     const w = mount(InterviewerPicker)
