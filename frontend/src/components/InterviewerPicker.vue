@@ -2,7 +2,7 @@
 import { nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
-import { INTERVIEWERS, type InterviewerId } from '@/interviewers'
+import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
 
@@ -59,10 +59,10 @@ const sheet = (id: InterviewerId) => {
       >
         <SpriteFrame
           :src="sheet(p.id).file"
-          :frame-w="32"
-          :frame-h="32"
+          :frame-w="CENTER_FRAME_PX"
+          :frame-h="CENTER_FRAME_PX"
           :frames="sheet(p.id).frames"
-          :scale="4"
+          :scale="2"
           :fps="8"
         />
         <span class="name">{{ p.name }}</span>
@@ -85,10 +85,17 @@ const sheet = (id: InterviewerId) => {
   flex-direction: column;
   gap: var(--sp-3);
 }
+/* 카드 4장을 한 줄로, 좁은 화면은 2×2. 카드 폭(캐릭터 128px + 여백)이 같아 열이 고르게 선다 */
 .picker {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
   justify-content: center;
   gap: var(--sp-5);
+}
+@media (max-width: 840px) {
+  .picker {
+    grid-template-columns: repeat(2, auto);
+  }
 }
 .card {
   display: flex;

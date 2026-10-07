@@ -1,9 +1,9 @@
-import type { InterviewerId } from '@/interviewers'
+import type { PersonaId } from '@/interviewers'
 
 /**
  * 면접관 페르소나(spec 5절) — 시스템 프롬프트의 네 자리만 채운다. 나머지 진행 규칙은 공통.
  * standard는 2026-09-26 이전 문구와 글자까지 같다(prompts/interviewer.test.ts가 고정).
- * 계층 규율 경로: 바꾸면 면접관 3명 각각 면접 1회 완주 + 리포트 JSON 파싱을 확인한다.
+ * 계층 규율 경로: 바꾸면 쓰이는 페르소나 각각 면접 1회 완주 + 리포트 JSON 파싱을 확인한다.
  */
 export interface Persona {
   /** 첫 문단 뒤에 들어갈 성격 문장. null이면 넣지 않는다 */
@@ -16,7 +16,7 @@ export interface Persona {
   reportTone: string | null
 }
 
-export const PERSONAS: Record<InterviewerId, Persona> = {
+export const PERSONAS: Record<PersonaId, Persona> = {
   gentle: {
     character:
       '지원자가 편하게 말할 수 있도록 부드럽고 따뜻한 존댓말을 씁니다. 경험을 떠올리기 쉽게 구체적인 상황으로 묻습니다.',

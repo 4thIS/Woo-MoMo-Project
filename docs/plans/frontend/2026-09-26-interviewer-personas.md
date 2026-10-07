@@ -2841,3 +2841,74 @@ PR 5 제목: `feat(frontend): 무대 면접관 스프라이트·태그 + 데모 
   - `playPreview`는 다른 재생에 밀려 거부된 `play()`를 실패로 보지 않는다(Task 3).
   - `voiceError`는 워커를 죽이지 않는다(Task 5). 옛 `error`(id 없음) 분기는 로드 실패 전용이라 쓰지 않는다.
   - 서비스 mock에서 빠진 export는 호출될 때만 터지므로, 호출하는 테스트 파일(model·Picker)에만 `setTtsVoice`를 추가했다.
+
+---
+
+## 변경 (2026-10-07) — 메인 면접관 4명 · 64×64
+
+spec 11절. 이슈 #48 확정안(@leemonta9482)과 목소리 결정(@ssenu)을 반영한다. PR 6은 PR 5(#58) 위에 쌓는다.
+
+### Task 13: 메인 면접관 4명 · 64×64 (2026-10-07 변경, PR 6)
+
+근거: `docs/specs/frontend/2026-09-26-interviewer-personas-design.md` **11절**(이 절이 앞 절과 다르면 11절이 이긴다). 브랜치 `feature/frontend-interviewer-lineup`(PR #58 위). TDD: 바뀌는 동작마다 테스트 먼저 고치고/추가하고 실패 확인 → 구현 → 통과.
+
+**Files (예상):** `src/interviewers/{index.ts,index.test.ts,voices.json,voices.test.ts}`, `src/prompts/personas.ts`(타입만), `src/stores/{interview.ts,interviewer.ts,model.ts}` + 테스트, `src/components/InterviewerPicker.vue`(+test), `src/components/interview/{InterviewStage.vue,interviewerAnims.ts}`(+tests), `src/views/*.test.ts`(id 바뀐 곳), `public/voices/preview/*.ogg`, `scripts/voice-previews/README.md`.
+
+#### 1. 면접관 정의 — `src/interviewers/index.ts`, `voices.json`
+- `export type InterviewerId = 'm1' | 'f3' | 'm2' | 'f2'`, `export type PersonaId = 'gentle' | 'standard' | 'sharp'`.
+- `Interviewer`에 `persona: PersonaId` 추가.
+- `INTERVIEWERS` (이 순서 = 고르기 카드 순서):
+  | id | name | tagline | persona | voice |
+  |---|---|---|---|---|
+  | `m1` | 기본 면접관(남) | 차분하게 진행합니다 | standard | M4 |
+  | `f3` | 기본 면접관(여) | 차분하게 진행합니다 | standard | F3 |
+  | `m2` | 압박 면접관(남) | 근거를 보여 주세요 | sharp | M5 |
+  | `f2` | 압박 면접관(여) | 근거를 보여 주세요 | sharp | F4 |
+- 스프라이트: 모두 `/sprites/interviewers/{id}/center_{role}.png`.
+- `export const LEGACY_CENTER: CenterSprites` = 기존 `/sprites/interviewers/center_{role}.png` 세트(대체용).
+- `export const CENTER_FRAME_PX = 64` (스프라이트 프레임 한 변, 무대·카드가 쓴다).
+- `DEFAULT_INTERVIEWER = 'f3'`.
+- `voices.json`(키 = 면접관 id, 값 = {voice, text}):
+  - m1: M4, f3: F3 → text = 기존 standard 문장 "안녕하세요, 오늘 면접을 진행하겠습니다. 준비되시면 시작하겠습니다."
+  - m2: M5, f2: F4 → text = 기존 sharp 문장 "시작하겠습니다. 답변은 근거와 수치로 구체적으로 말씀해 주세요."
+  - (gentle 문장은 voices.json에서 빠진다)
+
+#### 2. 페르소나 연결 — `src/prompts/personas.ts`(계층 규율 경로: **타입만**), `src/stores/interview.ts`
+- `PERSONAS: Record<PersonaId, Persona>`로 타입만 바꾸고 `import type { PersonaId }`. 문구·키(gentle/standard/sharp)는 한 글자도 바꾸지 않는다. 파일 머리 주석의 "면접관 3명 각각 면접 1회 완주"는 "쓰이는 페르소나 각각 면접 1회 완주"로.
+- `stores/interview.ts`: `start()`·`finish()`가 `PERSONAS[this.sessionInterviewer.persona]`를 쓴다(override 규칙은 그대로).
+- `prompts/*.test.ts`의 standard 바이트 동일성(legacy) 테스트가 그대로 통과해야 한다.
+
+#### 3. 스프라이트 대체 — `src/stores/interviewer.ts`
+- `spritesFor(id)`: 그 면접관(`id`가 정의에 없거나 null이면 `DEFAULT_INTERVIEWER`)의 6개 파일 중 **하나라도** `brokenFiles`에 있으면 **6개 모두 `LEGACY_CENTER`**, 아니면 자기 세트(역할별로 섞지 않는다).
+- `probeSprites()`: **모든** 면접관(기본값 포함)의 파일을 확인한다.
+- 테스트: 일부 파일만 깨져도 전부 LEGACY_CENTER, 다 있으면 자기 세트, null → 기본 면접관 세트.
+
+#### 4. 목소리 기본값 — `src/stores/model.ts`
+- `wantedVoiceId`: 선택이 없으면 `DEFAULT_INTERVIEWER`의 voiceId(F3)를 쓴다(매니페스트 `tts.voice` M2는 voices 없는 옛 매니페스트 전용으로 남는다). `(useInterviewerStore().current ?? interviewerById(DEFAULT_INTERVIEWER))?.voiceId ?? null`.
+- `loadedInterviewerId ?? DEFAULT_INTERVIEWER`, 되돌림, `console.warn` 검사 등 기존 로직은 그대로 4명으로 동작하는지 테스트로 확인.
+
+#### 5. 64×64 표시 — `interviewerAnims.ts`, `InterviewStage.vue`, `InterviewerPicker.vue`, `index.test.ts`
+- 무대: `CHARS`의 `SpriteFrame` `:frame-w`·`:frame-h`를 `CENTER_FRAME_PX`(64)로, `SCALE`을 3으로(64×3 = 192px, 확정안). 주석 "면접관 ×5(160px)" 갱신. `CANDIDATE_BACK`(32×32 ×6 = 192px)은 그대로.
+- 고르기 카드: frame 64, scale 2(=128px, 지금 32×4와 같은 크기).
+- `SpriteFrame`은 시트 전체를 background-size로 늘리므로 32×32 시트(기존 center·배석자)도 같은 화면 크기로 그려진다 — 코드 분기 불필요. 이 성질을 `SpriteFrame` 테스트 하나로 고정해도 좋다(이미 있으면 생략).
+- 4명이 되면서 카드가 3열 전제(그리드·flex 너비 등)였다면 4장이 자연스럽게 놓이게 CSS를 고친다(좁은 화면은 2×2). 무대 `.row`가 고정 너비라 192px×3이 넘치면 넘치지 않게 고친다. 색 리터럴 추가 금지(tokens.css만).
+- `index.test.ts` 에셋 manifest 대조: 폴더 `{m1,f3,m2,f2}` 각각, 있으면 `w`·`h`가 `[64, 64]`이고 프레임 수가 `CENTER_FRAMES`와 같은지(없으면 건너뜀, 지금처럼).
+
+#### 6. 미리 듣기 파일 재생성 — `public/voices/preview/`
+- `public/voices/preview/{gentle,standard,sharp}.ogg`를 `git rm`하고 `{m1,f3,m2,f2}.ogg`를 생성한다:
+  ```
+  cd frontend/scripts/voice-previews
+  uv run --with onnxruntime==1.23.1 --with numpy --with soundfile python generate.py --supertonic C:/MyCode/supertonic-spike/supertonic --assets C:/MyCode/supertonic-spike/supertonic/assets
+  ```
+  각 100KB 이하인지 확인. `voices.test.ts`가 키·파일 존재를 대조하게(기존 방식 따라).
+- `scripts/voice-previews/README.md`의 `{gentle,standard,sharp}` 표기를 `{m1,f3,m2,f2}`로, 후보 개수 30 → 40으로.
+
+#### 7. 테스트 전반
+- 옛 id(`gentle`/`standard`/`sharp`)를 **면접관 id로** 쓰던 테스트를 새 id로 옮긴다(페르소나 키로 쓰는 prompts 테스트는 그대로). 랜딩 재방문 자동 선택은 `f3`.
+- 기대값을 바꾼 테스트는 보고서에 "왜"를 한 줄씩.
+
+#### 게이트 (frontend/)
+`pnpm test && pnpm lint && pnpm exec prettier --check . && pnpm exec vue-tsc --noEmit && pnpm build` (lint 오류 0).
+
+#### 커밋
+2~3개, `feat(frontend): ...` 한국어. 예: ① 면접관 4명 정의·페르소나 연결·목소리 기본값·대체 ② 64×64 표시·카드 4장 레이아웃 ③ 미리 듣기 4개 재생성. `git add`는 바꾼 파일만.

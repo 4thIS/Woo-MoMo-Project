@@ -731,39 +731,66 @@ import { PERSONAS } from '@/prompts/personas'
 import { buildReportInstruction } from '@/prompts/report'
 
 describe('interview store — 면접관 페르소나', () => {
-  it('시작할 때 고른 면접관을 고정하고 그 페르소나로 프롬프트를 만든다(이후 선택을 바꿔도 그대로)', async () => {
-    useInterviewerStore().select('sharp')
+  it('시작할 때 고른 면접관을 고정하고 그 면접관의 페르소나로 프롬프트를 만든다(이후 선택을 바꿔도 그대로)', async () => {
+    useInterviewerStore().select('m2')
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
     await s.start()
-    expect(s.interviewerId).toBe('sharp')
-    expect(s.sessionInterviewer.name).toBe('날카로운 압박 면접관')
+    expect(s.interviewerId).toBe('m2')
+    expect(s.sessionInterviewer.name).toBe('압박 면접관(남)')
     expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
-    useInterviewerStore().select('gentle')
-    expect(s.sessionInterviewer.id).toBe('sharp')
+    useInterviewerStore().select('m1')
+    expect(s.sessionInterviewer.id).toBe('m2')
   })
-  it('선택이 없으면 기본 면접관 — 온화·압박 성격 문장이 없다', async () => {
+  it('면접관 id가 아니라 persona로 페르소나를 찾는다: 압박 면접관(여) f2도 sharp', async () => {
+    useInterviewerStore().select('f2')
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
     await s.start()
-    expect(s.interviewerId).toBe('standard')
+    expect(s.interviewerId).toBe('f2')
+    expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
+  })
+  it('기본 면접관(남) m1은 standard — 성격 문장이 없다', async () => {
+    useInterviewerStore().select('m1')
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
     const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
     expect(prompt).not.toContain(PERSONAS.gentle.character!)
     expect(prompt).not.toContain(PERSONAS.sharp.character!)
   })
-  it('리포트는 면접관 말투 지시문으로 요청한다', async () => {
-    useInterviewerStore().select('gentle')
+  it('선택이 없으면 기본 면접관(f3, standard) — 온화·압박 성격 문장이 없다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('f3')
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).not.toContain(PERSONAS.gentle.character!)
+    expect(prompt).not.toContain(PERSONAS.sharp.character!)
+  })
+  it('리포트는 면접관 페르소나의 말투 지시문으로 요청한다', async () => {
+    useInterviewerStore().select('f2')
     const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
     const sess = fakeSession(['q', json])
     vi.mocked(startSession).mockResolvedValue(sess)
     const s = await readyStore()
     await s.start()
     await s.finish()
-    expect(sess.sent).toContain(buildReportInstruction(PERSONAS.gentle))
+    expect(sess.sent).toContain(buildReportInstruction(PERSONAS.sharp))
     expect(sess.sent).not.toContain(REPORT_INSTRUCTION)
   })
+  it('기본 면접관(standard)의 리포트 지시문은 기존 지시문 그대로', async () => {
+    useInterviewerStore().select('m1')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(sess.sent.at(-1)).toBe(buildReportInstruction(PERSONAS.standard))
+  })
   it('매니페스트에 systemPromptOverride가 있으면 리포트도 말투 없이 기본 지시문 그대로(spec 5.1·7절)', async () => {
-    useInterviewerStore().select('sharp')
+    useInterviewerStore().select('m2')
     const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
     const sess = fakeSession(['q', json])
     vi.mocked(startSession).mockResolvedValue(sess)
@@ -775,7 +802,7 @@ describe('interview store — 면접관 페르소나', () => {
   })
   it('시작하면 미리 듣기를 멈추고, reset은 면접관 스냅샷을 비운다', async () => {
     const iv = useInterviewerStore()
-    iv.$patch({ playingId: 'gentle' })
+    iv.$patch({ playingId: 'm1' })
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
     await s.start()

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import manifest from '../../../public/sprites/interviewers/manifest.json'
-import { interviewerById } from '@/interviewers'
-import { ANIMS, LIFE, REACT, baseAnims, sheetFor, watchAnim } from './interviewerAnims'
+import { CENTER_FRAME_PX, interviewerById } from '@/interviewers'
+import {
+  ANIMS,
+  CANDIDATE_BACK,
+  CANDIDATE_SCALE,
+  LIFE,
+  REACT,
+  SCALE,
+  baseAnims,
+  sheetFor,
+  watchAnim,
+} from './interviewerAnims'
 
 describe('interviewerAnims', () => {
   it('대기·듣기·생각 중 기본은 idle 셋', () => {
@@ -42,6 +52,12 @@ describe('interviewerAnims', () => {
     }
     expect(m.candidate_back.frames).toBe(1)
   })
+  it('면접관은 프레임 64 × 3 = 192px, 지원자 뒷모습은 32 × 6 = 192px 그대로(spec 11.2)', () => {
+    expect(SCALE).toBe(3)
+    expect(CENTER_FRAME_PX * SCALE).toBe(192)
+    expect([CANDIDATE_BACK.w, CANDIDATE_BACK.h]).toEqual([32, 32])
+    expect(CANDIDATE_BACK.w * CANDIDATE_SCALE).toBe(192)
+  })
 })
 
 describe('sheetFor', () => {
@@ -49,7 +65,7 @@ describe('sheetFor', () => {
     expect(sheetFor('center_nod')).toEqual(ANIMS.center_nod)
   })
   it('가운데 동작은 고른 면접관 시트로, loop 규칙은 ANIMS를 따른다', () => {
-    const sp = interviewerById('gentle')!.sprites
+    const sp = interviewerById('m1')!.sprites
     expect(sheetFor('center_question', sp)).toEqual({
       file: sp.question.file,
       frames: sp.question.frames,
@@ -58,7 +74,7 @@ describe('sheetFor', () => {
     expect(sheetFor('center_nod', sp).loop).toBe(false)
   })
   it('좌우 배석자는 센터 스프라이트와 무관하다', () => {
-    const sp = interviewerById('sharp')!.sprites
+    const sp = interviewerById('m2')!.sprites
     expect(sheetFor('left_idle', sp)).toEqual(ANIMS.left_idle)
     expect(sheetFor('right_writing', sp)).toEqual(ANIMS.right_writing)
   })

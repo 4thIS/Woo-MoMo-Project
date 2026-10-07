@@ -13,7 +13,12 @@ import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
 import type { Manifest, ModelRef, TtsManifest } from '@/types/api'
 import { overallFraction } from '@/utils/progressStages'
 import { pickVoice, resolveTts, voiceFiles } from '@/utils/ttsVoices'
-import { DEFAULT_INTERVIEWER, INTERVIEWERS, type InterviewerId } from '@/interviewers'
+import {
+  DEFAULT_INTERVIEWER,
+  INTERVIEWERS,
+  interviewerById,
+  type InterviewerId,
+} from '@/interviewers'
 import { useInterviewerStore } from './interviewer'
 
 export const MAX_NUM_TOKENS = 8192
@@ -141,9 +146,12 @@ export const useModelStore = defineStore('model', {
     progress: (s) => (s.total ? Math.min(100, Math.round((s.received / s.total) * 100)) : 0),
     /** 매니페스트에 TTS가 있고 사용자가 목소리를 선택했을 때만. 해제하면 텍스트 전용 경로(tts null)와 같다 */
     ttsEnabled: (s) => !!s.manifest?.tts && s.voiceWanted,
-    /** 고른 면접관의 목소리 id. 선택이 없으면 null → 매니페스트 기본 목소리 */
+    /** 고른 면접관의 목소리 id. 선택이 없으면 기본 면접관의 목소리(spec 11.1) —
+     *  매니페스트 기본 목소리(tts.voice)는 voices가 없는 옛 매니페스트나 목록에 없는 id일 때만 쓰인다 */
     wantedVoiceId(): string | null {
-      return useInterviewerStore().current?.voiceId ?? null
+      return (
+        (useInterviewerStore().current ?? interviewerById(DEFAULT_INTERVIEWER))?.voiceId ?? null
+      )
     },
     /** 받을 TTS 설정(엔진 + 고른 목소리). 목소리 체크(voiceWanted)와 무관 — 동의 창 행 표시에도 쓴다 */
     ttsSelection(): TtsManifest | null {
@@ -206,7 +214,8 @@ export const useModelStore = defineStore('model', {
         // 주소·id가 바뀐 옛 모델 항목 정리 — 실패해도 매니페스트 로드는 성공으로 둔다
         await pruneModels(currentCacheKeys(this.manifest)).catch(() => undefined)
         await this.checkCached()
-        // 이 기능 배포 전에 모델을 받아 둔 사용자: 선택 저장값이 없으면 기본 면접관(M2 — 이미 캐시에 있다) (spec 3.3)
+        // 이 기능 배포 전에 모델을 받아 둔 사용자: 선택 저장값이 없으면 기본 면접관(spec 3.3·11.1).
+        // 재방문 판정(cached)은 목소리 파일을 보지 않으니, 기본 면접관 목소리가 캐시에 없으면 준비 단계에서 받는다
         const iv = useInterviewerStore()
         if (this.cached && !iv.id) {
           iv.select(DEFAULT_INTERVIEWER)

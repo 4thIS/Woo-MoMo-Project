@@ -32,6 +32,18 @@ describe('InterviewStage', () => {
     const w = mount(InterviewStage, { props: base })
     expect(w.findAll('.sprite').length).toBe(4)
   })
+  it('세 자리 모두 64 프레임 × 3 = 192px — 32×32 시트(좌우·기존 가운데)도 시트 전체를 늘려 같은 크기로', () => {
+    const w = mount(InterviewStage, { props: base })
+    for (const c of ['left', 'center', 'right']) {
+      const st = (w.find(`[data-char="${c}"]`).element as HTMLElement).style
+      expect([st.width, st.height], c).toEqual(['192px', '192px'])
+    }
+    // idle 15프레임 → 시트 전체 64 × 15 × 3 = 2880px, 원본이 32×32든 64×64든 같다
+    const left = (w.find('[data-char="left"]').element as HTMLElement).style
+    expect(left.backgroundSize).toBe('2880px 192px')
+    const cand = (w.find('.candidate .sprite').element as HTMLElement).style
+    expect([cand.width, cand.height]).toEqual(['192px', '192px']) // 지원자 32 × 6 그대로
+  })
   it('경과 시계를 mm:ss로 보여 준다 (질문 번호는 여전히 없다)', () => {
     const w = mount(InterviewStage, { props: { ...base, elapsedMs: 754_000 } })
     expect(w.find('[data-test="clock"]').text()).toBe('12:34')
@@ -140,13 +152,13 @@ describe('InterviewStage 1회 재생', () => {
 
 describe('InterviewStage — 면접관', () => {
   it('centerSprites를 주면 가운데 자리는 그 면접관 시트, 좌우는 그대로', () => {
-    const sp = interviewerById('gentle')!.sprites
+    const sp = interviewerById('m1')!.sprites
     const w = mount(InterviewStage, { props: { ...base, centerSprites: sp } })
-    expect(w.find('[data-char="center"]').attributes('style')).toContain('gentle/center_idle.png')
+    expect(w.find('[data-char="center"]').attributes('style')).toContain('m1/center_idle.png')
     expect(w.find('[data-char="left"]').attributes('style')).toContain('left_idle.png')
   })
   it('면접관 이름을 상단 태그에 붙인다', () => {
-    const w = mount(InterviewStage, { props: { ...base, interviewerName: '온화한 선배' } })
-    expect(w.text()).toContain('IT · 백엔드 · 면접관: 온화한 선배')
+    const w = mount(InterviewStage, { props: { ...base, interviewerName: '압박 면접관(여)' } })
+    expect(w.text()).toContain('IT · 백엔드 · 면접관: 압박 면접관(여)')
   })
 })

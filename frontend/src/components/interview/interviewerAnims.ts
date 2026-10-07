@@ -34,7 +34,9 @@ export const ANIMS: Record<AnimName, { file: string; frames: number; loop: boole
 }
 export const CANDIDATE_BACK = { file: '/sprites/interviewers/candidate_back.png', w: 32, h: 32 }
 export const FPS = 8
-export const SCALE = 5 // 면접관 ×5(160px)
+/** 면접관 배율: 프레임 64(CENTER_FRAME_PX) × 3 = 192px. 32×32 시트(좌우 배석자·기존 가운데)도
+ *  SpriteFrame이 시트 전체를 늘려 그리므로 같은 192px(×6)로 그려진다(spec 11.2) */
+export const SCALE = 3
 export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 커 보이게
 
 export type Trio = Record<Char, AnimName>

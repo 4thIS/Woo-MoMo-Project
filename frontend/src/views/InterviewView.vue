@@ -13,7 +13,7 @@ import { answerLeftMs } from '@/utils/timing'
 const s = useInterviewStore()
 const model = useModelStore()
 const iv = useInterviewerStore()
-onMounted(() => void iv.probeSprites()) // 새 면접관 스프라이트가 없으면 기본 면접관 시트로(spec 7절)
+onMounted(() => void iv.probeSprites()) // 새 면접관 스프라이트를 하나라도 못 불러오면 그 면접관은 기존 가운데 시트 전체로(spec 11.2)
 
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const inputDisabled = computed(
