@@ -1,0 +1,14 @@
+{
+ "left_idle": {
+  "file": "left_idle.png",
+  "frames": 16,
+  "w": 92,
+  "h": 92
+ },
+ "left_pageflip": {
+  "file": "left_pageflip.png",
+  "frames": 12,
+  "w": 92,
+  "h": 92
+ }
+}
