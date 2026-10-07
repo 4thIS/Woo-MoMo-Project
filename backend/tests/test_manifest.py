@@ -55,3 +55,37 @@ def test_repo_manifest_pins_hugging_face_revisions(repo_manifest):
         urls.append(repo_manifest["fallback"]["url"])
     hf = [u for u in urls if u.startswith("https://huggingface.co/")]
     assert all(HF_REVISION.match(u) for u in hf), hf
+
+
+EXPECTED_VOICE_IDS = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"]
+
+
+def test_manifest_tts_lists_all_voices(client):
+    tts = client.get("/api/manifest").json()["tts"]
+    voices = tts["voices"]
+    assert [v["id"] for v in voices] == EXPECTED_VOICE_IDS
+    assert all(v["path"] == f"voice_styles/{v['id']}.json" for v in voices)
+    assert all(v["size"] > 0 for v in voices)
+
+
+def test_manifest_default_voice_matches_files_entry(client):
+    tts = client.get("/api/manifest").json()["tts"]
+    by_id = {v["id"]: v for v in tts["voices"]}
+    default = by_id[tts["voice"]]
+    files = {f["path"]: f["size"] for f in tts["files"]}
+    # 옛 프론트 호환: files에 남은 기본 목소리와 voices의 기본 목소리는 같은 파일·같은 크기
+    assert files[default["path"]] == default["size"]
+
+
+def test_manifest_engine_files_exclude_voices(client):
+    tts = client.get("/api/manifest").json()["tts"]
+    voice_paths = {v["path"] for v in tts["voices"]}
+    engine = [f["path"] for f in tts["files"] if f["path"] not in voice_paths]
+    assert engine == [
+        "onnx/text_encoder.onnx",
+        "onnx/duration_predictor.onnx",
+        "onnx/vector_estimator.onnx",
+        "onnx/vocoder.onnx",
+        "onnx/tts.json",
+        "onnx/unicode_indexer.json",
+    ]
