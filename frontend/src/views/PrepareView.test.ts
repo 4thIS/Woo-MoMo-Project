@@ -452,20 +452,20 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
 
 describe('PrepareView — 면접관', () => {
   it('시작 영역에 면접관 칩, "바꾸기"로 고르기 패널을 연다', async () => {
-    useInterviewerStore().select('sharp')
+    useInterviewerStore().select('m2')
     const w = mountView()
-    expect(w.find('[data-test="interviewer-chip"]').text()).toContain('날카로운 압박 면접관')
+    expect(w.find('[data-test="interviewer-chip"]').text()).toContain('압박 면접관(남)')
     expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(false)
     await w.find('[data-test="change-interviewer"]').trigger('click')
     expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
     expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
   })
   it('목소리 준비 줄에 면접관 이름, 교체 중이면 "바꾸는 중", 실패면 안내', async () => {
-    useInterviewerStore().select('gentle')
+    useInterviewerStore().select('m1')
     const model = useModelStore()
     model.manifest = manifestWithTts
     const w = mountView()
-    expect(w.find('.checklist').text()).toContain('목소리 준비 · 온화한 선배')
+    expect(w.find('.checklist').text()).toContain('목소리 준비 · 기본 면접관(남)')
     model.$patch({ status: 'ready', ttsStatus: 'ready', voiceSwitching: true })
     await w.vm.$nextTick()
     expect(w.find('.checklist').text()).toContain('바꾸는 중')

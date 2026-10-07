@@ -163,7 +163,7 @@ export const useInterviewStore = defineStore('interview', {
           resumeText: this.resumeText,
           fallbackQuestions: this.fallbackQuestions,
           override: model.manifest?.systemPromptOverride,
-          persona: PERSONAS[chosen.id],
+          persona: PERSONAS[this.sessionInterviewer.persona],
         })
         if (session) await session.dispose().catch(() => undefined)
         systemPrompt = prompt
@@ -378,7 +378,7 @@ export const useInterviewStore = defineStore('interview', {
       const override = useModelStore().manifest?.systemPromptOverride
       try {
         const raw = await session.send(
-          buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.id]),
+          buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
           (d) => (this.reportRaw += d),
         )
         this.reportRaw = raw

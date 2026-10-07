@@ -19,7 +19,7 @@ cd frontend/scripts/voice-previews
 uv run --with onnxruntime==1.23.1 --with numpy --with soundfile python generate.py --supertonic <클론 경로> --candidates <임시 폴더>
 ```
 
-`<임시 폴더>/{gentle,standard,sharp}_{F1..M5}.ogg` 30개가 생긴다. 들어 보고 `voices.json`의 `voice`를 고친다.
+`<임시 폴더>/{m1,f3,m2,f2}_{F1..M5}.ogg` 40개가 생긴다. 들어 보고 `voices.json`의 `voice`를 고친다.
 
 ## 미리 듣기 생성 (커밋함)
 
@@ -27,4 +27,4 @@ uv run --with onnxruntime==1.23.1 --with numpy --with soundfile python generate.
 uv run --with onnxruntime==1.23.1 --with numpy --with soundfile python generate.py --supertonic <클론 경로>
 ```
 
-`public/voices/preview/{gentle,standard,sharp}.ogg`를 덮어쓴다(각 100KB 이하). 문장이나 목소리를 바꾸면 다시 실행하고 커밋한다.
+`public/voices/preview/{m1,f3,m2,f2}.ogg`를 덮어쓴다(각 100KB 이하). 문장이나 목소리를 바꾸면 다시 실행하고 커밋한다.

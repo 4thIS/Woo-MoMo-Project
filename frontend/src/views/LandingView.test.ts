@@ -59,7 +59,7 @@ const consentRadios = (w: ReturnType<typeof mountView>) =>
 
 beforeEach(() => {
   localStorage.clear()
-  localStorage.setItem('momo.interviewer', 'standard')
+  localStorage.setItem('momo.interviewer', 'f3')
   setActivePinia(createPinia())
   vi.mocked(getManifest).mockResolvedValue(manifest)
   vi.mocked(checkEnvironment).mockResolvedValue({
@@ -100,7 +100,7 @@ describe('LandingView', () => {
       '이 브라우저의 캐시',
       '사이트 데이터 삭제로 언제든',
     ])
-    expect(cells(1).slice(1, 3)).toEqual(['supertonic-3 (목소리: 기본 면접관)', '약 380MB'])
+    expect(cells(1).slice(1, 3)).toEqual(['supertonic-3 (목소리: 기본 면접관(여))', '약 380MB'])
     expect(w.findAll('th').map((h) => h.text())).toEqual([
       '받기',
       '모델',
@@ -307,10 +307,11 @@ describe('LandingView — 재방문 (#33)', () => {
 })
 
 describe('LandingView — 면접관 고르기', () => {
-  it('고르기 창에 면접관 3명 카드가 있다', async () => {
+  it('고르기 창에 면접관 4명 카드가 있다', async () => {
     const w = mountView()
     await flushPromises()
-    expect(w.findAll('[data-test^="interviewer-"]')).toHaveLength(3)
+    expect(w.findAll('[data-test^="interviewer-"]')).toHaveLength(4)
+    expect(w.text()).toContain('저희 넷 중 한 명이') // 소개 문장의 인원 수도 카드 수와 같다
   })
   it('첫 방문(선택 없음)에는 동의 선택지가 비활성이고 "면접관을 먼저 골라 주세요"', async () => {
     localStorage.removeItem('momo.interviewer')
@@ -321,7 +322,7 @@ describe('LandingView — 면접관 고르기', () => {
     await consentRadios(w)[0].trigger('click')
     await flushPromises()
     expect(w.find('[data-test="env"]').exists()).toBe(false)
-    await w.find('[data-test="interviewer-gentle"]').trigger('click')
+    await w.find('[data-test="interviewer-m1"]').trigger('click')
     await flushPromises()
     expect(w.find('[data-test="pick-first"]').exists()).toBe(false)
     await consentRadios(w)[0].trigger('click')
@@ -336,22 +337,22 @@ describe('LandingView — 면접관 고르기', () => {
         files: [...TTS.files, { path: 'voice_styles/M2.json', size: 300_000 }],
         voices: [
           { id: 'M2', path: 'voice_styles/M2.json', size: 300_000 },
-          { id: 'F1', path: 'voice_styles/F1.json', size: 290_000 },
+          { id: 'F3', path: 'voice_styles/F3.json', size: 290_000 },
         ],
       },
     })
     const w = mountView()
     await flushPromises()
     const voiceRow = w.findAll('[data-test="model-row"]')[1]
-    expect(voiceRow.text()).toContain('supertonic-3 (목소리: 기본 면접관)')
-    expect(useModelStore().ttsSelectionSize).toBe(300_000_000 + 98_653_257 + 300_000)
+    expect(voiceRow.text()).toContain('supertonic-3 (목소리: 기본 면접관(여))')
+    expect(useModelStore().ttsSelectionSize).toBe(300_000_000 + 98_653_257 + 290_000)
   })
   it('재방문 한 줄에 면접관 이름이 붙는다', async () => {
     vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts: TTS })
     vi.mocked(hasModel).mockResolvedValue(true)
     const w = mountView()
     await flushPromises()
-    expect(w.find('[data-test="revisit-consent"]').text()).toContain('면접관: 기본 면접관')
+    expect(w.find('[data-test="revisit-consent"]').text()).toContain('면접관: 기본 면접관(여)')
   })
   it('재방문인데 저장된 선택이 없으면 기본 면접관이 자동 선택되어 "바로 준비하기"가 열린다', async () => {
     localStorage.removeItem('momo.interviewer')
@@ -360,7 +361,7 @@ describe('LandingView — 면접관 고르기', () => {
     vi.mocked(hasModel).mockResolvedValue(true)
     const w = mountView()
     await flushPromises()
-    expect(w.find('[data-test="interviewer-standard"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-test="interviewer-f3"]').attributes('aria-checked')).toBe('true')
     expect(w.find('[data-test="go-prepare"]').attributes('disabled')).toBeUndefined()
   })
 })

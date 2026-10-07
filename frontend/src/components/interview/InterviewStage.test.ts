@@ -140,13 +140,13 @@ describe('InterviewStage 1회 재생', () => {
 
 describe('InterviewStage — 면접관', () => {
   it('centerSprites를 주면 가운데 자리는 그 면접관 시트, 좌우는 그대로', () => {
-    const sp = interviewerById('gentle')!.sprites
+    const sp = interviewerById('m1')!.sprites
     const w = mount(InterviewStage, { props: { ...base, centerSprites: sp } })
-    expect(w.find('[data-char="center"]').attributes('style')).toContain('gentle/center_idle.png')
+    expect(w.find('[data-char="center"]').attributes('style')).toContain('m1/center_idle.png')
     expect(w.find('[data-char="left"]').attributes('style')).toContain('left_idle.png')
   })
   it('면접관 이름을 상단 태그에 붙인다', () => {
-    const w = mount(InterviewStage, { props: { ...base, interviewerName: '온화한 선배' } })
-    expect(w.text()).toContain('IT · 백엔드 · 면접관: 온화한 선배')
+    const w = mount(InterviewStage, { props: { ...base, interviewerName: '압박 면접관(여)' } })
+    expect(w.text()).toContain('IT · 백엔드 · 면접관: 압박 면접관(여)')
   })
 })

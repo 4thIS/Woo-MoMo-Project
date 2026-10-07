@@ -49,7 +49,7 @@ describe('sheetFor', () => {
     expect(sheetFor('center_nod')).toEqual(ANIMS.center_nod)
   })
   it('가운데 동작은 고른 면접관 시트로, loop 규칙은 ANIMS를 따른다', () => {
-    const sp = interviewerById('gentle')!.sprites
+    const sp = interviewerById('m1')!.sprites
     expect(sheetFor('center_question', sp)).toEqual({
       file: sp.question.file,
       frames: sp.question.frames,
@@ -58,7 +58,7 @@ describe('sheetFor', () => {
     expect(sheetFor('center_nod', sp).loop).toBe(false)
   })
   it('좌우 배석자는 센터 스프라이트와 무관하다', () => {
-    const sp = interviewerById('sharp')!.sprites
+    const sp = interviewerById('m2')!.sprites
     expect(sheetFor('left_idle', sp)).toEqual(ANIMS.left_idle)
     expect(sheetFor('right_writing', sp)).toEqual(ANIMS.right_writing)
   })

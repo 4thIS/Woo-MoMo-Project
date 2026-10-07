@@ -3,6 +3,7 @@ import {
   CENTER_ROLES,
   DEFAULT_INTERVIEWER,
   INTERVIEWERS,
+  LEGACY_CENTER,
   interviewerById,
   type CenterSprites,
   type Interviewer,
@@ -32,23 +33,19 @@ export const useInterviewerStore = defineStore('interviewer', {
     /** 미리 듣기 재생 중인 면접관 — Picker가 이 캐릭터를 question 제스처로 바꾼다 */
     playingId: null as InterviewerId | null,
     previewFailed: false,
-    /** 안 뜨는 스프라이트 파일(새 면접관 에셋이 아직 없을 때) */
+    /** 안 뜨는 스프라이트 파일(면접관 에셋이 아직 없을 때) */
     brokenFiles: [] as string[],
   }),
   getters: {
     current: (s): Interviewer | null => interviewerById(s.id),
-    /** 역할별 시트. 새 면접관 파일이 안 뜨면 그 역할만 기본 면접관 시트로(spec 7절) */
+    /** 그 면접관(없거나 null이면 기본 면접관)의 시트. 6개 중 하나라도 안 뜨면 6개 모두 기존 가운데 스프라이트로 —
+     *  동작마다 다른 캐릭터가 섞이지 않게(spec 11.2) */
     spritesFor:
       (s) =>
       (id: InterviewerId | null): CenterSprites => {
-        const base = interviewerById(DEFAULT_INTERVIEWER)!.sprites
         const iv = interviewerById(id) ?? interviewerById(DEFAULT_INTERVIEWER)!
-        return Object.fromEntries(
-          CENTER_ROLES.map((r) => [
-            r,
-            s.brokenFiles.includes(iv.sprites[r].file) ? base[r] : iv.sprites[r],
-          ]),
-        ) as CenterSprites
+        const broken = CENTER_ROLES.some((r) => s.brokenFiles.includes(iv.sprites[r].file))
+        return broken ? LEGACY_CENTER : iv.sprites
       },
   },
   actions: {
@@ -78,12 +75,10 @@ export const useInterviewerStore = defineStore('interviewer', {
       stopPreview()
       this.playingId = null
     },
-    /** 새 면접관 스프라이트가 뜨는지 한 번만 확인한다(기본 면접관 파일은 이미 쓰고 있으니 제외) */
+    /** 모든 면접관(기본 면접관 포함) 스프라이트가 뜨는지 한 번만 확인한다 */
     probeSprites(): Promise<void> {
       probing ??= (async () => {
-        const files = INTERVIEWERS.filter((iv) => iv.id !== DEFAULT_INTERVIEWER).flatMap((iv) =>
-          CENTER_ROLES.map((r) => iv.sprites[r].file),
-        )
+        const files = INTERVIEWERS.flatMap((iv) => CENTER_ROLES.map((r) => iv.sprites[r].file))
         const results = await Promise.all(files.map(async (f) => [f, await probeImage(f)] as const))
         this.brokenFiles = results.filter(([, ok]) => !ok).map(([f]) => f)
       })()

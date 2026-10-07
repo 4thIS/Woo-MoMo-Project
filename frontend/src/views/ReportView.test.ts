@@ -302,8 +302,8 @@ describe('ReportView — 면접관', () => {
       phase: 'report',
       reportStatus: 'writing',
       profile: { field: 'it', job: '백엔드' },
-      interviewerId: 'sharp',
+      interviewerId: 'f2',
     })
-    expect(mount(ReportView).text()).toContain('면접관: 날카로운 압박 면접관')
+    expect(mount(ReportView).text()).toContain('면접관: 압박 면접관(여)')
   })
 })

@@ -173,7 +173,7 @@ function startDownload() {
         <PixelWindow title="오늘의 면접관을 골라 주세요">
           <div class="intro-text">
             <SpeechText
-              text="반갑습니다. 저희 셋 중 한 명이 여러분의 이력서를 읽고 질문 다섯 개를 준비합니다. 카드를 누르면 목소리를 들어 볼 수 있어요. 끝나면 점수 대신 문항별 피드백을 드리겠습니다."
+              text="반갑습니다. 저희 넷 중 한 명이 여러분의 이력서를 읽고 질문 다섯 개를 준비합니다. 카드를 누르면 목소리를 들어 볼 수 있어요. 끝나면 점수 대신 문항별 피드백을 드리겠습니다."
             />
             <InterviewerPicker />
             <p class="note">
