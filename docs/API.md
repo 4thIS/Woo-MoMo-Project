@@ -62,7 +62,7 @@
 | `systemPromptOverride` | string \| null | null이면 프론트 내장 시스템 프롬프트 사용. 파인튜닝 모델은 짧은 프롬프트로 대체 가능 |
 | `fallback` | object \| null | 초기화 실패 시 재시도할 경량 모델. 없으면 null |
 | `tts` | object \| null | 면접관 음성(TTS) 모델. null이면 프론트는 음성 단계를 건너뛴다. `id`(캐시 키), `baseUrl`(`/models/` 또는 `https://huggingface.co/`로 시작·`/`로 끝), `files[]`(`path` 상대경로·`size` 바이트), `voice`(프리셋명), `lang`(언어 코드). 파일 URL = `baseUrl + path` |
-| `tts.voices` | array \| null | 받을 수 있는 목소리 목록(2026-09-26 추가). 항목 `{ id, path, size }`, 파일 URL = `baseUrl + path`. **엔진 파일 = `files` 중 경로가 `voices[].path`에 없는 것**이다. 새 프론트는 엔진 + 고른 목소리 하나만 받는다. `files` 안의 기본 목소리 파일은 `voices`를 모르는 옛 프론트 호환용이다. 기본 `voice`는 항상 이 목록에 있다. null이면 기본 `voice`만 쓴다 |
+| `tts.voices` | array \| null | 받을 수 있는 목소리 목록(2026-09-26 추가). 항목 `{ id, path, size }`, 파일 URL = `baseUrl + path`. **엔진 파일 = `files` 중 경로가 `voices[].path`에 없는 것**이다. 새 프론트는 엔진 + 고른 목소리 하나만 받는다. `files` 안의 기본 목소리 파일은 `voices`를 모르는 옛 프론트 호환용이다. 있으면 1개 이상이고 id·path는 각각 겹치지 않으며, 기본 `voice`는 항상 이 목록에 있다. `files`에 들어가는 목소리 파일은 기본 `voice` 하나뿐이다(엔진 파일과 경로가 겹치지 않게). null이면 기본 `voice`만 쓴다 |
 
 ## GET /api/questions/{field}
 

@@ -102,6 +102,14 @@ class TtsManifest(BaseModel):
             raise ValueError("tts voice ids must be unique")
         if self.voice not in ids:
             raise ValueError(f"default tts voice {self.voice!r} must be listed in voices")
+        paths = [v.path for v in self.voices]
+        if len(set(paths)) != len(paths):
+            raise ValueError("tts voice paths must be unique")
+        # 엔진 = files − voices 경로. files에 둘 수 있는 목소리는 옛 프론트용 기본 목소리뿐
+        default_path = next(v.path for v in self.voices if v.id == self.voice)
+        stray = ({f.path for f in self.files} & set(paths)) - {default_path}
+        if stray:
+            raise ValueError(f"tts files may only hold the default voice file, not {sorted(stray)}")
         return self
 
 

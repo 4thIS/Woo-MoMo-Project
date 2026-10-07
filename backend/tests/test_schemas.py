@@ -202,6 +202,19 @@ def test_tts_voices_must_include_default_voice():
         Manifest.model_validate(_manifest(tts={**TTS, "voices": only_f1}))
 
 
+def test_tts_voices_reject_duplicate_paths():
+    dup = [*VOICES, {"id": "F2", "path": "voice_styles/F1.json", "size": 1}]
+    with pytest.raises(ValidationError, match="paths must be unique"):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": dup}))
+
+
+def test_tts_voice_path_must_not_shadow_engine_file():
+    # 프론트는 엔진 = files − voices 경로 — 겹치면 엔진 파일이 조용히 빠진다
+    clash = [{"id": "F1", "path": "onnx/text_encoder.onnx", "size": 1}, VOICES[1]]
+    with pytest.raises(ValidationError, match="default voice file"):
+        Manifest.model_validate(_manifest(tts={**TTS, "voices": clash}))
+
+
 @pytest.mark.parametrize(
     "voice",
     [
