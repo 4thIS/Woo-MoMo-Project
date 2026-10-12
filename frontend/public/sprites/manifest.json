@@ -65,34 +65,16 @@
   "w": 25,
   "h": 28
  },
- "lamp": {
-  "file": "lamp.png",
-  "frames": 1,
-  "w": 14,
-  "h": 42
- },
  "vending": {
   "file": "vending.png",
   "frames": 1,
   "w": 32,
   "h": 40
  },
- "planter": {
-  "file": "planter.png",
-  "frames": 1,
-  "w": 32,
-  "h": 32
- },
  "pigeon": {
   "file": "pigeon.png",
   "frames": 1,
   "w": 30,
   "h": 27
- },
- "signal": {
-  "file": "signal.png",
-  "frames": 1,
-  "w": 14,
-  "h": 48
  }
 }

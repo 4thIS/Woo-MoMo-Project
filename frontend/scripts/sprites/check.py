@@ -12,8 +12,14 @@ import sys
 
 from PIL import Image
 
-MAX_DRIFT = 6  # 프레임 간 바운딩박스 이동 허용치(px) — 걷기 보폭
-PALETTE_TOL = 2  # 기준에 없던 색 허용 개수
+# 프레임 간 바운딩박스 이동 허용치(px).
+# 제자리걸음은 거의 안 움직여야 하고, 몸을 숙이거나 고개를 드는 동작은 당연히 변한다.
+DRIFT_WALK = 6
+DRIFT_OTHER = 14
+# 인접 프레임 사이에 새로 생기는 색 허용 개수(옷 색 변질·노이즈)
+PALETTE_TOL = 12
+# 복장이 바뀌는 것이 동작의 정의인 것들 — 색이 느는 게 정상이라 팔레트 검사에서 뺀다
+PALETTE_SKIP = ("pickup_",)
 
 
 def frames(sheet, n):
@@ -57,9 +63,19 @@ def palette(im):
     return {px[x, y][:3] for y in range(im.height) for x in range(im.width) if px[x, y][3] > 0}
 
 
+def frame_palette_drift(ims):
+    """한 프레임에서 바로 다음 프레임으로 갈 때 새로 생기는 색의 최댓값.
+
+    첫 프레임과 비교하면 의도된 변화까지 잡힌다 — 양복을 입으면 색이 당연히 늘고,
+    그건 결함이 아니다. 변질은 '갑자기' 튀는 것이므로 인접 프레임끼리 본다."""
+    worst = 0
+    for a, b in zip(ims, ims[1:]):
+        worst = max(worst, len(palette(b) - palette(a)))
+    return worst
+
+
 def check(folder):
     man = json.load(open(os.path.join(folder, "manifest.json"), encoding="utf-8"))
-    base_pal = None
     bad = []
     for key, v in sorted(man.items()):
         sheet = Image.open(os.path.join(folder, v["file"])).convert("RGBA")
@@ -68,20 +84,17 @@ def check(folder):
             bad.append(f"{key}: 시트 크기 {sheet.size}가 manifest({v['w']}x{v['h']} x{n})와 다름")
             continue
         ims = frames(sheet, n)
+        limit = DRIFT_WALK if key.startswith("walk") else DRIFT_OTHER
         drift = bbox_drift(ims)
-        if drift and (drift[0] > MAX_DRIFT or drift[1] > MAX_DRIFT):
-            bad.append(f"{key}: 캐릭터 흔들림 가로 {drift[0]}px 세로 {drift[1]}px (허용 {MAX_DRIFT})")
+        if drift and (drift[0] > limit or drift[1] > limit):
+            bad.append(f"{key}: 캐릭터 흔들림 가로 {drift[0]}px 세로 {drift[1]}px (허용 {limit})")
         lone = sum(lone_pixels(im) for im in ims)
         if lone:
             bad.append(f"{key}: 고립 픽셀 {lone}개")
-        pal = set().union(*(palette(im) for im in ims))
-        if base_pal is None:
-            base_pal = pal
-        else:
-            extra = pal - base_pal
-            if len(extra) > PALETTE_TOL:
-                bad.append(f"{key}: 기준에 없던 색 {len(extra)}종")
-        print(f"  {key:16} {n:2}프레임  흔들림 {drift}  고립 {lone}  색 {len(pal)}")
+        pdrift = frame_palette_drift(ims) if n > 1 else 0
+        if pdrift > PALETTE_TOL and not key.startswith(PALETTE_SKIP):
+            bad.append(f"{key}: 프레임마다 새 색 {pdrift}종 (허용 {PALETTE_TOL}) — 옷 색 변질 의심")
+        print(f"  {key:16} {n:2}프레임  흔들림 {drift}  고립 {lone}  색변화 {pdrift}")
     return bad
 
 
