@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   SCROLL,
   advance,
+  IDLE_GAP,
   MAX_AHEAD,
+  PROP_GAP,
+  PROP_KEYS,
+  nextIdleAt,
+  pickIdle,
+  spawnProp,
+  stepProps,
   stepScene,
   STAGES,
   approach,
@@ -179,5 +186,45 @@ describe('stepScene — 진행률이 장면을 끈다', () => {
       while (state.queue.length) seen.push(state.queue.shift() as string)
     }
     expect(seen).toEqual(['pickup_suit', 'pickup_bag', 'look_up'])
+  })
+})
+
+describe('잔동작 — 구간이 길 때 끼어든다', () => {
+  it('다음 예정 시각은 15~25초 뒤다', () => {
+    expect(nextIdleAt(1000, () => 0)).toBe(1000 + IDLE_GAP[0])
+    expect(nextIdleAt(1000, () => 1)).toBe(1000 + IDLE_GAP[1])
+  })
+  it('그 구간에 정의된 잔동작만 고른다', () => {
+    const bag = STAGES.find((s) => s.walk === 'walk_suit_bag')!
+    expect(bag.idles).toContain(pickIdle(bag, () => 0) as string)
+  })
+  it('잔동작이 없는 구간은 null을 준다', () => {
+    expect(pickIdle(STAGES[0], () => 0)).toBeNull()
+  })
+  it('진행률이 멈춰 있어도 일정은 시간으로만 돈다', () => {
+    const t = nextIdleAt(0, () => 0)
+    expect(t).toBeGreaterThan(0)
+    expect(t).toBeLessThanOrEqual(IDLE_GAP[1])
+  })
+})
+
+describe('지나가는 소품', () => {
+  it('오른쪽 화면 밖에서 생긴다', () => {
+    const p = spawnProp(320, () => 0)
+    expect(p.x).toBeGreaterThanOrEqual(320)
+    expect(PROP_KEYS).toContain(p.key)
+  })
+  it('바닥과 같은 속도로 왼쪽으로 흐른다', () => {
+    expect(stepProps([{ key: 'cat', x: 200 }], 0.5, 40, 320)[0].x).toBe(180)
+  })
+  it('화면 왼쪽으로 나가면 사라진다', () => {
+    expect(stepProps([{ key: 'cat', x: -64 }], 0.1, 40, 320)).toEqual([])
+  })
+  it('탭 복귀로 dt가 커져도 화면을 한 번에 가로지르지 않는다', () => {
+    const out = stepProps([{ key: 'cat', x: 300 }], 5, 40, 320)
+    expect(300 - out[0].x).toBeLessThanOrEqual(320)
+  })
+  it('간격은 3~7초다', () => {
+    expect(PROP_GAP).toEqual([3000, 7000])
   })
 })
