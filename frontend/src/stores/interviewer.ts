@@ -3,9 +3,14 @@ import {
   CENTER_ROLES,
   DEFAULT_INTERVIEWER,
   INTERVIEWERS,
+  LEFT_ROLES,
   LEGACY_CENTER,
+  LEGACY_SIDE,
+  RIGHT_ROLES,
+  SIDE_SPRITES,
   interviewerById,
   type CenterSprites,
+  type SideSprites,
   type Interviewer,
   type InterviewerId,
 } from '@/interviewers'
@@ -21,6 +26,10 @@ function loadId(): InterviewerId | null {
     return null
   }
 }
+const SIDE_FILES = [
+  ...LEFT_ROLES.map((r) => SIDE_SPRITES.left[r].file),
+  ...RIGHT_ROLES.map((r) => SIDE_SPRITES.right[r].file),
+]
 let probing: Promise<void> | null = null
 /** 테스트용: 스프라이트 확인을 다시 하게 한다 */
 export function __resetInterviewerProbe(): void {
@@ -38,7 +47,7 @@ export const useInterviewerStore = defineStore('interviewer', {
   }),
   getters: {
     current: (s): Interviewer | null => interviewerById(s.id),
-    /** 그 면접관(없거나 null이면 기본 면접관)의 시트. 6개 중 하나라도 안 뜨면 6개 모두 기존 가운데 스프라이트로 —
+    /** 그 면접관(없거나 null이면 기본 면접관)의 시트. 7개 중 하나라도 안 뜨면 7개 모두 기존 가운데 스프라이트로 —
      *  동작마다 다른 캐릭터가 섞이지 않게(spec 11.2) */
     spritesFor:
       (s) =>
@@ -47,6 +56,9 @@ export const useInterviewerStore = defineStore('interviewer', {
         const broken = CENTER_ROLES.some((r) => s.brokenFiles.includes(iv.sprites[r].file))
         return broken ? LEGACY_CENTER : iv.sprites
       },
+    /** 좌우 배석자 시트. 새 시트(sl·sr) 중 하나라도 안 뜨면 좌우 모두 기존 left_*·right_*로 */
+    sideSprites: (s): SideSprites =>
+      SIDE_FILES.some((f) => s.brokenFiles.includes(f)) ? LEGACY_SIDE : SIDE_SPRITES,
   },
   actions: {
     select(id: InterviewerId) {
@@ -75,10 +87,13 @@ export const useInterviewerStore = defineStore('interviewer', {
       stopPreview()
       this.playingId = null
     },
-    /** 모든 면접관(기본 면접관 포함) 스프라이트가 뜨는지 한 번만 확인한다 */
+    /** 모든 면접관(기본 면접관 포함)과 배석자 스프라이트가 뜨는지 한 번만 확인한다 */
     probeSprites(): Promise<void> {
       probing ??= (async () => {
-        const files = INTERVIEWERS.flatMap((iv) => CENTER_ROLES.map((r) => iv.sprites[r].file))
+        const files = [
+          ...INTERVIEWERS.flatMap((iv) => CENTER_ROLES.map((r) => iv.sprites[r].file)),
+          ...SIDE_FILES,
+        ]
         const results = await Promise.all(files.map(async (f) => [f, await probeImage(f)] as const))
         this.brokenFiles = results.filter(([, ok]) => !ok).map(([f]) => f)
       })()

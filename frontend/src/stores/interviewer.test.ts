@@ -9,7 +9,16 @@ vi.mock('@/services/sprites', () => ({ probeImage: vi.fn(async () => true) }))
 
 import { playPreview, stopPreview } from '@/services/preview'
 import { probeImage } from '@/services/sprites'
-import { CENTER_ROLES, INTERVIEWERS, LEGACY_CENTER, interviewerById } from '@/interviewers'
+import {
+  CENTER_ROLES,
+  INTERVIEWERS,
+  LEFT_ROLES,
+  LEGACY_CENTER,
+  LEGACY_SIDE,
+  RIGHT_ROLES,
+  SIDE_SPRITES,
+  interviewerById,
+} from '@/interviewers'
 import { __resetInterviewerProbe, useInterviewerStore } from './interviewer'
 
 beforeEach(() => {
@@ -84,22 +93,30 @@ describe('stores/interviewer — 미리 듣기', () => {
 })
 
 describe('stores/interviewer — 스프라이트 대체', () => {
-  it('probeSprites는 모든 면접관(기본 포함) 파일을 한 번 확인한다(두 번 불러도 한 번)', async () => {
+  const sideFiles = [
+    ...LEFT_ROLES.map((r) => SIDE_SPRITES.left[r].file),
+    ...RIGHT_ROLES.map((r) => SIDE_SPRITES.right[r].file),
+  ]
+  it('probeSprites는 모든 면접관(기본 포함) 7개씩 + 배석자 5개를 한 번 확인한다(두 번 불러도 한 번)', async () => {
     const s = useInterviewerStore()
     await Promise.all([s.probeSprites(), s.probeSprites()])
-    expect(probeImage).toHaveBeenCalledTimes(INTERVIEWERS.length * CENTER_ROLES.length)
+    expect(probeImage).toHaveBeenCalledTimes(INTERVIEWERS.length * CENTER_ROLES.length + 5)
     const probed = vi.mocked(probeImage).mock.calls.map(([u]) => u)
     expect(new Set(probed)).toEqual(
-      new Set(INTERVIEWERS.flatMap((iv) => CENTER_ROLES.map((r) => iv.sprites[r].file))),
+      new Set([
+        ...INTERVIEWERS.flatMap((iv) => CENTER_ROLES.map((r) => iv.sprites[r].file)),
+        ...sideFiles,
+      ]),
     )
   })
   it('다 뜨면 자기 세트 그대로', async () => {
     const s = useInterviewerStore()
     await s.probeSprites()
     for (const iv of INTERVIEWERS) expect(s.spritesFor(iv.id), iv.id).toEqual(iv.sprites)
+    expect(s.sideSprites).toEqual(SIDE_SPRITES)
   })
-  it('6개 중 하나만 안 떠도 그 면접관은 6개 모두 기존 가운데 스프라이트(LEGACY_CENTER) — 역할별로 섞지 않는다', async () => {
-    vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/m1/center_nod.png'))
+  it('7개 중 하나만 안 떠도 그 면접관은 7개 모두 기존 가운데 스프라이트(LEGACY_CENTER) — 역할별로 섞지 않는다', async () => {
+    vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/m1/center_question_in.png'))
     const s = useInterviewerStore()
     await s.probeSprites()
     expect(s.spritesFor('m1')).toEqual(LEGACY_CENTER)
@@ -112,5 +129,13 @@ describe('stores/interviewer — 스프라이트 대체', () => {
     await s.probeSprites()
     expect(s.spritesFor(null)).toEqual(LEGACY_CENTER)
     expect(s.spritesFor('f3')).toEqual(LEGACY_CENTER)
+  })
+  it('배석자 새 시트(sl·sr) 중 하나라도 안 뜨면 좌우 모두 기존 left_*·right_*(LEGACY_SIDE)', async () => {
+    vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/sr/right_pentap.png'))
+    const s = useInterviewerStore()
+    expect(s.sideSprites).toEqual(SIDE_SPRITES) // 확인 전엔 새 시트
+    await s.probeSprites()
+    expect(s.sideSprites).toEqual(LEGACY_SIDE)
+    expect(s.spritesFor('m1')).toEqual(interviewerById('m1')!.sprites) // 가운데는 따로
   })
 })
