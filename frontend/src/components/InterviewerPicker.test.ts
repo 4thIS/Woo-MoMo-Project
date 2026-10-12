@@ -77,12 +77,13 @@ describe('InterviewerPicker', () => {
       ended = onEnded!
       return true
     })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] }) // 마운트 전에 — 스프라이트 타이머가 가짜 시계를 쓰게
     const w = mount(InterviewerPicker)
     await card(w, 'f3').trigger('click')
     await flushPromises()
     expect(card(w, 'f3').find('.sprite').attributes('style')).toContain('f3/center_question.png')
-    vi.useFakeTimers()
     vi.advanceTimersByTime(40 * 125) // in·out 없이 question만 반복 — 시간이 지나도 그대로
+    await flushPromises()
     vi.useRealTimers()
     expect(card(w, 'f3').find('.sprite').attributes('style')).toContain('f3/center_question.png')
     ended()

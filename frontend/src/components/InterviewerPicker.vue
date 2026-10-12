@@ -3,11 +3,11 @@ import { nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
+import { useInterviewerStore } from '@/stores/interviewer'
+import { useModelStore } from '@/stores/model'
 
 /** 카드 캐릭터 배율: 92 × 2 = 184px(정수배 — 픽셀이 고르게) */
 const PICKER_SCALE = 2
-import { useInterviewerStore } from '@/stores/interviewer'
-import { useModelStore } from '@/stores/model'
 
 /**
  * 면접관 고르기(spec 3.1): 카드 클릭·키보드 선택 = 선택 + 포커스 + 미리 듣기(항상 재생).
