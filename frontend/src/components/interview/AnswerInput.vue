@@ -192,6 +192,7 @@ const micTitle = computed(() =>
       <textarea
         v-model="text"
         class="input mono"
+        data-test="answer"
         rows="4"
         placeholder="답변을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"
         :disabled="generating || disabled"

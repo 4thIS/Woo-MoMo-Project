@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hintFor, HINTS, type HintContext } from './hints'
+import { hintFor, HINTS, POINTER, pointerSpot, needsScroll, type HintContext } from './hints'
 
 /** 아무 힌트도 안 뜨는 바닥 상태 — 테스트마다 필요한 조건만 켠다 */
 const base: HintContext = {
@@ -93,5 +93,77 @@ describe('HINTS', () => {
 
   it('문구가 비어 있지 않다', () => {
     for (const h of HINTS) expect(h.text.length).toBeGreaterThan(0)
+  })
+})
+
+describe('HINTS — 가리킬 대상', () => {
+  it('모든 힌트가 누를 곳이나 쓸 곳을 가리킨다', () => {
+    for (const h of HINTS) {
+      expect(h.target, h.key).toBeTruthy()
+      expect(['click', 'type'], h.key).toContain(h.kind)
+    }
+  })
+})
+
+describe('pointerSpot — 커서를 둘 자리', () => {
+  const r = (top: number, left: number, w = 120, h = 48) => ({ top, left, width: w, height: h })
+
+  it('기본은 대상 바로 아래 가운데', () => {
+    const s = pointerSpot(r(100, 200), 1000, 800)
+    expect(s.above).toBe(false)
+    expect(s.y).toBeGreaterThan(148) // 대상 아래
+    expect(s.x).toBeGreaterThan(200)
+    expect(s.x).toBeLessThan(320)
+  })
+
+  it('아래가 화면 밖이면 위로 올린다', () => {
+    const s = pointerSpot(r(730, 200), 1000, 800)
+    expect(s.above).toBe(true)
+    expect(s.y).toBeLessThan(730)
+  })
+
+  it('쓰는 곳은 입력칸 안쪽 오른쪽 — 칸 밖에 두면 아래 본문 글자를 덮는다', () => {
+    const box = r(100, 200, 900, 52)
+    const s = pointerSpot(box, 1000, 800, 'inside')
+    expect(s.above).toBe(false)
+    // 칸의 세로 한가운데, 오른쪽 테두리 안쪽
+    expect(s.y).toBeGreaterThan(100)
+    expect(s.y + POINTER.h).toBeLessThan(152)
+    expect(s.x + POINTER.w).toBeLessThan(1100)
+    expect(s.x).toBeGreaterThan(1000 - 60)
+  })
+
+  it('화면 왼쪽 끝 대상도 커서가 잘리지 않는다', () => {
+    const s = pointerSpot(r(100, 0, 20), 1000, 800)
+    expect(s.x).toBeGreaterThanOrEqual(0)
+  })
+
+  it('화면 오른쪽 끝 대상도 커서가 잘리지 않는다', () => {
+    const s = pointerSpot(r(100, 990, 20), 1000, 800)
+    expect(s.x + POINTER.w).toBeLessThanOrEqual(1000)
+  })
+
+  it('위아래 둘 다 좁으면 화면 안에 머문다', () => {
+    const s = pointerSpot(r(0, 200, 120, 200), 1000, 200)
+    expect(s.y).toBeGreaterThanOrEqual(0)
+    expect(s.y + POINTER.h).toBeLessThanOrEqual(200)
+  })
+})
+
+describe('needsScroll — 대상이 화면 밖인가', () => {
+  it('화면 한가운데면 스크롤하지 않는다', () => {
+    expect(needsScroll({ top: 300, height: 40 }, 800)).toBe(false)
+  })
+
+  it('위로 벗어났으면 스크롤한다', () => {
+    expect(needsScroll({ top: -20, height: 40 }, 800)).toBe(true)
+  })
+
+  it('아래로 벗어났으면 스크롤한다', () => {
+    expect(needsScroll({ top: 790, height: 40 }, 800)).toBe(true)
+  })
+
+  it('가장자리에 아슬아슬하면 스크롤한다 — 커서 자리도 있어야 한다', () => {
+    expect(needsScroll({ top: 760, height: 40 }, 800)).toBe(true)
   })
 })

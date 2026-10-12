@@ -47,7 +47,13 @@ const sheet = (id: InterviewerId) => {
 
 <template>
   <div class="picker-wrap">
-    <div class="picker" role="radiogroup" aria-label="면접관 고르기" @keydown="onKey">
+    <div
+      class="picker"
+      role="radiogroup"
+      aria-label="면접관 고르기"
+      data-test="picker"
+      @keydown="onKey"
+    >
       <button
         v-for="p in INTERVIEWERS"
         :key="p.id"

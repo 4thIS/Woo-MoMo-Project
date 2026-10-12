@@ -247,6 +247,7 @@ function startDownload() {
           </p>
           <template v-if="!revisit">
             <ChoiceMenu
+              data-test="consent"
               :items="consentItems"
               :model-value="consent"
               :disabled="needPick"

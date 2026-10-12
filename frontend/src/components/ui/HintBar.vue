@@ -8,6 +8,7 @@ import { hintFor, type HintContext } from '@/utils/hints'
 import { useHintsStore } from '@/stores/hints'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
+import HintPointer from './HintPointer.vue'
 
 const hints = useHintsStore()
 const interview = useInterviewStore()
@@ -68,6 +69,8 @@ function dismiss(key: string) {
 </script>
 
 <template>
+  <!-- key를 주지 않는다 — 같은 인스턴스가 살아 있어야 다음 대상으로 날아간다 -->
+  <HintPointer v-if="hint" :selector="hint.target" :kind="hint.kind" />
   <Transition name="hint">
     <aside v-if="hint" ref="el" class="bar" role="status" data-test="hint">
       <p class="text">{{ hint.text }}</p>
