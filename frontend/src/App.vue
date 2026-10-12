@@ -5,6 +5,7 @@ import LandingView from '@/views/LandingView.vue'
 import PrepareView from '@/views/PrepareView.vue'
 import InterviewView from '@/views/InterviewView.vue'
 import ReportView from '@/views/ReportView.vue'
+import HintBar from '@/components/ui/HintBar.vue'
 
 const interview = useInterviewStore()
 const view = computed(
@@ -17,4 +18,5 @@ const view = computed(
 
 <template>
   <component :is="view" />
+  <HintBar />
 </template>
