@@ -45,11 +45,13 @@ describe('InterviewerPicker', () => {
     expect(w.text()).toContain('근거를 보여 주세요')
     expect(radios.every((r) => r.attributes('aria-checked') === 'false')).toBe(true)
   })
-  it('카드 캐릭터는 64 프레임 × 2 = 128px', () => {
+  it('카드 캐릭터는 92 프레임 × 2 = 184px(정수배), 시트 전체를 manifest 프레임 수만큼 늘린다', () => {
     const w = mount(InterviewerPicker)
     for (const id of ['m1', 'f3', 'm2', 'f2']) {
       const st = (card(w, id).find('.sprite').element as HTMLElement).style
-      expect([st.width, st.height], id).toEqual(['128px', '128px'])
+      expect([st.width, st.height], id).toEqual(['184px', '184px'])
+      expect(st.backgroundSize, id).toBe('2944px 184px') // idle 16f × 92 × 2
+      expect(st.backgroundImage, id).toContain(`/sprites/interviewers64/${id}/center_idle.png`)
     }
   })
   it('카드를 누르면 선택 + 포커스 강조 + 그 목소리 미리 듣기(음소거 저장값과 무관)', async () => {
@@ -78,6 +80,10 @@ describe('InterviewerPicker', () => {
     const w = mount(InterviewerPicker)
     await card(w, 'f3').trigger('click')
     await flushPromises()
+    expect(card(w, 'f3').find('.sprite').attributes('style')).toContain('f3/center_question.png')
+    vi.useFakeTimers()
+    vi.advanceTimersByTime(40 * 125) // in·out 없이 question만 반복 — 시간이 지나도 그대로
+    vi.useRealTimers()
     expect(card(w, 'f3').find('.sprite').attributes('style')).toContain('f3/center_question.png')
     ended()
     await flushPromises()

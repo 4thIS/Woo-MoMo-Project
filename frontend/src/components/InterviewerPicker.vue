@@ -3,6 +3,9 @@ import { nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
+
+/** 카드 캐릭터 배율: 92 × 2 = 184px(정수배 — 픽셀이 고르게) */
+const PICKER_SCALE = 2
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
 
@@ -35,6 +38,7 @@ function onKey(e: KeyboardEvent) {
   void nextTick(() => cards.value[j]?.focus())
 }
 const tabbable = (id: InterviewerId) => (iv.id === null ? id === INTERVIEWERS[0].id : iv.id === id)
+/** 재생 중엔 question만 반복한다(카드에선 집어 들기·내려놓기 없이) */
 const sheet = (id: InterviewerId) => {
   const s = iv.spritesFor(id)
   return iv.playingId === id ? s.question : s.idle
@@ -62,7 +66,7 @@ const sheet = (id: InterviewerId) => {
           :frame-w="CENTER_FRAME_PX"
           :frame-h="CENTER_FRAME_PX"
           :frames="sheet(p.id).frames"
-          :scale="2"
+          :scale="PICKER_SCALE"
           :fps="8"
         />
         <span class="name">{{ p.name }}</span>
@@ -85,16 +89,22 @@ const sheet = (id: InterviewerId) => {
   flex-direction: column;
   gap: var(--sp-3);
 }
-/* 카드 4장을 한 줄로, 좁은 화면은 2×2. 카드 폭(캐릭터 128px + 여백)이 같아 열이 고르게 선다 */
+/* 카드 4장을 한 줄로(약 940px), 그보다 좁으면 2×2, 아주 좁으면 한 줄에 하나.
+   카드 폭(캐릭터 184px + 여백 ≈ 220px)이 같아 열이 고르게 선다 */
 .picker {
   display: grid;
   grid-template-columns: repeat(4, auto);
   justify-content: center;
   gap: var(--sp-5);
 }
-@media (max-width: 840px) {
+@media (max-width: 1100px) {
   .picker {
     grid-template-columns: repeat(2, auto);
+  }
+}
+@media (max-width: 560px) {
+  .picker {
+    grid-template-columns: auto;
   }
 }
 .card {
