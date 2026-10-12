@@ -114,3 +114,21 @@ export function advanceStages(state: StageState, progress: number): StageState {
 export function captionAt(progress: number): string {
   return COMMUTE[stageAt(progress)].caption
 }
+
+/* ---------- 잔동작 ----------
+ * 한 구간이 37초~1분 50초라 같은 루프만 보면 지루하다. 15~25초마다 하나씩 끼워 넣는다.
+ * 일정은 진행률이 아니라 시간으로 돈다 — 다운로드가 멈춰도 캐릭터는 살아 있어야 한다. */
+
+export const IDLE_GAP: readonly [number, number] = [15_000, 25_000]
+
+/** 다음 잔동작 예정 시각(ms) */
+export function nextIdleAt(now: number, rnd: () => number): number {
+  const [a, b] = IDLE_GAP
+  return now + a + rnd() * (b - a)
+}
+
+/** 이 구간에서 나올 잔동작 하나. 없으면 null */
+export function pickIdle(stage: CommuteStage, rnd: () => number): string | null {
+  if (!stage.idles.length) return null
+  return stage.idles[Math.min(stage.idles.length - 1, Math.floor(rnd() * stage.idles.length))]
+}

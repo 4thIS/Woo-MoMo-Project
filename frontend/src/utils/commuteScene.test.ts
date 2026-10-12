@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { COMMUTE, advanceStages, captionAt, stageAt, type StageState } from './commuteScene'
+import {
+  COMMUTE,
+  IDLE_GAP,
+  advanceStages,
+  captionAt,
+  nextIdleAt,
+  pickIdle,
+  stageAt,
+  type StageState,
+} from './commuteScene'
 
 describe('구간', () => {
   it('진행률 경계가 스펙과 같다', () => {
@@ -35,5 +44,26 @@ describe('구간', () => {
   it('문구는 구간을 따른다', () => {
     expect(captionAt(0)).toContain('일어났')
     expect(captionAt(100)).toContain('자리에')
+  })
+})
+
+describe('잔동작', () => {
+  it('다음 예정 시각은 15~25초 뒤다', () => {
+    expect(nextIdleAt(1000, () => 0)).toBe(1000 + IDLE_GAP[0])
+    expect(nextIdleAt(1000, () => 1)).toBe(1000 + IDLE_GAP[1])
+    expect(nextIdleAt(1000, () => 0.5)).toBe(1000 + (IDLE_GAP[0] + IDLE_GAP[1]) / 2)
+  })
+  it('그 구간에 정의된 잔동작만 고른다', () => {
+    const bedroom = COMMUTE[0]
+    expect(bedroom.idles).toContain(pickIdle(bedroom, () => 0) as string)
+  })
+  it('잔동작이 없는 구간은 null을 준다', () => {
+    const last = COMMUTE[COMMUTE.length - 1]
+    expect(pickIdle(last, () => 0)).toBeNull()
+  })
+  it('진행률이 멈춰 있어도 잔동작 일정은 시간으로만 돈다', () => {
+    const t = nextIdleAt(0, () => 0)
+    expect(t).toBeGreaterThan(0)
+    expect(t).toBeLessThanOrEqual(IDLE_GAP[1])
   })
 })
