@@ -1,7 +1,7 @@
 # 면접관 고르기 · 페르소나 · 목소리 — 설계 (spec)
 
 - 생성일시: 2026-09-26
-- 수정일시: 2026-10-07 (11절: 메인 면접관 4명 · 64×64 — 이 절이 앞 절들과 다르면 11절을 따른다)
+- 수정일시: 2026-10-12 (11.2: 실제 에셋 interviewers64 · 92×92 · 7동작으로 갱신. 11절이 앞 절들과 다르면 11절을 따른다)
 - 상태: 승인됨 (브레인스토밍 완료, PR #46 리뷰 4건 반영)
 - 담당: **이번 기능 한정** — 스프라이트 에셋·리뷰 @leemonta9482 / 계약·미리 듣기 에셋·프론트 구현·plan·이슈 @ssenu (9절). 루트 `CLAUDE.md`·`CODEOWNERS`의 영역 분담은 그대로이고, 다음 기능부터 원래대로 돌아간다
 - 상위 문서: `docs/superpowers/specs/2026-09-15-mock-interview-design.md`, `docs/specs/frontend/2026-09-15-screens-design.md`, `docs/specs/frontend/2026-09-16-prompts-design.md`, `docs/specs/frontend/2026-09-17-tts-design.md`
@@ -18,8 +18,8 @@ Supertonic 3는 엔진(약 398MB)을 모든 목소리가 공유하고, 목소리
 | 항목 | 결정 |
 |---|---|
 | 라인업 | **4명(11절):** 기본 면접관(남·여), 압박 면접관(남·여). 페르소나는 `standard`·`sharp`를 쓰고, 겉모습·목소리가 면접관마다 다르다. 지금 가운데 캐릭터(M2)는 라인업에서 빠진다 |
-| 겉모습 | 면접관마다 **완전히 다른 스프라이트 세트**. 메인 4명 × 가운데 동작 6종 + 배석자 2명, 모두 64×64(11절, 이슈 #48 확정안) |
-| 무대 | 고른 면접관이 **가운데**(말하는 자리)에 앉는다. 좌우 배석자(서류 넘기기·받아 적기)는 누구를 고르든 같고, 64×64로 새로 그린다 |
+| 겉모습 | 면접관마다 **완전히 다른 스프라이트 세트**. 메인 4명 × 가운데 동작 7종 + 배석자 2명, 모두 92×92 프레임(11.2절, 에셋 #60·#62) |
+| 무대 | 고른 면접관이 **가운데**(말하는 자리)에 앉는다. 좌우 배석자(서류 넘기기·받아 적기)는 누구를 고르든 같고, 92×92로 새로 그렸다(11.2절) |
 | 페르소나 범위 | 면접 중 말투·질문 방식(성격 문장, 꼬리질문 규칙, 짧은 반응) + **리포트 피드백 말투 한 줄**. 리포트 JSON 형식과 분량은 불변 |
 | 고르는 시점 | 랜딩, 모델 다운로드 동의 **전**. 첫 방문은 선택해야 동의 창이 열린다. 준비 화면에서도 "바꾸기" 가능 |
 | 미리 듣기 | 면접관별로 **하드코딩한 한 문장을 개발 중에 미리 합성한 OGG**를 재생한다(모델을 받기 전이라 엔진이 없음). **카드를 클릭하면 그 캐릭터에 포커스가 가면서 목소리가 무조건 나온다.** 스피커 버튼·미리 듣기 음소거는 두지 않는다(음량은 사용자의 시스템 음량으로 조절) |
@@ -290,10 +290,21 @@ export function interviewerById(id: string | null): Interviewer | null
 - 아무도 선택하지 않았을 때 받을 목소리는 기본 면접관(`f3`)의 목소리(F3)다. 매니페스트 기본 `tts.voice`(M2)는 `voices`가 없는 옛 매니페스트에서만 쓴다.
 - 리허설(계층 규율): 쓰이는 페르소나 2종(`standard`·`sharp`)을 각각 1회 완주하고 리포트 JSON 파싱을 확인한다. 목소리 4개는 체크리스트에서 미리 듣기와 면접 첫 질문으로 확인한다.
 
-### 11.2 스프라이트 (64×64)
-- 메인 4명: `frontend/public/sprites/interviewers/{m1,f3,m2,f2}/center_{idle,question,nod,watch,lookside,armscross}.png`, 폴더마다 `manifest.json`(`"w": 64, "h": 64`). 프레임 수는 6.2 표와 같다.
-- 배석자 2명: 지금 경로(`left_idle`·`left_pageflip`·`right_idle`·`right_writing`·`right_pentap`)를 64×64로 바꾸고, 같은 폴더 `manifest.json`의 `w`·`h`를 64로 고친다. 프레임 수는 그대로다.
-- 지원자 뒷모습(`candidate_back.png`, 32×32 × 6 = 192px)은 이번에 바꾸지 않는다.
-- 화면 크기: 무대는 프레임 64 × 3 = **192px**, 고르기 카드는 64 × 2 = 128px다. `SpriteFrame`은 시트 전체를 `background-size`로 늘려 그리므로, 32×32 시트도 같은 크기(× 6, × 4)로 정수배 확대돼 그려진다. 그래서 에셋이 들어오기 전과 후 모두 코드는 같다.
-- **대체(7절 대체):** 한 면접관의 6개 파일 중 하나라도 못 불러오면, 그 면접관은 **6개 동작 모두** 기존 가운데 스프라이트(`/sprites/interviewers/center_*.png`, 라인업에서 빠진 M2 캐릭터)로 그린다. 동작마다 다른 캐릭터가 섞이지 않게 하기 위해서다. 그래서 기존 `center_*.png`는 지우지 않는다.
-- 나머지 인수인계 규칙(가로 스트립, 1회성 동작은 idle 첫 포즈로 복귀, 의자·팔레트 일치, 파일당 500KB 미만, `animate-with-skeleton-v3`로 같은 뼈대)은 6.2와 같다.
+### 11.2 스프라이트 (interviewers64 · 92×92, 2026-10-12 갱신)
+
+에셋은 @leemonta9482의 #60·#62로 들어왔다. 기준은 `frontend/public/sprites/interviewers64/README.md`와 폴더별 `manifest.json`이다. 처음 계획한 64×64·6동작과 다르다. 아래가 지금 규격이다.
+
+- 경로: 메인 4명은 `/sprites/interviewers64/{m1,f3,m2,f2}/center_{idle,question_in,question,question_out,watch,lookside,armscross}.png`(7동작)이다. 배석자는 `/sprites/interviewers64/sl/left_{idle,pageflip}.png`와 `/sprites/interviewers64/sr/right_{idle,writing,pentap}.png`다. 기존 `/sprites/interviewers/`(32×32)와 같이 둔다.
+- 프레임은 **92×92**, 가로 스트립, 8fps다. **프레임 수는 캐릭터·동작마다 다르다**(8~28, 예: m1의 question만 8). 그래서 코드에 고정표를 두지 않는다. `src/interviewers/index.ts`가 `interviewers64/manifest.json`(폴더별 manifest를 모은 것)을 빌드 때 import해서 시트를 만든다. 폴더별 manifest, PNG 크기(92 × frames 가로 × 92), 최상위 manifest가 서로 맞는지는 `index.test.ts`가 지킨다.
+- **질문은 세 클립이다.** 말을 시작하면 `question_in`을 1회 재생하고(종이를 집어 든다), 말하는 동안 `question`을 반복한다(종이는 고정, 시선과 입만 움직인다). 말이 끝나면 `question_out`을 1회 재생하고(종이를 내려놓는다) idle로 돌아간다. 이음새 포즈가 맞춰져 있으므로 클립 도중에 끊지 않는다. 집어 드는 도중에 말이 끝나면, 다 집어 든 뒤에 내려놓는다. 말하는 동안(in·out 포함)에는 평시 잔동작이 끼어들지 않는다. 답변 지연 신호가 가운데 차례여도 가운데를 건드리지 않고 서기의 펜 톡톡으로 바꾼다.
+- **`nod`와 좋은 답변 반응(`REACT`)은 없앤다.** 세 사람이 함께 반응하는 연출을 쓰지 않는다. 무대의 `reactPending`·`react-done` 연결을 끊었다. `utils/goodAnswer.ts`와 스토어의 `reactPending`은 남아 있지만, 지금은 아무 데서도 쓰지 않는다. 배석자의 `pageflip`·`writing`은 평시 잔동작(`LIFE`)으로만 쓰고, `pentap`은 지금처럼 답변이 늦어질 때 쓴다. `LIFE`에서 nod만 뺐다. 그래서 생각 중(thinking)에는 서기의 필기만 남는다. 나머지 간격 규칙은 그대로다.
+- 화면 크기는 무대가 92 × 2 = **184px**, 고르기 카드도 92 × 2 = **184px**이다(둘 다 정수배). 고르기 카드는 1280px 화면에서 4장이 한 줄로 서고(약 940px), 1100px 이하에서는 2×2, 560px 이하에서는 한 줄에 하나씩 선다. 카드에서는 미리 듣기 중에 in·out 없이 `question`만 반복한다. 지원자 뒷모습(`candidate_back.png`, 32×32 × 6 = 192px)은 그대로 둔다.
+- **대체(7절):** 한 면접관의 7개 파일 중 하나라도 못 불러오면, 그 면접관은 7개 동작 모두 기존 32×32 가운데 세트(`/sprites/interviewers/center_*.png`)로 그린다. 역할은 이렇게 맞춘다.
+  - idle → `center_idle`
+  - question → `center_question`
+  - question_in·question_out → `center_idle`(1회)
+  - watch·lookside·armscross → 같은 이름
+  - 프레임 수는 기존 `manifest.json`을 따른다.
+- 배석자도 마찬가지다. 새 시트(sl·sr) 5개 중 하나라도 못 불러오면 좌우 모두 기존 `left_*`·`right_*`로 그린다.
+- 기존 32×32 파일은 지우지 않는다.
+- 대체 세트는 184px에 맞추려고 5.75배로 늘어나므로, 정수배가 아니다.
