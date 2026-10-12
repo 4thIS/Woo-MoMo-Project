@@ -1,7 +1,7 @@
 # 면접관 고르기 · 페르소나 · 목소리 — 설계 (spec)
 
 - 생성일시: 2026-09-26
-- 수정일시: 2026-09-26
+- 수정일시: 2026-10-12 (11.2: 실제 에셋 interviewers64 · 92×92 · 7동작으로 갱신. 11절이 앞 절들과 다르면 11절을 따른다)
 - 상태: 승인됨 (브레인스토밍 완료, PR #46 리뷰 4건 반영)
 - 담당: **이번 기능 한정** — 스프라이트 에셋·리뷰 @leemonta9482 / 계약·미리 듣기 에셋·프론트 구현·plan·이슈 @ssenu (9절). 루트 `CLAUDE.md`·`CODEOWNERS`의 영역 분담은 그대로이고, 다음 기능부터 원래대로 돌아간다
 - 상위 문서: `docs/superpowers/specs/2026-09-15-mock-interview-design.md`, `docs/specs/frontend/2026-09-15-screens-design.md`, `docs/specs/frontend/2026-09-16-prompts-design.md`, `docs/specs/frontend/2026-09-17-tts-design.md`
@@ -17,16 +17,16 @@ Supertonic 3는 엔진(약 398MB)을 모든 목소리가 공유하고, 목소리
 
 | 항목 | 결정 |
 |---|---|
-| 라인업 | **3명:** 온화한 선배(`gentle`), 기본 면접관(`standard`, 지금 캐릭터·M2 그대로), 날카로운 압박 면접관(`sharp`) |
-| 겉모습 | 면접관마다 **완전히 다른 스프라이트 세트**. 새로 그릴 캐릭터는 2명(`gentle`, `sharp`) × 가운데 동작 6종 = 12개 |
-| 무대 | 고른 면접관이 **가운데**(말하는 자리)에 앉는다. 좌우 배석자(서류 넘기기·받아 적기)는 그대로 |
+| 라인업 | **4명(11절):** 기본 면접관(남·여), 압박 면접관(남·여). 페르소나는 `standard`·`sharp`를 쓰고, 겉모습·목소리가 면접관마다 다르다. 지금 가운데 캐릭터(M2)는 라인업에서 빠진다 |
+| 겉모습 | 면접관마다 **완전히 다른 스프라이트 세트**. 메인 4명 × 가운데 동작 7종 + 배석자 2명, 모두 92×92 프레임(11.2절, 에셋 #60·#62) |
+| 무대 | 고른 면접관이 **가운데**(말하는 자리)에 앉는다. 좌우 배석자(서류 넘기기·받아 적기)는 누구를 고르든 같고, 92×92로 새로 그렸다(11.2절) |
 | 페르소나 범위 | 면접 중 말투·질문 방식(성격 문장, 꼬리질문 규칙, 짧은 반응) + **리포트 피드백 말투 한 줄**. 리포트 JSON 형식과 분량은 불변 |
 | 고르는 시점 | 랜딩, 모델 다운로드 동의 **전**. 첫 방문은 선택해야 동의 창이 열린다. 준비 화면에서도 "바꾸기" 가능 |
 | 미리 듣기 | 면접관별로 **하드코딩한 한 문장을 개발 중에 미리 합성한 OGG**를 재생한다(모델을 받기 전이라 엔진이 없음). **카드를 클릭하면 그 캐릭터에 포커스가 가면서 목소리가 무조건 나온다.** 스피커 버튼·미리 듣기 음소거는 두지 않는다(음량은 사용자의 시스템 음량으로 조절) |
 | 목소리 다운로드 | 엔진 파일 + **고른 목소리 파일 하나**. 한 번 받은 목소리는 캐시에 남긴다 |
 | 데이터 위치 | 면접관 정의(이름·소개·목소리 ID·스프라이트·미리 듣기)는 프론트, 페르소나 문구는 `prompts/`(계층 규율), 목소리 파일 목록·크기는 매니페스트 `tts.voices` |
 
-**제외(이번 범위 아님):** 면접관별 답변 제한 시간·무대 연출 차이, 좌우 배석자 교체, 4번째 이후 면접관, 사용자 정의 면접관, 서버에 둔 페르소나.
+**제외(이번 범위 아님):** 면접관별 답변 제한 시간·무대 연출 차이, 면접관별 배석자, 5번째 이후 면접관, 사용자 정의 면접관, 서버에 둔 페르소나.
 
 ## 2. 계약
 
@@ -103,13 +103,14 @@ export function interviewerById(id: string | null): Interviewer | null
 - **고른 목소리** `ttsVoice`: 면접관의 `voiceId`가 `tts.voices`에 있으면 그것, 아니면 `tts.voice`(기본)
 - **받을 TTS 파일** = 엔진 파일(`files` − `voices` 경로) + 고른 목소리 파일 1개. `voices`가 없으면 지금처럼 `files` 전체를 받는다.
   - `ttsSize`·`downloadSize`·합산 진행률·필요 용량은 모두 이 목록 기준이다.
-- `initTts(cfg, voice, onProgress)`: 워커 `load` 메시지의 `voice`에 고른 목소리 ID를, `files`에 위 목록을 넣는다. 워커는 지금처럼 `voice_styles/{voice}.json`을 찾는다.
+- `resolveTts(tts, voiceId)`(`utils/ttsVoices.ts`)가 `voice`를 고른 목소리 ID로, `files`를 위 목록(목소리 파일은 맨 뒤)으로 바꾼 설정을 만든다. `initTts(cfg, onProgress)`는 그대로 이 설정을 워커 `load`에 넘기고, 워커는 지금처럼 `voice_styles/{voice}.json`을 찾는다.
 - **워커 `setVoice`** (`ttsProtocol.ts`):
   - `{ type: 'setVoice'; voice: string; file: TtsLoadFile }` → 목소리 JSON만 읽어 스타일 텐서를 교체하고 `{ type: 'voiceSet' }`로 응답한다. ONNX 세션은 그대로 둔다.
   - 합성 큐에 이미 들어온 요청은 옛 목소리로 끝내고, 그 뒤 요청부터 새 목소리를 쓴다.
-- `model.changeVoice(id)`:
-  - 목소리 파일이 캐시에 없으면 `downloadModel`로 받는다.
-  - TTS가 `ready`면 `setVoice`를 보내고, 로딩 중이면 다음 로드에 반영하고, 텍스트 전용이면 아무것도 하지 않는다.
+- `model.chooseInterviewer(id)`(랜딩·준비 화면 공용): 선택 → `voiceCached` 확인 → `syncVoice()`.
+  - `syncVoice`: TTS가 `ready`이고 로드된 목소리와 다르면, 목소리 파일이 캐시에 없을 때 `downloadModel`로 받고 `setVoice`를 보낸다. 로딩 중이면 `loadTts`가 끝난 뒤 다시 맞추고, 텍스트 전용이면 아무것도 하지 않는다.
+  - 교체 중(`voiceSwitching`)에는 `ready`가 아니다(목소리를 끈 경우는 예외 — "목소리 없이 시작"은 교체 중에도 시작할 수 있다). 교체 전체에 `VOICE_SWITCH_TIMEOUT_MS`(30초) 상한을 둔다(7절).
+  - 되돌림 기준은 실제로 목소리를 올린 면접관(`loadedInterviewerId`)이다. 교체 중에 다른 면접관을 고르면 끝난 뒤 이어서 맞춘다.
 - **캐시 정리**(`currentCacheKeys`): `tts.voices` 10개의 키를 모두 남긴다. 다시 그 면접관으로 돌아가도 새로 받지 않게 하려는 것이다.
 - **재방문 판정**(`checkCached`): 모델 + 엔진 파일만 본다(`cached`). 고른 목소리 파일의 캐시 여부는 **따로** `voiceCached`로 기록한다.
 - **진행률 미리 채우기(`download()`)는 실제로 캐시에 있는 파일만큼만** 한다. 지금 코드(`model.ts:173`, `if (this.cached) this.ttsReceived = this.ttsSize`)처럼 TTS 전체를 채우면, 재방문인데 고른 목소리가 캐시에 없을 때 진행 장면이 100%에서 시작하고 290KB는 진행률 없이 받아진다(모델만 캐시된 재방문에서 줍기 동작이 통째로 생략되던 문제와 같은 원인).
@@ -121,7 +122,7 @@ export function interviewerById(id: string | null): Interviewer | null
 - 재생 실패(파일 없음·디코딩 실패)면 `false`를 반환한다. 화면에 "미리 듣기를 재생할 수 없습니다"만 보이고, 선택은 그대로 된다.
 
 ### 4.5 화면 컴포넌트
-- `components/InterviewerPicker.vue` (신규): props `modelValue: InterviewerId | null`, emits `update:modelValue`. 3명 카드(애니메이션·이름·소개)를 그린다. 스피커 버튼은 없다. 카드 클릭·키보드 선택 = 선택 + 포커스 + 재생. 랜딩과 준비 화면 "바꾸기"에서 같이 쓴다.
+- `components/InterviewerPicker.vue` (신규): props 없이 스토어(`useInterviewerStore`, `model.chooseInterviewer`)로 선택한다. 3명 카드(애니메이션·이름·소개)를 그린다. 스피커 버튼은 없다. 카드 클릭·키보드 선택 = 선택 + 포커스 + 재생. 랜딩과 준비 화면 "바꾸기"에서 같이 쓴다.
 - `LandingView`: 두 번째 창을 Picker로 바꾼다. 첫 방문은 선택 전 동의 선택지를 비활성으로 두고 안내를 보인다. 재방문(`cached`)인데 저장된 선택이 없으면 `standard`를 자동 선택한다(3.3). 목소리 행·재방문 한 줄에 면접관 이름을 넣는다.
 - `PrepareView`: 시작 영역에 면접관 칩과 "바꾸기"를 두고, 목소리 준비 줄에 이름을 넣는다.
 - `InterviewStage`·`ReportView`: 태그에 면접관 이름을 넣는다.
@@ -144,7 +145,7 @@ export function interviewerById(id: string | null): Interviewer | null
   }
   ```
 - `buildSystemPrompt(i)`는 `persona`를 받아 위 네 자리만 채운다. 진행 규칙의 나머지(질문 5개, 종료 문장, 면접 중 평가 금지, 번호 금지, 머리말·이모지 금지)는 공통이다.
-- `buildReportInstruction(persona)`는 `REPORT_INSTRUCTION` 뒤에 `reportTone`을 한 줄 덧붙인다. JSON 예시·필드·"두세 문장" 분량은 그대로다.
+- `buildReportInstruction(persona)`는 `REPORT_INSTRUCTION`의 JSON 예시 바로 앞에 `reportTone`을 한 줄 넣는다. JSON 예시·필드·"두세 문장" 분량은 그대로다.
 - `systemPromptOverride`(매니페스트)가 있으면 지금처럼 그것이 우선이고 페르소나는 적용되지 않는다(파인튜닝 모델용).
 
 ### 5.2 페르소나 문구 (초안 — 리허설에서 다듬는다)
@@ -198,6 +199,7 @@ export function interviewerById(id: string | null): Interviewer | null
 | `tts.voices` 없음 / `voiceId`가 목록에 없음 | 기본 `tts.voice`로 합성(`console.warn` 한 번), 페르소나는 그대로 |
 | 목소리 파일 다운로드 실패 | 기존 TTS 실패 경로(다시 시도 / 목소리 없이 시작) |
 | `setVoice` 실패(바꾸기) | 이전 목소리를 유지하고 "목소리를 바꾸지 못했습니다" 경고. 면접관 선택은 되돌린다 |
+| 바꾸기가 30초 안에 안 끝남 | 목소리 파일 다운로드에서 멈췄으면 중단하고 위와 같이 되돌린다. 워커가 응답하지 않으면 워커를 버리고 TTS 실패 경로(다시 시도 / 목소리 없이 시작)로 간다 |
 | 저장된 `momo.interviewer`가 정의에 없음 | 선택 안 됨(첫 방문처럼). 단 재방문(`cached`)이면 `standard` 자동 선택(3.3) |
 | 새 면접관 스프라이트 로드 실패 | 그 역할은 `standard` 스프라이트로 대체 |
 | `systemPromptOverride` 있음 | 페르소나 미적용(기존 동작), 태그의 면접관 이름은 그대로 |
@@ -218,14 +220,14 @@ export function interviewerById(id: string | null): Interviewer | null
   - `checkCached`의 `cached`는 목소리 파일을 보지 않고, `voiceCached`는 고른 목소리만 본다.
   - 재방문 + 고른 목소리 캐시 없음: `download()` 직후 합산 진행률이 100% 미만이고(목소리분이 빠짐), 목소리 수신에 따라 100%가 된다.
   - 재방문 + 목소리까지 캐시: 지금처럼 100%로 시작한다.
-  - `changeVoice`가 상태별로 동작한다(ready → setVoice, 로딩 중 → 다음 로드, 텍스트 전용 → 무동작).
+  - `chooseInterviewer`·`syncVoice`가 상태별로 동작한다(ready → setVoice, 로딩 중 → 로드 뒤 맞춤, 텍스트 전용 → 무동작). 실패·시간 초과 시 되돌림.
 - `services/tts`·워커 프로토콜
   - `setVoice` → `voiceSet`
   - 실패 시 이전 목소리 유지
   - 큐에 남은 요청은 옛 목소리
 - `services/preview`: 새 재생이 이전 재생을 멈춘다. 실패하면 `false`를 반환한다. 끝나면 `onEnded`를 부른다. `momo.muted`를 읽지 않는다.
 - `InterviewerPicker`
-  - 클릭 → `update:modelValue` + 미리 듣기 호출(음소거 저장값과 무관하게 항상)
+  - 클릭 → 선택(`chooseInterviewer`) + 미리 듣기 호출(음소거 저장값과 무관하게 항상)
   - 같은 카드 재클릭 → 처음부터 다시 재생
   - 재생 중 캐릭터 `question` 반복, `onEnded` 뒤 `idle`
   - 방향키·Space 선택도 재생
@@ -268,3 +270,41 @@ export function interviewerById(id: string | null): Interviewer | null
 - `gentle`·`sharp`의 목소리 ID: 6.1의 후보 샘플을 듣고 결정한다(후보: 온화 F 계열 또는 부드러운 M, 압박 저음 M 계열).
 - 면접관 표시 이름: 지금은 역할 이름(온화한 선배 등). 사람 이름(예: "김선배")을 붙일지는 스프라이트 완성 뒤 정한다.
 - 미리 듣기 문장·페르소나 문구: 초안이다. 리허설 결과로 확정한다.
+
+## 11. 변경 — 메인 면접관 4명 · 64×64 (2026-10-07)
+
+이슈 #48의 스프라이트 확정안(@leemonta9482)을 따른다. 메인 면접관 4명(남 2·여 2)과 고정 배석자 2명을 모두 64×64로 새로 그린다. 목소리는 후보 샘플을 듣고 @ssenu가 정했다.
+
+### 11.1 라인업
+
+| id | 확정안 캐릭터 | 페르소나 | 목소리 | 표시 이름 | 미리 듣기 문장 |
+|---|---|---|---|---|---|
+| `m1` | M-1 · 40대 남성, 회색 재킷, 미소 | `standard` | M4 | 기본 면접관(남) | `standard` 문장 |
+| `f3` | F-3 · 20대 후반 여성, 포니테일, 네이비 | `standard` | F3 | 기본 면접관(여) | `standard` 문장 |
+| `m2` | M-2 · 50대 남성, 흰머리, 안경 | `sharp` | M5 | 압박 면접관(남) | `sharp` 문장 |
+| `f2` | F-2 · 50대 여성, 각진 얼굴, 단발, 안경 | `sharp` | F4 | 압박 면접관(여) | `sharp` 문장 |
+
+- 고르기 카드 순서는 위 표 순서다. **기본값(`DEFAULT_INTERVIEWER`)은 `f3`**이다. 3.3의 재방문 자동 선택도 `f3`이다. 이 경우 F3 목소리 파일(약 290KB)을 준비 단계에서 받는다.
+- **면접관 id와 페르소나 id를 나눈다.** `InterviewerId = 'm1' | 'f3' | 'm2' | 'f2'`, `PersonaId = 'gentle' | 'standard' | 'sharp'`. `Interviewer`에 `persona: PersonaId`를 두고, `PERSONAS`는 `PersonaId`로 찾는다. 페르소나 문구(5.2)는 바꾸지 않는다.
+- `gentle` 페르소나는 지금 연결된 면접관이 없다. 문구는 남겨 두고, 어떤 면접관을 온화하게 바꾸려면 그 면접관의 `persona`만 바꾼다.
+- 아무도 선택하지 않았을 때 받을 목소리는 기본 면접관(`f3`)의 목소리(F3)다. 매니페스트 기본 `tts.voice`(M2)는 `voices`가 없는 옛 매니페스트에서만 쓴다.
+- 리허설(계층 규율): 쓰이는 페르소나 2종(`standard`·`sharp`)을 각각 1회 완주하고 리포트 JSON 파싱을 확인한다. 목소리 4개는 체크리스트에서 미리 듣기와 면접 첫 질문으로 확인한다.
+
+### 11.2 스프라이트 (interviewers64 · 92×92, 2026-10-12 갱신)
+
+에셋은 @leemonta9482의 #60·#62로 들어왔다. 기준은 `frontend/public/sprites/interviewers64/README.md`와 폴더별 `manifest.json`이다. 처음 계획한 64×64·6동작과 다르다. 아래가 지금 규격이다.
+
+- 경로: 메인 4명은 `/sprites/interviewers64/{m1,f3,m2,f2}/center_{idle,question_in,question,question_out,watch,lookside,armscross}.png`(7동작)이다. 배석자는 `/sprites/interviewers64/sl/left_{idle,pageflip}.png`와 `/sprites/interviewers64/sr/right_{idle,writing,pentap}.png`다. 기존 `/sprites/interviewers/`(32×32)와 같이 둔다.
+- 프레임은 **92×92**, 가로 스트립, 8fps다. **프레임 수는 캐릭터·동작마다 다르다**(8~28, 예: m1의 question만 8). 그래서 코드에 고정표를 두지 않는다. `src/interviewers/index.ts`가 `interviewers64/manifest.json`(폴더별 manifest를 모은 것)을 빌드 때 import해서 시트를 만든다. 폴더별 manifest, PNG 크기(92 × frames 가로 × 92), 최상위 manifest가 서로 맞는지는 `index.test.ts`가 지킨다.
+- **질문은 세 클립이다.** 말을 시작하면 `question_in`을 1회 재생하고(종이를 집어 든다), 말하는 동안 `question`을 반복한다(종이는 고정, 시선과 입만 움직인다). 말이 끝나면 `question_out`을 1회 재생하고(종이를 내려놓는다) idle로 돌아간다. 이음새 포즈가 맞춰져 있으므로 클립 도중에 끊지 않는다. 집어 드는 도중에 말이 끝나면, 다 집어 든 뒤에 내려놓는다. 말하는 동안(in·out 포함)에는 평시 잔동작이 끼어들지 않는다. 답변 지연 신호가 가운데 차례여도 가운데를 건드리지 않고 서기의 펜 톡톡으로 바꾼다.
+- **`nod`와 좋은 답변 반응(`REACT`)은 없앤다.** 세 사람이 함께 반응하는 연출을 쓰지 않는다. 무대의 `reactPending`·`react-done` 연결을 끊었다. `utils/goodAnswer.ts`와 스토어의 `reactPending`은 남아 있지만, 지금은 아무 데서도 쓰지 않는다. 배석자의 `pageflip`·`writing`은 평시 잔동작(`LIFE`)으로만 쓰고, `pentap`은 지금처럼 답변이 늦어질 때 쓴다. `LIFE`에서 nod만 뺐다. 그래서 생각 중(thinking)에는 서기의 필기만 남는다. 나머지 간격 규칙은 그대로다.
+- 화면 크기는 무대가 92 × 2 = **184px**, 고르기 카드도 92 × 2 = **184px**이다(둘 다 정수배). 고르기 카드는 1280px 화면에서 4장이 한 줄로 서고(약 940px), 1100px 이하에서는 2×2, 560px 이하에서는 한 줄에 하나씩 선다. 카드에서는 미리 듣기 중에 in·out 없이 `question`만 반복한다. 지원자 뒷모습(`candidate_back.png`, 32×32 × 6 = 192px)은 그대로 둔다.
+- **대체(7절):** 한 면접관의 7개 파일 중 하나라도 못 불러오면, 그 면접관은 7개 동작 모두 기존 32×32 가운데 세트(`/sprites/interviewers/center_*.png`)로 그린다. 역할은 이렇게 맞춘다.
+  - idle → `center_idle`
+  - question → `center_question`
+  - question_in·question_out → `center_idle`(1회)
+  - watch·lookside·armscross → 같은 이름
+  - 프레임 수는 기존 `manifest.json`을 따른다.
+- 배석자도 마찬가지다. 새 시트(sl·sr) 5개 중 하나라도 못 불러오면 좌우 모두 기존 `left_*`·`right_*`로 그린다.
+- 기존 32×32 파일은 지우지 않는다.
+- 대체 세트는 184px에 맞추려고 5.75배로 늘어나므로, 정수배가 아니다.

@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, watch } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import SpeakerIcon from '@/components/ui/icons/SpeakerIcon.vue'
 import type { Stage } from '@/stores/interview'
+import { CENTER_FRAME_PX, SIDE_SPRITES, type CenterSprites, type SideSprites } from '@/interviewers'
 import { formatClock } from '@/utils/timing'
 import {
-  ANIMS,
   CANDIDATE_BACK,
   CANDIDATE_SCALE,
   FPS,
   LIFE,
-  REACT,
   SCALE,
+  SPEECH_CLIPS,
   baseAnims,
+  sheetFor,
+  speechClip,
   watchAnim,
   type AnimName,
   type Char,
@@ -25,7 +27,6 @@ const props = withDefaults(
     stage: Stage
     bubble: string
     streaming: boolean
-    reactPending: boolean
     watchTick: number
     fieldLabel: string
     job: string
@@ -34,48 +35,61 @@ const props = withDefaults(
     /** TTS 사용 중인지. 아니면(텍스트 전용) 음소거 토글과 합성 음성 안내를 숨긴다 */
     voice?: boolean
     warning?: string
+    /** 가운데(말하는) 면접관 시트 — 없으면 기본 면접관 */
+    centerSprites?: CenterSprites
+    /** 좌우 배석자 시트 — 없으면 새 시트(sl·sr) */
+    sideSprites?: SideSprites
+    interviewerName?: string
   }>(),
-  { muted: false, voice: true },
+  { muted: false, voice: true, sideSprites: () => SIDE_SPRITES },
 )
-const emit = defineEmits<{ 'react-done': []; end: []; 'toggle-mute': [] }>()
+const emit = defineEmits<{ end: []; 'toggle-mute': [] }>()
 
 /*
  * 세 사람의 애니 = 상태별 기본(baseAnims) 위에 캐릭터별 1회성 덮어쓰기(over).
- * 덮어쓰기는 SpriteFrame이 마지막 프레임에서 done을 주면 풀린다(1회성 시트는 마지막 프레임이 idle 자세).
- * 우선순위: 좋은 답변 반응 > 답변 지연 신호 > 평시 잔동작.
+ * 덮어쓰기는 SpriteFrame이 마지막 프레임에서 done을 주면 풀린다(1회성 시트는 마지막 프레임이 기본 자세).
+ * 우선순위: 말하기 클립(question_in·out) > 답변 지연 신호 > 평시 잔동작.
  */
 const CHARS: Char[] = ['left', 'center', 'right']
 const over = reactive<Record<Char, AnimName | null>>({ left: null, center: null, right: null })
-const reacting = ref(false)
+/** 말하기 클립이 재생 중일 때 다음에 이어 붙일 클립(들기 도중 말이 끝나면 다 든 뒤 내려놓기) */
+let queuedCenter: AnimName | null = null
 
 function playOnce(char: Char, anim: AnimName) {
   over[char] = anim
 }
 function onDone(char: Char) {
-  const finished = over[char]
   over[char] = null
-  if (char === 'center' && finished === 'center_nod' && reacting.value) {
-    reacting.value = false
-    emit('react-done')
+  if (char === 'center' && queuedCenter) {
+    playOnce('center', queuedCenter)
+    queuedCenter = null
   }
 }
+const centerSpeaking = () =>
+  props.stage === 'speaking' || (over.center !== null && SPEECH_CLIPS.includes(over.center))
 
-/* 좋은 답변: 세 명이 동시에 1회씩. react-done은 가운데 끄덕임이 끝날 때 */
+/* 말하기: question_in(1회) → question(반복, baseAnims) → 말이 끝나면 question_out(1회) → idle.
+ * 이음새 포즈가 맞춰져 있으니 클립 도중에 끊지 않고 뒤에 이어 붙인다 */
 watch(
-  () => props.reactPending,
-  (v) => {
-    if (!v) return
-    reacting.value = true
-    for (const c of CHARS) playOnce(c, REACT[c])
+  () => props.stage,
+  (st, prev) => {
+    const clip = speechClip(prev, st)
+    if (!clip) return
+    const cur = over.center
+    if (cur && SPEECH_CLIPS.includes(cur)) queuedCenter = cur === clip ? null : clip
+    else {
+      queuedCenter = null
+      playOnce('center', clip)
+    }
   },
 )
-/* 답변 지연: 시계 ↔ 펜 톡톡 번갈아. 반응 중이면 가운데는 건드리지 않고 서기만 */
+/* 답변 지연: 시계 ↔ 펜 톡톡 번갈아. 가운데가 말하는 중(클립 포함)이면 가운데는 건드리지 않고 서기만 */
 watch(
   () => props.watchTick,
   (t) => {
     if (t <= 0) return
     const w = watchAnim(t)
-    if (w.char === 'center' && reacting.value) playOnce('right', 'right_pentap')
+    if (w.char === 'center' && centerSpeaking()) playOnce('right', 'right_pentap')
     else playOnce(w.char, w.anim)
   },
 )
@@ -95,7 +109,7 @@ function scheduleLife(char: Char) {
   lifeTimers[char] = setTimeout(
     () => {
       lifeTimers[char] = null
-      if (!over[char] && !reacting.value) {
+      if (!over[char]) {
         const anim = cfg.anims[Math.floor(Math.random() * cfg.anims.length)]
         playOnce(char, anim)
       }
@@ -121,14 +135,17 @@ const anims = computed(() => {
     right: over.right ?? base.right,
   }
 })
-const sheet = (name: AnimName) => ANIMS[name]
+const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.sideSprites)
 </script>
 
 <template>
   <section class="stage" aria-label="면접실">
     <div class="topbar">
       <div class="left">
-        <PixelTag tone="muted">{{ fieldLabel }} · {{ job }}</PixelTag>
+        <PixelTag tone="muted"
+          >{{ fieldLabel }} · {{ job
+          }}<template v-if="interviewerName"> · 면접관: {{ interviewerName }}</template></PixelTag
+        >
         <span class="mono clock" data-test="clock" aria-label="경과 시간">{{
           formatClock(elapsedMs ?? 0)
         }}</span>
@@ -160,12 +177,13 @@ const sheet = (name: AnimName) => ANIMS[name]
     <p v-if="warning" class="mono warning" data-test="tts-warning">{{ warning }}</p>
 
     <div class="row">
+      <!-- 동작이 바뀔 때마다 새로 그린다: 대체 세트에선 in·out이 같은 시트라 props만으론 다시 재생되지 않는다 -->
       <SpriteFrame
         v-for="c in CHARS"
-        :key="c"
+        :key="`${c}:${anims[c]}`"
         :src="sheet(anims[c]).file"
-        :frame-w="32"
-        :frame-h="32"
+        :frame-w="CENTER_FRAME_PX"
+        :frame-h="CENTER_FRAME_PX"
         :frames="sheet(anims[c]).frames"
         :loop="sheet(anims[c]).loop"
         :scale="SCALE"

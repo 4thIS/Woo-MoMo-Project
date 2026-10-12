@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { useModelStore } from '@/stores/model'
+import { useInterviewerStore } from '@/stores/interviewer'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
@@ -11,6 +12,8 @@ import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
 const model = useModelStore()
+const iv = useInterviewerStore()
+onMounted(() => void iv.probeSprites()) // 새 면접관 스프라이트를 하나라도 못 불러오면 그 면접관은 기존 가운데 시트 전체로, 배석자도 마찬가지(spec 11.2)
 
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const inputDisabled = computed(
@@ -65,7 +68,6 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :stage="s.stage"
         :bubble="s.revealed"
         :streaming="s.speaking"
-        :react-pending="s.reactPending"
         :watch-tick="watchTick"
         :field-label="fieldLabel"
         :job="s.profile.job"
@@ -73,7 +75,9 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :muted="s.muted"
         :voice="model.ttsEnabled"
         :warning="s.ttsWarning ?? ''"
-        @react-done="s.consumeReact()"
+        :center-sprites="iv.spritesFor(s.sessionInterviewer.id)"
+        :side-sprites="iv.sideSprites"
+        :interviewer-name="s.sessionInterviewer.name"
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />
