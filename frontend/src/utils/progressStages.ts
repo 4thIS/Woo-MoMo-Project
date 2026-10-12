@@ -116,3 +116,72 @@ export function overallFraction(p: DownloadParts): number {
   const got = Math.min(p.modelReceived, p.modelSize) + Math.min(p.ttsReceived, p.ttsSize)
   return Math.min(1, got / total)
 }
+
+/* ---------- 장면 한 프레임 (순수) ----------
+ * 컴포넌트 안에 있던 물건 이동·구간 전환을 꺼냈다. 캔버스가 없는 테스트에서도 돌릴 수 있어야
+ * "느린 다운로드에서 구간이 안 올라간다" 같은 문제를 재현할 수 있다. */
+
+/** 물건이 처음 자리 잡을 때 둘 수 있는 최대 거리(px).
+ * 다운로드가 느리면 도착 예정 거리가 수천 px이 되는데, 화면 밖은 어차피 안 보이면서
+ * 되돌아와 닿기까지 수십 초가 걸려 구간이 진행률을 못 따라간다. */
+export const MAX_AHEAD = 640
+
+export interface SceneProp {
+  stage: number
+  at: number
+  gap: number
+  /** 화면 x. null이면 아직 자리를 못 잡음(진행 속도를 모름) */
+  x: number | null
+  done: boolean
+}
+
+export interface SceneStep {
+  state: StageState
+  props: SceneProp[]
+}
+
+/**
+ * 물건을 바닥과 같은 속도로 다가오게 하고, 닿으면 그 구간으로 전환한다.
+ * 마지막에 진행률이 가리키는 구간까지 반드시 따라잡는다 — 물건이 늦어도 사실(진행률)이 장면을 끈다.
+ */
+export function stepScene(
+  state: StageState,
+  props: SceneProp[],
+  progress: number,
+  rate: number,
+  dt: number,
+  charX: number,
+  speed = SCROLL,
+): SceneStep {
+  let next = state
+  const out = props.map((pr) => ({ ...pr }))
+  for (const pr of out) {
+    if (pr.done) continue
+    const dist = distanceAhead(pr.at, progress, rate, speed)
+    const target = dist === null ? null : charX + pr.gap + Math.min(dist, MAX_AHEAD)
+    if (pr.x === null) {
+      if (target !== null) pr.x = target
+      continue
+    }
+    pr.x = approach(pr.x, target, dt, speed)
+    if (pr.x <= charX + pr.gap + 0.5) {
+      pr.x = charX + pr.gap
+      pr.done = true
+      const once = STAGES[pr.stage].once
+      next = { stage: pr.stage, queue: once ? [...next.queue, once] : next.queue }
+    }
+  }
+  // 안전망: 물건이 못 닿아도 진행률이 가리키는 구간까지는 간다.
+  // 이게 없으면 다운로드가 느려 물건이 멀리 생긴 경우 100%가 되어도 첫 구간에 머문다(속옷 차림으로만 걷는다).
+  const want = stageIndexFor(progress)
+  if (next.stage < want) {
+    next = advance(next, progress)
+    for (const pr of out) {
+      if (!pr.done && pr.stage <= next.stage) {
+        pr.x = charX + pr.gap
+        pr.done = true
+      }
+    }
+  }
+  return { state: next, props: out }
+}

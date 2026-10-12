@@ -15,6 +15,9 @@ const emit = defineEmits<{ send: [text: string]; abort: []; typing: [hasText: bo
 
 const text = ref('')
 const interim = ref('')
+/** 사용자가 말하기를 켜 둔 상태. 면접관이 말하는 동안 잠겨도 꺼지지 않는다 */
+const micOn = ref(false)
+/** 지금 실제로 인식 중인지. 잠금·무음으로 내려가도 micOn은 유지된다 */
 const listening = ref(false)
 const micError = ref('')
 const supported = speechSupported()
@@ -62,17 +65,38 @@ function onKey(e: KeyboardEvent) {
     submit()
   }
 }
+const locked = computed(() => props.generating || props.disabled)
+
 function toggleMic() {
-  if (!supported || props.disabled || props.generating) return
-  if (listening.value) {
+  if (!supported || locked.value) return
+  if (micOn.value) {
+    micOn.value = false
     disarmSilence()
-    stopSpeech()
+    if (listening.value) stopSpeech()
     listening.value = false
     interim.value = ''
     emit('typing', text.value.trim().length > 0)
     return
   }
+  micOn.value = true
   micError.value = ''
+  beginListen()
+}
+
+/* 무음으로 인식이 끊길 때마다 다시 켜는데, 어떤 이유로 즉시 끊기면 폭주한다. 연속 재시작이 잦으면 멈춘다 */
+let restarts = 0
+let restartAt = 0
+
+function beginListen() {
+  if (!supported || locked.value || listening.value) return
+  const now = Date.now()
+  restarts = now - restartAt < 600 ? restarts + 1 : 0
+  restartAt = now
+  if (restarts >= 5) {
+    micOn.value = false
+    micError.value = '음성 인식이 계속 끊깁니다'
+    return
+  }
   listening.value = true
   emit('typing', true)
   startSpeech(
@@ -91,31 +115,37 @@ function toggleMic() {
     (err) => {
       micError.value =
         err === 'not-allowed' ? '마이크 권한이 거부되었습니다' : `음성 인식 오류: ${err}`
+      micOn.value = false
       listening.value = false
       interim.value = ''
       disarmSilence()
     },
     () => {
-      // 브라우저가 무음 등으로 스스로 끝냄 — 토글 표시를 내린다 (침묵 타이머는 살려 둔다)
+      // 브라우저가 무음 등으로 스스로 끝냄. 말하기를 켜 둔 동안은 바로 다시 듣는다
+      // (침묵 타이머는 살려 둬서, 받아쓴 게 있으면 그대로 자동 전송된다)
       listening.value = false
       interim.value = ''
+      if (micOn.value && !locked.value) beginListen()
     },
   )
 }
-// 생성이 시작되거나 입력이 잠기면(종료·토큰 한도) 듣기도 멈춘다
-watch(
-  () => props.generating || props.disabled,
-  (locked) => {
-    if (!locked) return
+/* 면접관이 말하는 동안에는 스피커 소리가 섞이므로 듣기를 멈춘다.
+   다만 말하기를 켜 둔 상태는 유지해, 답변 차례가 돌아오면 버튼을 다시 누르지 않아도 이어 듣는다 */
+watch(locked, (on) => {
+  if (on) {
     disarmSilence()
     if (listening.value) {
       stopSpeech()
       listening.value = false
       interim.value = ''
     }
-  },
-)
+  } else if (micOn.value) {
+    restarts = 0
+    beginListen()
+  }
+})
 onBeforeUnmount(() => {
+  micOn.value = false
   disarmSilence()
   if (listening.value) stopSpeech()
 })
@@ -128,10 +158,19 @@ const timerWarn = computed(() => (props.leftMs ?? Infinity) <= ANSWER_WARN_MS)
 // 깜빡임은 10초→0초 구간에서만. 0을 지나면 붉은 음수 숫자로 고정(계속 깜빡이면 소음)
 const timerBlink = computed(() => timerWarn.value && (props.leftMs ?? 0) > 0)
 
+/** 말하기 켜짐(대기) / 듣는 중 / 꺼짐 세 상태를 구분해 보여 준다 */
+const micLabel = computed(() =>
+  !micOn.value ? '말하기' : listening.value ? '듣는 중' : '말하기 켜짐',
+)
 const micTitle = computed(() =>
   !supported
     ? '이 브라우저는 음성 인식을 지원하지 않습니다'
-    : micError.value || (listening.value ? '듣는 중 — 다시 누르면 종료' : '말하기'),
+    : micError.value ||
+      (micOn.value
+        ? listening.value
+          ? '듣는 중 — 다시 누르면 끈다'
+          : '면접관이 말하는 동안 잠깐 멈춤 — 답변 차례가 오면 다시 듣는다'
+        : '말하기'),
 )
 </script>
 
@@ -169,13 +208,14 @@ const micTitle = computed(() =>
       <button
         type="button"
         class="mic display press"
-        :class="{ on: listening }"
+        :class="{ on: micOn, waiting: micOn && !listening }"
         data-test="mic"
         :title="micTitle"
+        :aria-pressed="micOn"
         :disabled="!supported || generating || disabled || !!micError"
         @click="toggleMic"
       >
-        <span v-if="listening" class="dot blink" />{{ listening ? '듣는 중' : '말하기' }}
+        <span v-if="listening" class="dot blink" />{{ micLabel }}
       </button>
       <PixelButton data-test="send" :disabled="disabled && !generating" @click="submit">
         {{ generating ? '중단' : '전송' }}
@@ -257,6 +297,9 @@ const micTitle = computed(() =>
   align-items: center;
   gap: var(--sp-2);
   cursor: pointer;
+}
+.mic.waiting {
+  opacity: 0.72;
 }
 .mic.on {
   background: var(--accent);

@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   SCROLL,
   advance,
+  MAX_AHEAD,
+  stepScene,
+  STAGES,
   approach,
   captionFor,
   distanceAhead,
   overallFraction,
   progressRate,
+  type SceneProp,
+  type StageState,
 } from './progressStages'
 
 describe('progressStages', () => {
@@ -105,5 +110,74 @@ describe('전체 진행률 (#26)', () => {
     expect(overallFraction({ modelSize: 10, modelReceived: 99, ttsSize: 0, ttsReceived: 0 })).toBe(
       1,
     )
+  })
+})
+
+describe('stepScene — 진행률이 장면을 끈다', () => {
+  const CHAR_X = 60
+  const fresh = (): SceneProp[] =>
+    STAGES.map((s, i) => ({
+      stage: i,
+      at: s.at,
+      gap: s.item ? 18 : 40,
+      x: null as number | null,
+      done: false,
+    })).filter((p) => p.stage > 0)
+
+  /** 진행률 시퀀스를 프레임 단위로 흘려보내고 마지막 구간을 돌려준다 */
+  function run(points: { p: number; secs: number }[], fps = 60) {
+    let state: StageState = { stage: 0, queue: [] }
+    let props = fresh()
+    let prev = 0
+    const dt = 1 / fps
+    for (const seg of points) {
+      const frames = Math.round(seg.secs * fps)
+      const rate = seg.secs > 0 ? (seg.p - prev) / seg.secs : 0
+      for (let i = 0; i < frames; i++) {
+        const progress = prev + ((seg.p - prev) * i) / frames
+        const r = stepScene(state, props, progress, Math.max(0, rate), dt, CHAR_X)
+        state = r.state
+        props = r.props
+      }
+      prev = seg.p
+    }
+    const r = stepScene(state, props, prev, 0, dt, CHAR_X)
+    return r.state.stage
+  }
+
+  it('20분짜리 느린 다운로드에서도 구간이 끝까지 간다', () => {
+    // 실서버에서 본 증상: 물건이 수천 px 앞에 생겨 끝내 닿지 못하고 속옷 차림으로만 걸었다
+    expect(run([{ p: 100, secs: 1200 }], 10)).toBe(STAGES.length - 1)
+  })
+  it('속도가 들쭉날쭉해도(멈췄다 빨라짐) 구간이 따라온다', () => {
+    expect(
+      run(
+        [
+          { p: 5, secs: 60 }, // 아주 느리게 시작
+          { p: 5, secs: 20 }, // 멈춤
+          { p: 95, secs: 30 }, // 갑자기 빨라짐
+          { p: 100, secs: 10 },
+        ],
+        10,
+      ),
+    ).toBe(STAGES.length - 1)
+  })
+  it('물건은 화면 밖 MAX_AHEAD 너머에 생기지 않는다', () => {
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 0, 0.08, 1 / 60, CHAR_X)
+    for (const pr of r.props) {
+      if (pr.x !== null) expect(pr.x).toBeLessThanOrEqual(CHAR_X + pr.gap + MAX_AHEAD)
+    }
+  })
+  it('빠른 다운로드에서는 줍기 전환이 순서대로 큐에 쌓인다', () => {
+    let state: StageState = { stage: 0, queue: [] }
+    let props = fresh()
+    const seen: string[] = []
+    for (let i = 0; i <= 100; i++) {
+      const r = stepScene(state, props, i, 2, 0.1, CHAR_X)
+      state = r.state
+      props = r.props
+      while (state.queue.length) seen.push(state.queue.shift() as string)
+    }
+    expect(seen).toEqual(['pickup_suit', 'pickup_bag', 'look_up'])
   })
 })
