@@ -42,9 +42,11 @@ import { clearModels } from '@/services/modelCache'
 import { warmUpAudio } from '@/services/audio'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
+import { useInterviewerStore } from '@/stores/interviewer'
 import PrepareView from './PrepareView.vue'
 
-const mountView = () => mount(PrepareView, { global: { stubs: { PixelProgress: true } } })
+const mountView = () =>
+  mount(PrepareView, { global: { stubs: { PixelProgress: true, InterviewerPicker: true } } })
 
 /** ① 지원 정보(분야 IT + 직무)를 채우고 직무 입력을 떠나 ② 이력서 단계로 넘어간다 */
 async function fillProfile(w: ReturnType<typeof mountView>) {
@@ -313,7 +315,7 @@ describe('PrepareView — 목소리 준비', () => {
     expect(stub.attributes('received')).toBe('140')
     expect(stub.attributes('total')).toBe('200')
     expect(stub.attributes('filename')).toBe('supertonic-3')
-    expect(w.text()).toContain('목소리 준비 (40%)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관(여) (40%)')
     expect((w.find('[data-test="start"]').element as HTMLButtonElement).disabled).toBe(true)
   })
   it('TTS 실패면 error 단계 + 원인, 다시 시도는 retryTts만 부른다', async () => {
@@ -325,7 +327,7 @@ describe('PrepareView — 목소리 준비', () => {
     const retry = vi.spyOn(m, 'retry').mockResolvedValue()
     const w = mount(PrepareView)
     expect(w.text()).toContain('size mismatch')
-    expect(w.text()).toContain('목소리 준비 (실패)')
+    expect(w.text()).toContain('목소리 준비 · 기본 면접관(여) (실패)')
     await w.find('[data-test="retry-tts"]').trigger('click')
     expect(retryTts).toHaveBeenCalled()
     expect(retry).not.toHaveBeenCalled()
@@ -403,6 +405,27 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
       vi.useRealTimers()
     }
   })
+  it('목소리 교체가 TTS_STUCK_MS 넘게 이어져도 "목소리 없이 시작"이 나타나고, 누르면 바로 시작한다', async () => {
+    vi.useFakeTimers()
+    try {
+      const m = useModelStore()
+      m.manifest = manifestWithTts
+      m.status = 'ready'
+      m.$patch({ ttsStatus: 'ready', voiceSwitching: true })
+      const w = mountView()
+      await filled(w)
+      expect(w.find('[data-test=start-voiceless]').exists()).toBe(false)
+      await vi.advanceTimersByTimeAsync(TTS_STUCK_MS + 1)
+      await w.vm.$nextTick()
+      const voiceless = w.find('[data-test=start-voiceless]')
+      expect(voiceless.exists()).toBe(true)
+      const start = vi.spyOn(useInterviewStore(), 'start').mockResolvedValue()
+      await voiceless.trigger('click')
+      expect(start).toHaveBeenCalled() // 교체가 끝나지 않았어도 목소리 해제로 열린다
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('Gemma 실패: 문구가 실패를 말하고 "진행 창으로" 링크가 진행 창으로 스크롤한다', async () => {
     const m = useModelStore()
     m.status = 'error'
@@ -424,5 +447,72 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     await fillProfile(w)
     await w.find('[data-test=form-open]').trigger('click')
     expect(w.find('[data-test=start]').text()).toContain("'이력서 완성'을 눌러 주세요")
+  })
+})
+
+describe('PrepareView — 면접관', () => {
+  it('시작 영역에 면접관 칩, "바꾸기"로 고르기 패널을 연다', async () => {
+    useInterviewerStore().select('m2')
+    const w = mountView()
+    expect(w.find('[data-test="interviewer-chip"]').text()).toContain('압박 면접관(남)')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(false)
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
+    expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
+  })
+  it('선택이 없으면 칩은 실제로 쓰일 기본 면접관 이름을 보인다', () => {
+    const w = mountView()
+    expect(w.find('[data-test="interviewer-chip"]').text()).toBe('면접관: 기본 면접관(여)')
+  })
+  it('목소리 준비 줄에 면접관 이름, 교체 중이면 "바꾸는 중", 실패면 안내', async () => {
+    useInterviewerStore().select('m1')
+    const model = useModelStore()
+    model.manifest = manifestWithTts
+    const w = mountView()
+    expect(w.find('.checklist').text()).toContain('목소리 준비 · 기본 면접관(남)')
+    model.$patch({ status: 'ready', ttsStatus: 'ready', voiceSwitching: true })
+    await w.vm.$nextTick()
+    expect(w.find('.checklist').text()).toContain('바꾸는 중')
+    model.$patch({ voiceSwitching: false, voiceError: '목소리를 바꾸지 못했습니다: x' })
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="voice-error"]').text()).toContain('목소리를 바꾸지 못했습니다')
+  })
+  it('목소리 준비 줄 아이콘: 교체 중이면 완료(ok)가 아니라 대기·깜빡임, 실패면 깜빡이지 않는다', async () => {
+    const model = useModelStore()
+    model.manifest = manifestWithTts
+    model.$patch({ status: 'ready', ttsStatus: 'ready' })
+    const w = mountView()
+    const icon = () => w.findAll('.checklist li').at(-1)!.find('i').classes()
+    expect(icon()).toContain('ok')
+    expect(icon()).not.toContain('blink')
+    model.$patch({ voiceSwitching: true })
+    await w.vm.$nextTick()
+    expect(icon()).not.toContain('ok')
+    expect(icon()).toContain('wait')
+    expect(icon()).toContain('blink')
+    model.$patch({ voiceSwitching: false, ttsStatus: 'error' })
+    await w.vm.$nextTick()
+    expect(icon()).toContain('wait')
+    expect(icon()).not.toContain('blink')
+  })
+  it('면접 시작을 기다리는 동안에는 면접관을 바꿀 수 없다(패널 닫힘·바꾸기 비활성)', async () => {
+    const m = useModelStore()
+    m.manifest = { ...manifestWithTts, tts: null }
+    m.status = 'ready'
+    const w = mountView()
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+    const change = () => w.find('[data-test="change-interviewer"]').element as HTMLButtonElement
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
+    let release!: () => void
+    vi.spyOn(useInterviewStore(), 'start').mockReturnValue(new Promise<void>((r) => (release = r)))
+    await w.find('[data-test="start"]').trigger('click')
+    expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(false)
+    expect(change().disabled).toBe(true)
+    release()
+    await flushPromises()
+    expect(change().disabled).toBe(false)
   })
 })

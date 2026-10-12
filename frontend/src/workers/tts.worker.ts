@@ -58,6 +58,28 @@ const byPath = (files: TtsLoadFile[], suffix: string) => {
   return f
 }
 
+type StyleJson = {
+  style_ttl: { dims: number[]; data: number[][][] }
+  style_dp: { dims: number[]; data: number[][][] }
+}
+/** 목소리 JSON → 스타일 텐서 2개 */
+async function loadStyle(f: TtsLoadFile): Promise<Style> {
+  const vs = (await (await fetchFile(f)).json()) as StyleJson
+  const flat = (d: number[][][]) => Float32Array.from(d.flat(2))
+  return {
+    ttl: new ort.Tensor('float32', flat(vs.style_ttl.data), [
+      1,
+      vs.style_ttl.dims[1],
+      vs.style_ttl.dims[2],
+    ]),
+    dp: new ort.Tensor('float32', flat(vs.style_dp.data), [
+      1,
+      vs.style_dp.dims[1],
+      vs.style_dp.dims[2],
+    ]),
+  }
+}
+
 async function load(msg: Extract<MainToWorker, { type: 'load' }>) {
   if (!('gpu' in navigator)) throw new Error('이 브라우저(워커)에서 WebGPU를 쓸 수 없습니다')
   ort.env.wasm.wasmPaths = msg.wasmPaths
@@ -78,25 +100,7 @@ async function load(msg: Extract<MainToWorker, { type: 'load' }>) {
   const voc = await mk('vocoder.onnx', '보코더')
   cfg = (await (await fetchFile(byPath(msg.files, 'tts.json'))).json()) as Cfg
   indexer = (await (await fetchFile(byPath(msg.files, 'unicode_indexer.json'))).json()) as number[]
-  const vs = (await (
-    await fetchFile(byPath(msg.files, `voice_styles/${msg.voice}.json`))
-  ).json()) as {
-    style_ttl: { dims: number[]; data: number[][][] }
-    style_dp: { dims: number[]; data: number[][][] }
-  }
-  const flat = (d: number[][][]) => Float32Array.from(d.flat(2))
-  style = {
-    ttl: new ort.Tensor('float32', flat(vs.style_ttl.data), [
-      1,
-      vs.style_ttl.dims[1],
-      vs.style_ttl.dims[2],
-    ]),
-    dp: new ort.Tensor('float32', flat(vs.style_dp.data), [
-      1,
-      vs.style_dp.dims[1],
-      vs.style_dp.dims[2],
-    ]),
-  }
+  style = await loadStyle(byPath(msg.files, `voice_styles/${msg.voice}.json`))
   sessions = { dp, enc, est, voc }
 }
 
@@ -206,6 +210,22 @@ self.onmessage = async (e: MessageEvent<MainToWorker>) => {
   }
   if (m.type === 'cancel') {
     cancelled.add(m.id)
+    return
+  }
+  if (m.type === 'setVoice') {
+    // 합성과 같은 큐로 직렬화: 이미 들어온 합성은 옛 목소리로 끝나고, 그 뒤부터 새 목소리
+    queue = queue.then(async () => {
+      try {
+        style = await loadStyle(m.file)
+        post({ type: 'voiceSet', voice: m.voice })
+      } catch (err) {
+        post({
+          type: 'voiceError',
+          voice: m.voice,
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })
     return
   }
   try {

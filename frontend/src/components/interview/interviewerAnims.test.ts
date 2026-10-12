@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import manifest from '../../../public/sprites/interviewers/manifest.json'
-import { ANIMS, LIFE, REACT, baseAnims, watchAnim } from './interviewerAnims'
+import {
+  CENTER_FRAME_PX,
+  DEFAULT_INTERVIEWER,
+  LEGACY_CENTER,
+  LEGACY_SIDE,
+  SIDE_SPRITES,
+  interviewerById,
+} from '@/interviewers'
+import * as anims from './interviewerAnims'
+import {
+  ANIMS,
+  CANDIDATE_BACK,
+  CANDIDATE_SCALE,
+  LIFE,
+  SCALE,
+  baseAnims,
+  sheetFor,
+  speechClip,
+  watchAnim,
+  type AnimName,
+} from './interviewerAnims'
 
 describe('interviewerAnims', () => {
   it('대기·듣기·생각 중 기본은 idle 셋', () => {
@@ -11,34 +30,81 @@ describe('interviewerAnims', () => {
         right: 'right_idle',
       })
   })
-  it('질문 중엔 가운데가 질문 제스처를 반복(loop)한다', () => {
+  it('질문 중엔 가운데가 question을 반복(loop)한다 — 집어 들기·내려놓기(in·out)는 1회', () => {
     expect(baseAnims('speaking').center).toBe('center_question')
     expect(ANIMS.center_question.loop).toBe(true)
+    expect(ANIMS.center_question_in.loop).toBe(false)
+    expect(ANIMS.center_question_out.loop).toBe(false)
   })
-  it('좋은 답변: 서류 확인 / 끄덕임 2회 / 필기 — 전부 1회성', () => {
-    expect(REACT).toEqual({ left: 'left_pageflip', center: 'center_nod', right: 'right_writing' })
-    for (const a of Object.values(REACT)) expect(ANIMS[a].loop).toBe(false)
+  it('말하기 경계: 들어갈 때 question_in, 나올 때 question_out, 그 밖엔 없음', () => {
+    expect(speechClip('thinking', 'speaking')).toBe('center_question_in')
+    expect(speechClip('waiting', 'speaking')).toBe('center_question_in')
+    expect(speechClip('speaking', 'waiting')).toBe('center_question_out')
+    expect(speechClip('speaking', 'idle')).toBe('center_question_out')
+    expect(speechClip('speaking', 'speaking')).toBeNull()
+    expect(speechClip('waiting', 'listening')).toBeNull()
+    expect(speechClip(undefined, 'speaking')).toBeNull() // 처음 그릴 때는 이미 말하는 중으로 본다
+  })
+  it('좋은 답변 반응(REACT)과 끄덕임(nod)은 없다', () => {
+    expect('REACT' in anims).toBe(false)
+    expect(Object.keys(ANIMS).some((n) => n.includes('nod'))).toBe(false)
   })
   it('답변 지연은 시계와 펜 톡톡을 번갈아', () => {
     expect(watchAnim(1)).toEqual({ char: 'center', anim: 'center_watch' })
     expect(watchAnim(2)).toEqual({ char: 'right', anim: 'right_pentap' })
     expect(watchAnim(3).anim).toBe('center_watch')
   })
-  it('평시 잔동작은 전부 1회성이고 간격은 5초 이상', () => {
+  it('평시 잔동작은 전부 1회성이고 간격은 5초 이상, 말하는 중엔 없다', () => {
     for (const perChar of Object.values(LIFE))
       for (const cfg of Object.values(perChar)) {
         for (const a of cfg.anims) expect(ANIMS[a].loop).toBe(false)
         expect(cfg.every[0]).toBeGreaterThanOrEqual(5_000)
         expect(cfg.every[1]).toBeGreaterThan(cfg.every[0])
       }
-    expect(LIFE.listening?.center?.anims).toContain('center_armscross')
+    expect(LIFE.listening?.center?.anims).toEqual(['center_lookside', 'center_armscross'])
+    expect(LIFE.listening?.left?.anims).toEqual(['left_pageflip'])
+    expect(LIFE.listening?.right?.anims).toEqual(['right_writing'])
+    expect(LIFE.speaking).toBeUndefined()
   })
-  it('프레임 수는 manifest와 같고 idle만 loop', () => {
-    const m = manifest as Record<string, { frames: number }>
-    for (const [name, a] of Object.entries(ANIMS)) {
-      expect(m[name].frames, name).toBe(a.frames)
-      if (name.endsWith('_idle')) expect(a.loop).toBe(true)
-    }
-    expect(m.candidate_back.frames).toBe(1)
+  it('idle과 question만 loop', () => {
+    for (const [name, a] of Object.entries(ANIMS))
+      expect(a.loop, name).toBe(name.endsWith('_idle') || name === 'center_question')
+  })
+  it('면접관은 프레임 92 × 2 = 184px, 지원자 뒷모습은 32 × 6 = 192px 그대로', () => {
+    expect(SCALE).toBe(2)
+    expect(CENTER_FRAME_PX * SCALE).toBe(184)
+    expect([CANDIDATE_BACK.w, CANDIDATE_BACK.h]).toEqual([32, 32])
+    expect(CANDIDATE_BACK.w * CANDIDATE_SCALE).toBe(192)
+  })
+})
+
+describe('sheetFor', () => {
+  it('시트를 안 주면 기본 면접관(f3) 가운데 + 새 배석자 시트', () => {
+    const f3 = interviewerById(DEFAULT_INTERVIEWER)!.sprites
+    expect(sheetFor('center_idle')).toEqual({ ...f3.idle, loop: true })
+    expect(sheetFor('left_pageflip')).toEqual({ ...SIDE_SPRITES.left.pageflip, loop: false })
+    expect(sheetFor('right_pentap')).toEqual({ ...SIDE_SPRITES.right.pentap, loop: false })
+  })
+  it('가운데 동작은 고른 면접관 시트로, loop 규칙은 ANIMS를 따른다', () => {
+    const sp = interviewerById('m1')!.sprites
+    expect(sheetFor('center_question', sp)).toEqual({ ...sp.question, loop: true })
+    expect(sheetFor('center_question_in', sp)).toEqual({ ...sp.question_in, loop: false })
+    expect(sheetFor('center_question_out', sp)).toEqual({ ...sp.question_out, loop: false })
+  })
+  it('좌우 배석자는 가운데 시트와 무관하고, 배석자 시트(대체 포함)를 따른다', () => {
+    const sp = interviewerById('m2')!.sprites
+    expect(sheetFor('left_idle', sp)).toEqual({ ...SIDE_SPRITES.left.idle, loop: true })
+    expect(sheetFor('right_writing', sp, LEGACY_SIDE)).toEqual({
+      ...LEGACY_SIDE.right.writing,
+      loop: false,
+    })
+  })
+  it('대체 세트: question_in·out은 기존 center_idle을 1회 재생', () => {
+    for (const n of ['center_question_in', 'center_question_out'] as AnimName[])
+      expect(sheetFor(n, LEGACY_CENTER)).toEqual({
+        file: '/sprites/interviewers/center_idle.png',
+        frames: LEGACY_CENTER.idle.frames,
+        loop: false,
+      })
   })
 })
