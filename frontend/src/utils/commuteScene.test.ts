@@ -94,3 +94,32 @@ describe('소품', () => {
     expect(PROP_GAP).toEqual([3000, 7000])
   })
 })
+
+describe('속도가 달라도 구간을 빠짐없이 지난다', () => {
+  /** 진행률을 fps로 흘려보내고 지나간 전환을 모은다 */
+  function run(totalSecs: number, fps = 10) {
+    let state: StageState = { stage: 0, queue: [] }
+    const seen: string[] = []
+    const frames = totalSecs * fps
+    for (let i = 0; i <= frames; i++) {
+      state = advanceStages(state, (i / frames) * 100)
+      while (state.queue.length) seen.push(state.queue.shift() as string)
+    }
+    return { stage: state.stage, seen }
+  }
+  it('5분', () => {
+    const r = run(300)
+    expect(r.stage).toBe(COMMUTE.length - 1)
+    expect(r.seen).toEqual(['dress', 'bag', 'arrive'])
+  })
+  it('15분', () => {
+    const r = run(900)
+    expect(r.stage).toBe(COMMUTE.length - 1)
+    expect(r.seen).toEqual(['dress', 'bag', 'arrive'])
+  })
+  it('진행률이 한 번에 0에서 100으로 뛰어도 전환이 빠지지 않는다', () => {
+    let s: StageState = { stage: 0, queue: [] }
+    s = advanceStages(s, 100)
+    expect(s.queue).toEqual(['dress', 'bag', 'arrive'])
+  })
+})
