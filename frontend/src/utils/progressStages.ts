@@ -1,5 +1,7 @@
 export type WalkAnim = 'walk_underwear' | 'walk_suit' | 'walk_suit_bag'
 export type OnceAnim = 'pickup_suit' | 'pickup_bag' | 'look_up'
+/** 구간이 길 때 끼어드는 잔동작. 1회 재생하고 걷기로 돌아간다 */
+export type IdleAnim = 'walk_watch'
 export type ItemSprite = 'suit_ground' | 'bag_ground'
 
 export interface Stage {
@@ -7,6 +9,8 @@ export interface Stage {
   walk: WalkAnim | null
   once?: OnceAnim
   item?: ItemSprite
+  /** 이 구간에서 끼어들 수 있는 잔동작 */
+  idles?: readonly IdleAnim[]
   caption: string
 }
 
@@ -17,6 +21,7 @@ export const STAGES: readonly Stage[] = [
     walk: 'walk_suit',
     once: 'pickup_suit',
     item: 'suit_ground',
+    idles: ['walk_watch'],
     caption: '양복은 챙겼습니다. 가방을 찾는 중…',
   },
   {
@@ -24,6 +29,7 @@ export const STAGES: readonly Stage[] = [
     walk: 'walk_suit_bag',
     once: 'pickup_bag',
     item: 'bag_ground',
+    idles: ['walk_watch'],
     caption: '가방도 챙겼습니다. 회사가 보이기 시작했어요.',
   },
   { at: 100, walk: null, once: 'look_up', caption: '회사 앞입니다' }, // 모델+TTS를 다 받은 뒤 도착 (#26)
@@ -184,4 +190,60 @@ export function stepScene(
     }
   }
   return { state: next, props: out }
+}
+
+/* ---------- 잔동작 ----------
+ * 다운로드가 5~15분이라 한 구간을 몇 분씩 본다. 같은 걷기 루프만 돌면 지루하므로
+ * 15~25초마다 하나씩 끼워 넣는다. 일정은 진행률이 아니라 시간으로 돈다 —
+ * 초기화 구간처럼 진행이 멈춰도 캐릭터는 살아 있어야 한다. */
+
+export const IDLE_GAP: readonly [number, number] = [15_000, 25_000]
+
+/** 다음 잔동작 예정 시각(ms) */
+export function nextIdleAt(now: number, rnd: () => number): number {
+  const [a, b] = IDLE_GAP
+  return now + a + rnd() * (b - a)
+}
+
+/** 이 구간에서 나올 잔동작 하나. 없으면 null */
+export function pickIdle(stage: Stage, rnd: () => number): IdleAnim | null {
+  const list = stage.idles
+  if (!list || !list.length) return null
+  return list[Math.min(list.length - 1, Math.floor(rnd() * list.length))]
+}
+
+/* ---------- 지나가는 소품 ----------
+ * 바닥과 같은 속도로 흘러 길이 이어져 보이게 한다. */
+
+export const PROP_KEYS: readonly string[] = [
+  'cat',
+  'lamp',
+  'vending',
+  'planter',
+  'pigeon',
+  'signal',
+]
+export const PROP_GAP: readonly [number, number] = [3_000, 7_000]
+/** 한 프레임에 소품이 움직일 수 있는 최대 거리(화면 폭). 탭 복귀로 dt가 커져도 순간이동하지 않게 */
+const MAX_PROP_STEP_RATIO = 1
+
+export interface ScenicProp {
+  key: string
+  x: number
+}
+
+export function spawnProp(width: number, rnd: () => number): ScenicProp {
+  const key = PROP_KEYS[Math.min(PROP_KEYS.length - 1, Math.floor(rnd() * PROP_KEYS.length))]
+  return { key, x: width + Math.round(rnd() * 40) }
+}
+
+/** 소품을 왼쪽으로 흘리고, 화면 밖으로 나간 것은 버린다 */
+export function stepProps(
+  list: ScenicProp[],
+  dt: number,
+  speed: number,
+  width: number,
+): ScenicProp[] {
+  const move = Math.min(speed * dt, width * MAX_PROP_STEP_RATIO)
+  return list.map((p) => ({ ...p, x: p.x - move })).filter((p) => p.x > -64)
 }

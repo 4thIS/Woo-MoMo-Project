@@ -59,17 +59,26 @@ Woo-MoMo-Project/
 - 두 영역이 만나는 지점(`/api` 계약)은 `docs/API.md` 하나로만 정의한다. 각 영역 spec은 이를 참조만 한다.
 - 다른 영역의 spec/plan을 대신 쓰지 않는다. 필요하면 이슈로 요청한다.
 
+## 브랜치 체계
+
+| 브랜치 | 배포처 | 역할 |
+|---|---|---|
+| `main` | https://momo.ssenu.cloud | 운영. 검증이 끝난 것만 올라간다 |
+| `dev` | https://demomo.ssenu.cloud | **개발 기준.** 모든 작업 브랜치가 여기서 갈라지고 여기로 돌아온다 |
+
+작업 브랜치는 `dev`에서 끊고 PR base도 `dev`다(`gh pr create --base dev`). 아직 정식 서비스가 아니므로 검증 전 변경이 운영 도메인에 나가지 않게 한다(이슈 #61).
+
 ## 작업 흐름
 
 ### 새 기능
 
 1. brainstorming → `docs/specs/{area}/`에 spec 작성·커밋
 2. writing-plans → `docs/plans/{area}/`에 plan 작성·커밋 (Task 단위)
-3. `main`에서 `feature/` 브랜치 생성 → plan대로 구현
+3. **`dev`에서** `feature/` 브랜치 생성 → plan대로 구현
 4. 매 작업 TDD (실패 테스트 먼저)
 5. 변경 제안 전 검증 + 리뷰 요청
 6. 리뷰 → Squash merge
-7. `main` 머지 → CI가 arm64 이미지 빌드·GHCR 푸시 → 파이에서 `docker compose pull && up -d`
+7. `dev` 머지 → `demomo.ssenu.cloud`에서 확인 → 묶어서 `main`으로 → CI가 arm64 이미지 빌드·GHCR 푸시 → 파이에서 `docker compose pull && up -d`
 
 ### 버그 수정
 
@@ -103,7 +112,7 @@ finetune: ...           # 파인튜닝 트랙
 ## 절대 하지 말 것
 
 1. 비밀키·`.env`·인증서 커밋 금지 (`.gitignore` + 훅이 차단)
-2. `main` 직접 push 금지 (Protected Branches)
+2. `main`·`dev` 직접 push 금지 (Protected Branches)
 3. 계약(`backend/data/manifest.json`, `/api` 응답 스키마) 변경과 그 계약에 의존하는 프론트 코드를 같은 변경 제안에 섞지 않음 — **계약 먼저 배포 후 코드**(lockstep). 새 필드는 additive로.
 4. 계층 규율 경로를 기준 대조 없이 수정 금지
 5. `git push --force`, `git reset --hard` 금지
