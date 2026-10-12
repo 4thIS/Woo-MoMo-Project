@@ -68,13 +68,13 @@ export const HINTS: readonly Hint[] = [
   {
     key: 'interview-end',
     phase: 'interview',
-    text: '그만하고 싶으면 “면접 끝내기”를 누르세요. 리포트는 그때 만들어집니다.',
+    text: '그만하고 싶으면 “면접 종료”를 누르세요. 리포트는 그때 만들어집니다.',
     when: (c) => c.stage === 'waiting' && c.answered,
   },
   {
     key: 'report-read',
     phase: 'report',
-    text: '항목을 펼치면 근거가 된 답변이 보입니다. “PDF로 저장”으로 남길 수 있습니다.',
+    text: '문항별 피드백이 아래에 있습니다. “PDF로 저장”으로 남기거나 “다시 면접 보기”로 한 번 더 하세요.',
     when: () => true,
   },
 ]
