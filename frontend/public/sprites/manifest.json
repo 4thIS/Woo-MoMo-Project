@@ -1,54 +1,60 @@
 {
  "walk_underwear": {
-  "file": "sheets/walk_underwear.png",
-  "frames": 7,
-  "w": 32,
-  "h": 32
+  "file": "walk_underwear.png",
+  "frames": 16,
+  "w": 44,
+  "h": 44
  },
  "walk_suit": {
-  "file": "sheets/walk_suit.png",
-  "frames": 7,
-  "w": 32,
-  "h": 32
+  "file": "walk_suit.png",
+  "frames": 16,
+  "w": 44,
+  "h": 44
  },
  "walk_suit_bag": {
-  "file": "sheets/walk_suit_bag.png",
-  "frames": 7,
-  "w": 32,
-  "h": 32
+  "file": "walk_suit_bag.png",
+  "frames": 16,
+  "w": 44,
+  "h": 44
  },
  "pickup_suit": {
-  "file": "sheets/pickup_suit.png",
-  "frames": 9,
-  "w": 32,
-  "h": 32
+  "file": "pickup_suit.png",
+  "frames": 12,
+  "w": 44,
+  "h": 44
  },
  "pickup_bag": {
-  "file": "sheets/pickup_bag.png",
-  "frames": 9,
-  "w": 32,
-  "h": 32
+  "file": "pickup_bag.png",
+  "frames": 12,
+  "w": 44,
+  "h": 44
  },
  "look_up": {
-  "file": "sheets/look_up.png",
-  "frames": 7,
-  "w": 32,
-  "h": 32
+  "file": "look_up.png",
+  "frames": 12,
+  "w": 44,
+  "h": 44
+ },
+ "walk_watch": {
+  "file": "walk_watch.png",
+  "frames": 12,
+  "w": 44,
+  "h": 44
  },
  "suit_ground": {
-  "file": "sheets/suit_ground.png",
+  "file": "suit_ground.png",
   "frames": 1,
   "w": 20,
   "h": 20
  },
  "bag_ground": {
-  "file": "sheets/bag_ground.png",
+  "file": "bag_ground.png",
   "frames": 1,
   "w": 16,
   "h": 16
  },
  "company2": {
-  "file": "sheets/company2.png",
+  "file": "company2.png",
   "frames": 1,
   "w": 48,
   "h": 64
