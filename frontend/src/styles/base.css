@@ -30,6 +30,8 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
+  /* 힌트 바가 떠 있는 동안 그만큼 아래를 비운다 — HintBar가 실제 높이를 넣는다 */
+  padding-bottom: var(--hint-space, 0px);
   font-family: var(--font-body);
   font-size: var(--fs-body);
   line-height: 1.7;

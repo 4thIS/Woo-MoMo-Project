@@ -3,7 +3,7 @@
  *
  * 조건은 전부 utils/hints의 hintFor에 있다. 여기서는 스토어에서 맥락을 모아 넘기고 그리기만 한다.
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { hintFor, type HintContext } from '@/utils/hints'
 import { useHintsStore } from '@/stores/hints'
 import { useInterviewStore } from '@/stores/interview'
@@ -40,6 +40,27 @@ const situation = computed(() =>
 const restingAt = ref<string | null>(null)
 const hint = computed(() => (restingAt.value === situation.value ? null : hintFor(ctx.value)))
 
+/* 바가 차지하는 높이를 화면들에 알린다 — 면접 화면은 100vh라 자리를 비워 주지 않으면 대화창을 덮는다.
+ * 문구가 길어 두 줄이 되는 좁은 화면도 있어 실제 높이를 잰다 */
+const el = ref<HTMLElement | null>(null)
+const GAP = 20 // --sp-5, 바와 화면 아래 사이
+let ro: ResizeObserver | null = null
+function space(px: number) {
+  document.documentElement.style.setProperty('--hint-space', `${px}px`)
+}
+watch(el, (node) => {
+  ro?.disconnect()
+  ro = null
+  if (!node) return space(0)
+  if (typeof ResizeObserver === 'undefined') return space(node.offsetHeight + GAP * 2)
+  ro = new ResizeObserver(() => space(node.offsetHeight + GAP * 2))
+  ro.observe(node)
+})
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  space(0)
+})
+
 function dismiss(key: string) {
   hints.markSeen(key)
   restingAt.value = situation.value
@@ -48,7 +69,7 @@ function dismiss(key: string) {
 
 <template>
   <Transition name="hint">
-    <aside v-if="hint" class="bar" role="status" data-test="hint">
+    <aside v-if="hint" ref="el" class="bar" role="status" data-test="hint">
       <p class="text">{{ hint.text }}</p>
       <div class="acts">
         <button type="button" class="ok" data-test="hint-ok" @click="dismiss(hint.key)">

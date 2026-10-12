@@ -136,7 +136,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   display: grid;
   grid-template-rows: 2fr 1fr;
   gap: var(--sp-4);
-  padding: var(--sp-4) var(--page-x);
+  padding: var(--sp-4) var(--page-x) calc(var(--sp-4) + var(--hint-space, 0px));
   box-sizing: border-box;
   overflow: hidden;
 }
