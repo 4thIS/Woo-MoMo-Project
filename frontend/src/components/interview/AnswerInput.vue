@@ -263,6 +263,8 @@ const micTitle = computed(() =>
 .ta-wrap {
   position: relative;
   flex: 1;
+  /* flex 항목은 기본적으로 내용보다 작아지지 않는다 — 없으면 창이 좁을 때 버튼이 창 밖으로 밀린다 */
+  min-height: 0;
 }
 .ta-wrap textarea {
   width: 100%;

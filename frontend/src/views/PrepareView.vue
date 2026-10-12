@@ -6,6 +6,7 @@ import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { useHintsStore } from '@/stores/hints'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
@@ -22,6 +23,7 @@ const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
 useSectionWheel(root)
 const iv = useInterviewerStore()
+const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 // 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
@@ -404,6 +406,16 @@ async function clearAndRetry() {
             @click="pickerOpen = !pickerOpen"
           >
             {{ pickerOpen ? '닫기' : '바꾸기' }}
+          </button>
+          <!-- 힌트를 꺼 둔 사람이 다시 켜는 유일한 길 -->
+          <button
+            v-if="!hints.enabled"
+            type="button"
+            class="mono link press"
+            data-test="hints-on"
+            @click="hints.enable()"
+          >
+            도움말 다시 보기
           </button>
         </div>
         <InterviewerPicker v-if="pickerOpen && !busy" />

@@ -43,6 +43,7 @@ import { warmUpAudio } from '@/services/audio'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { useHintsStore } from '@/stores/hints'
 import PrepareView from './PrepareView.vue'
 
 const mountView = () =>
@@ -514,5 +515,23 @@ describe('PrepareView — 면접관', () => {
     release()
     await flushPromises()
     expect(change().disabled).toBe(false)
+  })
+})
+
+describe('PrepareView — 도움말 다시 켜기', () => {
+  it('켜져 있으면 다시 켜는 버튼이 없다', () => {
+    expect(mountView().find('[data-test=hints-on]').exists()).toBe(false)
+  })
+
+  it('꺼 둔 사람은 준비 화면에서 다시 켤 수 있다', async () => {
+    const h = useHintsStore()
+    h.disable()
+    h.markSeen('prepare-profile')
+    const w = mountView()
+    await w.find('[data-test=hints-on]').trigger('click')
+    expect(h.enabled).toBe(true)
+    // 다시 켠 사람은 처음부터 따라갈 수 있어야 한다
+    expect(h.seen).toEqual([])
+    expect(w.find('[data-test=hints-on]').exists()).toBe(false)
   })
 })
