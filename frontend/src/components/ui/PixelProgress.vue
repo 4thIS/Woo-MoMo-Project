@@ -4,13 +4,13 @@ import {
   RATE_WINDOW_MS,
   SCROLL,
   STAGES,
-  approach,
   captionFor,
-  distanceAhead,
   progressRate,
   stageIndexFor,
+  stepScene,
   type OnceAnim,
   type Sample,
+  type SceneProp,
   type StageState,
 } from '@/utils/progressStages'
 import { formatBytes } from '@/utils/format'
@@ -72,8 +72,7 @@ let colors = { ink: '', sky: '' }
 /** 진행률 표본(진행 속도 추정용) */
 let samples: Sample[] = []
 /** 물건·건물의 화면 x. null = 아직 자리를 못 잡음(진행 속도를 모름) → 그리지 않는다. 주운 것은 done */
-type Prop = { stage: number; at: number; gap: number; x: number | null; done: boolean }
-let props_: Prop[] = []
+let props_: SceneProp[] = []
 
 async function loadSheets() {
   try {
@@ -128,23 +127,11 @@ function frame(now: number) {
   const step = walking ? dt : 0
   scroll += SCROLL * step
 
-  // 2) 물건·건물: 예상 거리로 자리 잡고 바닥과 함께 다가온다. 닿으면 줍기(도착) 전환
-  for (const pr of props_) {
-    if (pr.done) continue
-    const dist = distanceAhead(pr.at, props.progress, rate)
-    const target = dist === null ? null : CHAR_X + pr.gap + dist
-    if (pr.x === null) {
-      if (target !== null) pr.x = target
-      continue
-    }
-    pr.x = approach(pr.x, target, step)
-    if (pr.x <= CHAR_X + pr.gap + 0.5) {
-      pr.x = CHAR_X + pr.gap
-      pr.done = true
-      const s = STAGES[pr.stage]
-      state = { stage: pr.stage, queue: s.once ? [...state.queue, s.once] : state.queue }
-    }
-  }
+  // 2) 물건·건물: 예상 거리로 자리 잡고 바닥과 함께 다가온다. 닿으면 줍기(도착) 전환.
+  //    물건이 늦어도 진행률이 가리키는 구간까지는 따라간다 — stepScene이 맡는다
+  const scene = stepScene(state, props_, props.progress, rate, step, CHAR_X)
+  state = scene.state
+  props_ = scene.props
 
   const stage = STAGES[state.stage]
   if (!once && state.queue.length) {

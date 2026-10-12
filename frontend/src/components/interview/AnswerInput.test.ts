@@ -82,6 +82,56 @@ describe('AnswerInput 듣기 잠금·늦은 결과', () => {
     expect(stopSpeech).toHaveBeenCalled()
     expect(w.find('[data-test="mic"]').text()).toContain('말하기')
   })
+  it('말하기를 켜 두면 잠금이 풀릴 때 다시 듣기 시작한다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    vi.mocked(startSpeech).mockImplementation(() => {})
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    expect(startSpeech).toHaveBeenCalledTimes(1)
+    await w.setProps({ generating: true }) // 면접관이 말하는 동안 잠김
+    expect(stopSpeech).toHaveBeenCalled()
+    expect(w.find('[data-test="mic"]').text()).toContain('말하기 켜짐')
+    await w.setProps({ generating: false }) // 답변 차례로 돌아옴
+    expect(startSpeech).toHaveBeenCalledTimes(2) // 다시 누르지 않아도 듣는다
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
+  })
+  it('말하기를 꺼 두면 잠금이 풀려도 다시 시작하지 않는다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    vi.mocked(startSpeech).mockImplementation(() => {})
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    await w.find('[data-test="mic"]').trigger('click') // 사용자가 끔
+    await w.setProps({ generating: true })
+    await w.setProps({ generating: false })
+    expect(startSpeech).toHaveBeenCalledTimes(1)
+  })
+  it('브라우저가 스스로 끝내도 말하기가 켜져 있으면 다시 듣는다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    let end: (() => void) | null = null
+    vi.mocked(startSpeech).mockImplementation((_i, _f, _e, onEnd) => {
+      end = onEnd ?? null
+    })
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    end!() // 무음으로 Chrome이 인식을 끊음
+    await w.vm.$nextTick()
+    expect(startSpeech).toHaveBeenCalledTimes(2)
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
+  })
+  it('마이크 오류가 나면 말하기가 꺼진다', async () => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    let fail: ((e: string) => void) | null = null
+    vi.mocked(startSpeech).mockImplementation((_i, _f, onError) => {
+      fail = onError
+    })
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    fail!('network')
+    await w.vm.$nextTick()
+    await w.setProps({ generating: true })
+    await w.setProps({ generating: false })
+    expect(startSpeech).toHaveBeenCalledTimes(1) // 오류 뒤에는 자동으로 다시 켜지 않는다
+  })
   it('토글을 끈 뒤 늦게 온 확정 결과는 버린다', async () => {
     vi.mocked(speechSupported).mockReturnValue(true)
     let late: ((t: string) => void) | null = null
