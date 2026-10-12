@@ -4,8 +4,12 @@ import {
   IDLE_GAP,
   advanceStages,
   captionAt,
+  PROP_GAP,
+  PROP_KEYS,
   nextIdleAt,
   pickIdle,
+  spawnProp,
+  stepProps,
   stageAt,
   type StageState,
 } from './commuteScene'
@@ -65,5 +69,28 @@ describe('잔동작', () => {
     const t = nextIdleAt(0, () => 0)
     expect(t).toBeGreaterThan(0)
     expect(t).toBeLessThanOrEqual(IDLE_GAP[1])
+  })
+})
+
+describe('소품', () => {
+  it('오른쪽 화면 밖에서 생긴다', () => {
+    const p = spawnProp(480, () => 0)
+    expect(p.x).toBeGreaterThanOrEqual(480)
+    expect(PROP_KEYS).toContain(p.key)
+  })
+  it('바닥과 같은 속도로 왼쪽으로 흐른다', () => {
+    const out = stepProps([{ key: 'cat', x: 200 }], 0.5, 40, 480)
+    expect(out[0].x).toBe(180)
+  })
+  it('화면 왼쪽으로 완전히 나가면 사라진다', () => {
+    expect(stepProps([{ key: 'cat', x: -64 }], 0.1, 40, 480)).toEqual([])
+  })
+  it('탭 복귀로 dt가 커져도 한 번에 화면을 가로지르지 않는다', () => {
+    const out = stepProps([{ key: 'cat', x: 400 }], 5, 40, 480)
+    expect(400 - out[0].x).toBeLessThanOrEqual(480)
+    expect(out[0].x).toBeLessThan(400)
+  })
+  it('간격은 3~7초다', () => {
+    expect(PROP_GAP).toEqual([3000, 7000])
   })
 })

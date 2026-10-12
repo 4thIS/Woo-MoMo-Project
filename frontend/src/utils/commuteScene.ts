@@ -132,3 +132,39 @@ export function pickIdle(stage: CommuteStage, rnd: () => number): string | null 
   if (!stage.idles.length) return null
   return stage.idles[Math.min(stage.idles.length - 1, Math.floor(rnd() * stage.idles.length))]
 }
+
+/* ---------- 지나가는 소품 (실외) ----------
+ * 바닥과 같은 속도로 흘러 길이 이어져 보이게 한다. */
+
+export const PROP_KEYS: readonly string[] = [
+  'cat',
+  'lamp',
+  'vending',
+  'planter',
+  'pigeon',
+  'signal',
+]
+export const PROP_GAP: readonly [number, number] = [3_000, 7_000]
+/** 한 프레임에 소품이 움직일 수 있는 최대 거리(화면 폭). 탭 복귀로 dt가 커져도 순간이동하지 않게 */
+const MAX_STEP_RATIO = 1
+
+export interface ScenicProp {
+  key: string
+  x: number
+}
+
+export function spawnProp(width: number, rnd: () => number): ScenicProp {
+  const key = PROP_KEYS[Math.min(PROP_KEYS.length - 1, Math.floor(rnd() * PROP_KEYS.length))]
+  return { key, x: width + Math.round(rnd() * 40) }
+}
+
+/** 소품을 왼쪽으로 흘리고, 화면 밖으로 나간 것은 버린다 */
+export function stepProps(
+  list: ScenicProp[],
+  dt: number,
+  speed: number,
+  width: number,
+): ScenicProp[] {
+  const move = Math.min(speed * dt, width * MAX_STEP_RATIO)
+  return list.map((p) => ({ ...p, x: p.x - move })).filter((p) => p.x > -64)
+}
