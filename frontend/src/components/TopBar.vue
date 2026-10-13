@@ -9,6 +9,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
+import AuthModal from '@/components/account/AuthModal.vue'
 import PixelModal from '@/components/ui/PixelModal.vue'
 
 type Which = 'login' | 'premium' | 'me' | 'archive'
@@ -65,8 +66,9 @@ onMounted(() => void account.load())
     </div>
   </header>
 
-  <!-- 모달 본체는 Task 5~7에서 채운다. 지금은 껍데기만 열린다 -->
-  <PixelModal :open="open !== null" :title="open ?? ''" @close="open = null" />
+  <AuthModal :open="open === 'login'" @close="open = null" />
+  <!-- 프리미엄·내정보·보관함은 다음 Task에서 채운다 -->
+  <PixelModal :open="open !== null && open !== 'login'" :title="open ?? ''" @close="open = null" />
 </template>
 
 <style scoped>
