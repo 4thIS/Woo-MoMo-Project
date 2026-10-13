@@ -10,6 +10,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import AuthModal from '@/components/account/AuthModal.vue'
+import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
 import PixelModal from '@/components/ui/PixelModal.vue'
 
@@ -69,12 +70,9 @@ onMounted(() => void account.load())
 
   <AuthModal :open="open === 'login'" @close="open = null" />
   <PremiumModal :open="open === 'premium'" @close="open = null" @need-login="open = 'login'" />
-  <!-- 내정보·보관함은 다음 Task에서 채운다 -->
-  <PixelModal
-    :open="open === 'me' || open === 'archive'"
-    :title="open ?? ''"
-    @close="open = null"
-  />
+  <MeModal :open="open === 'me'" @close="open = null" />
+  <!-- 보관함은 2/2 계획에서 채운다 -->
+  <PixelModal :open="open === 'archive'" title="보관함" @close="open = null" />
 </template>
 
 <style scoped>
