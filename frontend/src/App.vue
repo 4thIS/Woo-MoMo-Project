@@ -6,6 +6,7 @@ import PrepareView from '@/views/PrepareView.vue'
 import InterviewView from '@/views/InterviewView.vue'
 import ReportView from '@/views/ReportView.vue'
 import HintBar from '@/components/ui/HintBar.vue'
+import TopBar from '@/components/TopBar.vue'
 
 const interview = useInterviewStore()
 const view = computed(
@@ -17,6 +18,7 @@ const view = computed(
 </script>
 
 <template>
+  <TopBar />
   <component :is="view" />
   <HintBar />
 </template>

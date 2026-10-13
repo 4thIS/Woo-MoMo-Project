@@ -12,6 +12,8 @@
   --danger: #f26d6d;
   --star-1: #cfd3ff;
   --star-2: #7d83c9;
+  /* 모달 뒤를 덮는 막 — 뒤 화면이 비치되 읽히지 않을 만큼 */
+  --veil: #000000a6;
 
   /* 글꼴 */
   --font-display: 'Galmuri11', 'DotGothic16', sans-serif;
@@ -63,6 +65,7 @@
     --danger: #b3261e;
     --star-1: transparent;
     --star-2: transparent;
+    --veil: #00000040;
     --win-border: 2px solid var(--line);
     --win-inner: none;
   }

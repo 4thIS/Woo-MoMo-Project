@@ -6,10 +6,13 @@
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-const props = withDefaults(defineProps<{ open: boolean; title?: string; width?: 'md' | 'wide' }>(), {
-  title: undefined,
-  width: 'md',
-})
+const props = withDefaults(
+  defineProps<{ open: boolean; title?: string; width?: 'md' | 'wide' }>(),
+  {
+    title: undefined,
+    width: 'md',
+  },
+)
 const emit = defineEmits<{ close: [] }>()
 
 const box = ref<HTMLElement | null>(null)
@@ -79,7 +82,7 @@ onBeforeUnmount(detach)
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgb(0 0 0 / 0.6);
+  background: var(--veil);
   display: grid;
   place-items: center;
   padding: var(--sp-6) var(--sp-4);

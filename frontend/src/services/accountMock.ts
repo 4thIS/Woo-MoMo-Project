@@ -54,10 +54,16 @@ function save(db: Db) {
 const newId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 const now = () => new Date().toISOString()
 
-/** 비밀번호를 세션 밖으로 내보내지 않는다 */
+/** 비밀번호를 세션 밖으로 내보내지 않는다 — 내보낼 필드를 하나씩 적는다 */
 function strip(u: User): Session {
-  const { password: _password, ...rest } = u
-  return { ...rest, profile: { ...rest.profile } }
+  return {
+    userId: u.userId,
+    email: u.email,
+    tier: u.tier,
+    tickets: u.tickets,
+    profile: { ...u.profile },
+    createdAt: u.createdAt,
+  }
 }
 
 export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
