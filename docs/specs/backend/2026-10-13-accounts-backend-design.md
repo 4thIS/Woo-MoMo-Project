@@ -1,7 +1,7 @@
 # 계정·보관함·프리미엄 — 백엔드 설계 (spec)
 
 - 생성일시: 2026-10-13
-- 수정일시: 2026-10-13
+- 수정일시: 2026-10-14 (목업 결제를 관리자 계정 전용으로)
 - 상태: 초안 (브레인스토밍 완료, 리뷰 대기)
 - 담당: @ssenu (백엔드·계약 소유) / 리뷰 @leemonta9482
 - 짝 문서
@@ -22,6 +22,7 @@ PR #73(2026-10-13 회의록)으로 로그인·내 이력서·보관함·프리�
 | 벤 대화 API | **서버가 면접 세션을 들고 있다.** 시작(티켓 차감) → 턴(SSE) → 리포트. `/premium/spend`는 시작에 합친다 |
 | 구글 로그인 | **다음 단계.** 이번엔 이메일·비밀번호만. 프론트 구글 버튼은 "준비 중" |
 | 구현 방식 | 표준 `sqlite3` + 얇은 저장소 계층(ORM·인증 라이브러리 없음), 비밀번호 `argon2-cffi` |
+| 목업 결제 | **관리자 계정만.** 일반 계정은 막는다. 관리자 계정은 서버 기동 시 `.env`의 아이디·비밀번호로 만든다(2026-10-14) |
 
 ## 2. 계약 (초안에서 바뀌는 것)
 
@@ -31,7 +32,7 @@ PR #73(2026-10-13 회의록)으로 로그인·내 이력서·보관함·프리�
 2. **가입에 동의 필드:** `POST /api/auth/signup` 본문에 `"consent": true` 필수. 없으면 `422 {"error":"consent_required","field":"consent"}`.
 3. **보관함 프리미엄 기록 검증:** `POST /api/archive`에 `premium:true`를 주려면 `"premiumInterviewId"`(본인의 완료된 벤 면접)가 있어야 한다. 없거나 남의 것이면 `premium:false`로 저장하지 않고 `422 {"error":"invalid_premium_interview"}`.
 4. **`/api/premium/spend` 삭제 → 벤 면접 3단계** (4.2절).
-5. **목업 결제 스위치:** `POST /api/premium/purchase`는 서버 설정이 꺼져 있으면 `403 {"error":"purchase_disabled"}`.
+5. **목업 결제는 관리자만:** `Session`에 `"isAdmin": boolean`을 더한다(프론트는 이 값으로 결제 버튼을 켜고, 일반 계정은 "준비 중"으로 막는다). `POST /api/premium/purchase`는 관리자가 아니면 `403 {"error":"purchase_disabled"}`.
 6. **녹음:** `clip`은 `audio/webm`·`audio/ogg`만(아니면 `415 {"error":"unsupported_media"}`), 기록당 합계 30MB 초과 시 `413 {"error":"too_large"}`, 같은 `turn` 재업로드는 교체.
 7. **구글 로그인**(`/api/auth/google`, 콜백)은 "다음 단계"로 표시하고 이번엔 만들지 않는다.
 8. **요청 수 초과:** `429 {"error":"rate_limited"}`.
@@ -53,13 +54,13 @@ backend/app/
 ```
 
 - 라우터는 HTTP, repos는 SQL, llm은 외부 호출만 맡는다. 서로의 일을 하지 않는다.
-- 설정은 환경변수: `DATA_DIR`(DB·녹음 위치), `CORS_ORIGINS`, `COOKIE_SECURE`, `ANTHROPIC_API_KEY`, `PREMIUM_MOCK_PURCHASE`, `BEN_DAILY_LIMIT`.
+- 설정은 환경변수: `DATA_DIR`(DB·녹음 위치), `CORS_ORIGINS`, `COOKIE_SECURE`, `ANTHROPIC_API_KEY`, `ADMIN_LOGIN`, `ADMIN_PASSWORD`, `BEN_DAILY_LIMIT`.
 
 ### 3.1 테이블
 
 | 테이블 | 주요 칼럼 | 규칙 |
 |---|---|---|
-| users | id, email(유니크·소문자), password_hash, tier(`member`/`premium`), tickets, name, age, created_at | |
+| users | id, email(유니크·소문자), password_hash, tier(`member`/`premium`), tickets, is_admin, name, age, created_at | 관리자는 `.env`로 만든 한 계정 |
 | sessions | token_hash(PK), user_id, expires_at | 30일. 로그아웃·만료 시 삭제 |
 | resumes | id, user_id, kind(`company`/`admission`), title, text, updated_at | kind별 3개 |
 | archive | id, user_id, interviewer_id, premium, premium_interview_id, track, field, job, name, age, university, department, started_at, ended_at, messages_json, report_json, report_raw | 무료 5개 초과 시 오래된 것부터 삭제 |
@@ -99,7 +100,10 @@ backend/app/
 ### 4.4 프리미엄 티켓과 벤
 
 **티켓**
-- `POST /api/premium/purchase`: `PREMIUM_MOCK_PURCHASE`가 켜져 있을 때만(demomo 켬, 운영 기본 끔). `tier=premium`, 티켓 +10 → `200 Session`.
+- `POST /api/premium/purchase`: **관리자 계정만**(`is_admin`). 다른 계정은 `403 purchase_disabled`. 관리자는 `tier=premium`, 티켓 +10 → `200 Session`.
+- **관리자 계정 만들기:** 서버 기동 시 `ADMIN_LOGIN`·`ADMIN_PASSWORD`가 둘 다 있으면 그 계정을 만들거나(없을 때) 비밀번호·`is_admin`을 맞춘다(있을 때). 하나라도 없으면 관리자 계정은 없고 목업 결제는 아무도 못 쓴다.
+  - 로그인 아이디는 이메일 형식이 아니어도 된다(예: `admin`). 이 예외는 `ADMIN_LOGIN`과 정확히 같을 때만이고, 일반 가입은 여전히 이메일 형식·8자 규칙을 따른다.
+  - 관리자 비밀번호는 **리포에 커밋하지 않는다**(`.env`만). 공개 사이트라 추측하기 쉬운 비밀번호(예: `admin`)면 누구나 티켓을 충전해 Claude 비용을 쓸 수 있다 — 하루 상한 `BEN_DAILY_LIMIT`가 마지막 방어선이다.
 - 공개 사이트에서 아무나 Claude 비용을 쓰지 않도록 **하루 전체 상한 `BEN_DAILY_LIMIT`**(기본 30회)을 둔다. 넘으면 시작에서 `503 {"error":"daily_limit"}`, 티켓 차감 없음.
 
 **면접 3단계**
@@ -133,7 +137,7 @@ backend/app/
 
 - api 컨테이너에 `DATA_DIR` 볼륨: 운영 `/srv/momo/data`, demomo `/srv/momo-dev/data`(dev 쪽은 `deploy/.env`·override로).
 - **nginx 업로드 크기:** 지금 `client_max_body_size` 설정이 없어 기본 1MB다. 녹음 한 건이 들어가도록 `/api/recordings`에 6MB를 준다.
-- `.env` 항목: `ANTHROPIC_API_KEY`, `PREMIUM_MOCK_PURCHASE`, `BEN_DAILY_LIMIT`, `CORS_ORIGINS`, `COOKIE_SECURE`. `.env`는 커밋하지 않는다.
+- `.env` 항목: `ANTHROPIC_API_KEY`, `ADMIN_LOGIN`, `ADMIN_PASSWORD`, `BEN_DAILY_LIMIT`, `CORS_ORIGINS`, `COOKIE_SECURE`. `.env`는 커밋하지 않는다.
 - demomo에 먼저 반영한다. 운영(momo)은 지시 전까지 건드리지 않는다.
 
 ## 7. 작업 순서
@@ -145,7 +149,7 @@ backend/app/
 | 0 | 계약 확정(문서): `docs/API.md`에 2절 반영, `CLAUDE.md` 8번 개정. 공동 승인 | — |
 | 1 | DB 기반 + 계정(가입·로그인·로그아웃·`/me`·프로필·이메일 중복 확인·요청 수 제한·CORS·Origin 확인) | 0 |
 | 2 | 이력서 슬롯 + 보관함(5개 한도·자동 삭제·프리미엄 검증) | 1 |
-| 3 | 티켓(목업 결제 스위치·하루 상한) + 벤 면접 3단계 | 1 |
+| 3 | 관리자 계정·티켓(관리자 전용 목업 결제·하루 상한) + 벤 면접 3단계 | 1 |
 | 4 | 녹음(업로드·Range·30MB·같이 삭제) | 2, 3 |
 | 5 | 배포(볼륨·nginx·`.env`) → demomo 반영 | 1~4 |
 
@@ -154,8 +158,8 @@ backend/app/
 - pytest + httpx, TDD. 테스트마다 임시 `DATA_DIR`에 새 DB.
 - 계정: 가입·로그인 성공·실패, 같은 오류 문구, 동의 없음, 세션 만료, `/me`가 `null`, 요청 수 제한, Origin 거부.
 - 이력서: 슬롯 한도와 동시 요청. 보관함: 5개 초과 자동 삭제·`evicted`, 프리미엄 위조 거부, 남의 리소스 404.
-- 프리미엄: 티켓 차감 원자성, 하루 상한, 목업 결제 꺼짐. 벤: SSE 순서, 15번 상한, 실패 턴 미기록(가짜 Claude 클라이언트).
+- 프리미엄: 티켓 차감 원자성, 하루 상한, 일반 계정 목업 결제 403·관리자만 충전, 관리자 계정 기동 시 생성·갱신·`.env` 없으면 없음. 벤: SSE 순서, 15번 상한, 실패 턴 미기록(가짜 Claude 클라이언트).
 - 녹음: 413·415, Range 응답, 기록 삭제 시 파일 삭제.
 - 리포트 지시문: 프론트 `report.ts`와 같은지.
 - CI는 지금처럼 `pytest`·`ruff`. Claude 실제 호출은 하지 않는다.
-- 수동(demomo): 가입 → 이력서 저장 → 보관함 6번째에 자동 삭제 → 목업 결제 → 벤 1회 완주(실제 Claude) → 리포트 → 보관함 → 녹음 재생.
+- 수동(demomo): 가입 → 이력서 저장 → 보관함 6번째에 자동 삭제 → 관리자 로그인 → 목업 결제 → 벤 1회 완주(실제 Claude) → 리포트 → 보관함 → 녹음 재생.
