@@ -13,9 +13,9 @@ const modal = () => {
 
 const q = <T extends Element = HTMLElement>(key: string) =>
   document.querySelector<T>(`[data-test=${key}]`)!
-/** 지금 내 등급 칸 */
-const nowCol = () => document.querySelector('[data-test=plan-col].now')!
 const all = (key: string) => [...document.querySelectorAll(`[data-test=${key}]`)]
+/** 지금 내 등급 카드 */
+const nowCard = () => document.querySelector('[data-test=plan-card].here')!
 
 /** 목업 타이머와 결제 목업의 대기를 모두 흘려보낸다 */
 const settle = async () => {
@@ -49,31 +49,65 @@ const signUp = async () => {
   await p
 }
 
-describe('PremiumModal — 비교표', () => {
-  it('세 칸을 그린다', () => {
+describe('PremiumModal — 요금 카드', () => {
+  it('등급 카드 셋을 그린다', () => {
     modal()
-    expect(all('plan-col')).toHaveLength(3)
-    expect(all('plan-row').length).toBeGreaterThan(4)
+    expect(all('plan-card')).toHaveLength(3)
   })
 
-  it('비로그인은 비로그인 칸이 강조된다', () => {
+  it('세 카드가 같은 목록을 같은 순서로 보여 준다 — 줄이 맞아야 비교가 된다', () => {
     modal()
-    expect(nowCol().textContent).toContain('비로그인')
+    const rows = all('plan-card').map((c) =>
+      [...c.querySelectorAll('[data-test=plan-feat] .nm')].map((e) => e.textContent?.trim()),
+    )
+    expect(rows[0]).toEqual(rows[1])
+    expect(rows[1]).toEqual(rows[2])
+    expect(rows[0].length).toBeGreaterThan(5)
   })
 
-  it('로그인하면 로그인 칸이 강조된다', async () => {
+  it('비로그인 카드는 둘만 켜진다', () => {
+    modal()
+    const card = all('plan-card')[0]
+    expect(card.querySelectorAll('[data-test=plan-feat].on')).toHaveLength(2)
+  })
+
+  it('프리미엄 카드는 전부 켜진다', () => {
+    modal()
+    const card = all('plan-card')[2]
+    expect(card.querySelectorAll('[data-test=plan-feat].off')).toHaveLength(0)
+  })
+
+  it('카드 머리에 몇 개가 켜졌는지 적는다', () => {
+    modal()
+    const counts = all('plan-count').map((e) => e.textContent?.replace(/\s+/g, ''))
+    expect(counts[0]).toContain('2/8')
+    expect(counts[1]).toContain('5/8')
+    expect(counts[2]).toContain('8/8')
+  })
+
+  it('가격을 적는다', () => {
+    modal()
+    expect(all('plan-card')[2].textContent).toContain('4,900')
+  })
+
+  it('비로그인은 비로그인 카드가 지금 자리다', () => {
+    modal()
+    expect(nowCard().textContent).toContain('비로그인')
+  })
+
+  it('로그인하면 로그인 카드로 옮겨 간다', async () => {
     modal()
     await signUp()
-    expect(nowCol().textContent).toContain('로그인')
+    expect(nowCard().textContent).toContain('로그인')
   })
 
-  it('프리미엄이면 프리미엄 칸이 강조된다', async () => {
+  it('프리미엄이면 프리미엄 카드가 지금 자리다', async () => {
     modal()
     await signUp()
     const p = useAccountStore().purchasePremium()
     await settle()
     await p
-    expect(nowCol().textContent).toContain('프리미엄')
+    expect(nowCard().textContent).toContain('프리미엄')
   })
 })
 

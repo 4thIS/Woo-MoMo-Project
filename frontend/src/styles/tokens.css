@@ -22,6 +22,9 @@
   --ink: #000000;
   /* 패널에 깔리는 주사선 — 화면처럼 보이게 하는 유일한 장식 */
   --scan: #00000026;
+  /* 꺼진 상태 — 요금 카드의 불 꺼진 램프와 그 줄 글자 */
+  --off: #343b6b;
+  --off-text: #5b6291;
 
   /* 글꼴 */
   --font-display: 'Galmuri11', 'DotGothic16', sans-serif;
@@ -83,6 +86,8 @@
     --veil: #00000040;
     --ink: transparent;
     --scan: transparent;
+    --off: #cccccc;
+    --off-text: #888888;
     --win-border: 2px solid var(--line);
     --win-shadow: none;
   }

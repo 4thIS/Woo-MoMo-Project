@@ -6,7 +6,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
-import { PLAN_COLUMNS, PLAN_ROWS, planKeyOf } from '@/utils/plans'
+import { PLAN_FEATURES, PLAN_TIERS, litCount, planKeyOf } from '@/utils/plans'
 import { PREMIUM_TICKETS } from '@/services/account'
 import PixelModal from '@/components/ui/PixelModal.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
@@ -55,40 +55,50 @@ async function pay() {
 
 <template>
   <PixelModal :open="open" title="모모 프리미엄" width="wide" @close="emit('close')">
-    <!-- 1) 비교표 -->
+    <!-- 1) 요금 카드 — 세 칸이 같은 목록을 같은 순서로 보여 주고 되는 것만 불이 들어온다 -->
     <template v-if="step === 'compare'">
-      <table class="plans">
-        <thead>
-          <tr>
-            <th class="lab"></th>
-            <th
-              v-for="c in PLAN_COLUMNS"
-              :key="c.key"
-              class="mono col"
-              :class="{ now: c.key === now }"
-              data-test="plan-col"
+      <div class="cards">
+        <section
+          v-for="t in PLAN_TIERS"
+          :key="t.key"
+          class="card"
+          :class="{ here: t.key === now, best: t.key === 'premium' }"
+          data-test="plan-card"
+        >
+          <span v-if="t.key === now" class="mono badge">지금 여기</span>
+          <span v-else-if="t.key === 'premium'" class="mono badge">★ 전부 켜짐</span>
+
+          <header class="chead">
+            <h3 class="display nm">{{ t.label }}</h3>
+            <p class="mono pr">{{ t.price }}</p>
+          </header>
+
+          <p class="mono count" data-test="plan-count">
+            <span class="meter" aria-hidden="true">
+              <i v-for="(f, n) in PLAN_FEATURES" :key="n" :class="{ f: f.on[t.key] }" />
+            </span>
+            <b>{{ litCount(t.key) }}</b> / {{ PLAN_FEATURES.length }}
+          </p>
+
+          <ul class="feats">
+            <li
+              v-for="f in PLAN_FEATURES"
+              :key="f.label"
+              :class="f.on[t.key] ? 'on' : 'off'"
+              data-test="plan-feat"
             >
-              {{ c.label }}
-              <span v-if="c.key === now" class="mono tag">지금</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in PLAN_ROWS" :key="r.label" data-test="plan-row">
-            <th class="lab">{{ r.label }}</th>
-            <td
-              v-for="c in PLAN_COLUMNS"
-              :key="c.key"
-              class="mono cell"
-              :class="{ now: c.key === now }"
-            >
-              {{ r.cells[c.key] }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="acts">
-        <PixelButton data-test="premium-start" @click="start">{{ startLabel }}</PixelButton>
+              <span class="led" aria-hidden="true" />
+              <span class="txt">
+                <span class="nm">{{ f.label }}</span>
+                <span class="mono val">{{ f.note[t.key] ?? '—' }}</span>
+              </span>
+            </li>
+          </ul>
+
+          <PixelButton v-if="t.key === 'premium'" data-test="premium-start" @click="start">
+            {{ startLabel }}
+          </PixelButton>
+        </section>
       </div>
     </template>
 
@@ -124,41 +134,156 @@ async function pay() {
 </template>
 
 <style scoped>
-.plans {
-  border-collapse: collapse;
-  width: 100%;
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-4);
 }
-.plans th,
-.plans td {
-  border-bottom: 2px solid var(--raise);
-  padding: var(--sp-3) var(--sp-4);
-  text-align: center;
-  vertical-align: middle;
+@media (max-width: 980px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
 }
-.lab {
-  text-align: left;
-  font-weight: 400;
-  font-size: var(--fs-body-sm);
-  color: var(--text-2);
+.card {
+  border: 2px solid var(--raise);
+  padding: var(--sp-5) var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
 }
-.col {
-  font-size: var(--fs-label);
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.col.now,
-.cell.now {
-  color: var(--accent);
+.card.here {
+  border-color: var(--line);
   background: var(--raise);
 }
-.cell {
+.card.best {
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.badge {
   font-size: var(--fs-meta);
+  border: 2px solid var(--line);
+  padding: 2px var(--sp-2);
   color: var(--text-2);
+  align-self: flex-start;
 }
-.tag {
+.card.best .badge {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.chead .nm {
+  margin: 0;
+  font-size: var(--fs-h2);
+}
+.chead .pr {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+/* 눈금 — 목록을 읽기 전에 차이가 숫자로 먼저 보인다 */
+.count {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.count b {
+  font-weight: 400;
+  color: var(--accent-2);
+}
+.card.best .count b {
+  color: var(--accent);
+}
+.meter {
+  display: flex;
+  gap: 3px;
+}
+.meter i {
+  width: 9px;
+  height: 9px;
   display: block;
+  background: var(--off);
+}
+.meter i.f {
+  background: var(--accent-2);
+}
+.card.best .meter i.f {
+  background: var(--accent);
+}
+
+.feats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  flex: 1;
+}
+.feats li {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3) 0;
+  border-top: 2px solid var(--win);
+}
+.feats li:first-child {
+  border-top: 0;
+}
+.txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.txt .nm {
+  font-size: var(--fs-label);
+  line-height: 1.5;
+}
+.txt .val {
   font-size: var(--fs-meta);
 }
+/* 램프. 색을 color로 두고 테두리·채움·빛을 currentColor로 받아 한 곳만 바꾸면 된다 */
+.led {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 2px solid currentcolor;
+  color: var(--off);
+}
+.on .led {
+  color: var(--accent-2);
+  background: currentcolor;
+  box-shadow: 0 0 6px currentcolor;
+}
+.card.best .on .led {
+  color: var(--accent);
+}
+.on .nm {
+  color: var(--text);
+}
+.on .val {
+  color: var(--accent-2);
+}
+.card.best .on .val {
+  color: var(--accent);
+}
+.off .nm {
+  color: var(--off-text);
+}
+.off .val {
+  color: var(--off);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .led {
+    transition: all var(--dur-2) var(--ease);
+  }
+}
+
 .pay {
   display: flex;
   flex-direction: column;
