@@ -130,7 +130,7 @@ describe('InterviewerPicker', () => {
   describe('InterviewerPicker — 벤(프리미엄)', () => {
     const premium = async () => {
       const a = useAccountStore()
-      await a.signUp('a@b.com', 'pw123456')
+      await a.signUp('a@b.com', 'pw123456', '이우진')
       await a.purchasePremium()
       await flushPromises()
     }
@@ -155,7 +155,7 @@ describe('InterviewerPicker', () => {
 
     it('티켓이 0장이면 프리미엄이어도 요금제를 띄운다 — 다 쓰면 다시 사야 한다', async () => {
       const a = useAccountStore()
-      await a.signUp('a@b.com', 'pw123456')
+      await a.signUp('a@b.com', 'pw123456', '이우진')
       await flushPromises()
       const w = mount(InterviewerPicker)
       await card(w, 'm2').trigger('click')

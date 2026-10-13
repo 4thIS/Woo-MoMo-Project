@@ -16,6 +16,7 @@ const account = useAccountStore()
 
 type Mode = 'signin' | 'signup'
 const mode = ref<Mode>('signin')
+const name = ref('')
 const email = ref('')
 const pw = ref('')
 const pw2 = ref('')
@@ -27,6 +28,7 @@ const error = computed(() => localError.value || account.error?.message || '')
 const busy = computed(() => account.loading)
 
 function reset() {
+  name.value = ''
   email.value = ''
   pw.value = ''
   pw2.value = ''
@@ -36,6 +38,8 @@ function reset() {
 
 function setMode(next: Mode) {
   mode.value = next
+  // 탭을 오가며 남은 이름이 다음 가입에 따라붙지 않게 비운다
+  name.value = ''
   localError.value = ''
   account.error = null
 }
@@ -63,11 +67,15 @@ async function submit() {
     localError.value = '이메일과 비밀번호를 입력하세요'
     return
   }
+  if (signup.value && !name.value.trim()) {
+    localError.value = '이름을 입력하세요'
+    return
+  }
   if (signup.value && pw.value !== pw2.value) {
     localError.value = '비밀번호가 서로 다릅니다'
     return
   }
-  if (signup.value) await account.signUp(email.value, pw.value)
+  if (signup.value) await account.signUp(email.value, pw.value, name.value)
   else await account.signIn(email.value, pw.value)
   if (account.signedIn) emit('close')
 }
@@ -102,6 +110,18 @@ async function google() {
     </div>
 
     <form class="form" @submit.prevent="submit">
+      <!-- 가입에서만. 대입 면접의 이름 칸을 이 값으로 미리 채운다 -->
+      <label v-if="signup" class="field">
+        <span class="mono lab">이름</span>
+        <input
+          v-model="name"
+          type="text"
+          class="input mono"
+          autocomplete="name"
+          data-test="auth-name"
+        />
+      </label>
+
       <label class="field">
         <span class="mono lab">이메일</span>
         <input

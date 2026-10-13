@@ -911,7 +911,7 @@ describe('면접이 끝나면 보관함에 남긴다', () => {
 
   async function signedIn() {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     return a
   }
 
@@ -1098,7 +1098,7 @@ describe('프리미엄 면접 녹음', () => {
 
   it('녹음이 있으면 hasRecording: true로 저장된다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
     vi.mocked(startSession).mockResolvedValue(replies())
     const s = await premiumStore()
@@ -1110,7 +1110,7 @@ describe('프리미엄 면접 녹음', () => {
 
   it('녹음이 없으면 hasRecording: false로 저장된다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     vi.mocked(startRecording).mockResolvedValue(null)
     vi.mocked(startSession).mockResolvedValue(replies())
     const s = await premiumStore()

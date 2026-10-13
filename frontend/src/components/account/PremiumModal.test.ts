@@ -44,7 +44,7 @@ beforeEach(() => {
 })
 
 const signUp = async () => {
-  const p = useAccountStore().signUp('a@b.com', 'pw123456')
+  const p = useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
   await settle()
   await p
 }

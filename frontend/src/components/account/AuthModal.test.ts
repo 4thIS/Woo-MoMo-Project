@@ -48,6 +48,8 @@ const click = async (key: string) => {
 }
 
 async function fill(email: string, pw: string, pw2?: string) {
+  // 가입 탭이면 이름도 채운다 — 이름은 필수라 비우면 제출 전에 막힌다
+  if (document.querySelector('[data-test=auth-name]')) await set('auth-name', '이우진')
   await set('auth-email', email)
   await set('auth-password', pw)
   if (pw2 !== undefined) await set('auth-password2', pw2)
@@ -106,7 +108,7 @@ describe('AuthModal — 회원가입', () => {
 
   it('이미 쓰는 이메일이면 알려 준다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.signOut()
     modal()
     await click('auth-tab-signup')
@@ -117,7 +119,7 @@ describe('AuthModal — 회원가입', () => {
 
   it('입력을 떠나면 중복을 미리 알려 준다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.signOut()
     modal()
     await click('auth-tab-signup')
@@ -129,7 +131,7 @@ describe('AuthModal — 회원가입', () => {
 
   it('로그인 탭에서는 중복을 미리 보지 않는다 — 가입 여부를 흘리지 않는다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.signOut()
     modal()
     await set('auth-email', 'a@b.com')
@@ -142,7 +144,7 @@ describe('AuthModal — 회원가입', () => {
 describe('AuthModal — 로그인', () => {
   it('로그인하면 닫힌다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.signOut()
     const w = modal()
     await fill('a@b.com', 'pw123456')
@@ -196,5 +198,43 @@ describe('AuthModal — 다시 열 때', () => {
     await w.setProps({ open: true })
     expect(document.querySelector('[data-test=auth-error]')).toBeNull()
     expect(q<HTMLInputElement>('auth-email').value).toBe('')
+  })
+})
+
+describe('AuthModal — 가입할 때 이름', () => {
+  it('회원가입 탭에만 이름 칸이 있다', async () => {
+    modal()
+    expect(document.querySelector('[data-test=auth-name]')).toBeNull()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=auth-name]')).not.toBeNull()
+  })
+
+  it('이름이 비면 가입하지 않는다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    await set('auth-password', 'pw123456')
+    await set('auth-password2', 'pw123456')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('이름')
+    expect(useAccountStore().signedIn).toBe(false)
+  })
+
+  it('이름을 넣고 가입하면 프로필에 남는다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-name', '이우진')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-submit')
+    expect(useAccountStore().profile.name).toBe('이우진')
+  })
+
+  it('탭을 바꾸면 이름 칸이 비워진다 — 남은 값이 다음 가입에 따라붙지 않게', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-name', '이우진')
+    await click('auth-tab-signin')
+    await click('auth-tab-signup')
+    expect(q<HTMLInputElement>('auth-name').value).toBe('')
   })
 })

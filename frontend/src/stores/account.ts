@@ -76,8 +76,8 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async signUp(email: string, password: string) {
-      const s = await this.run(() => api.signUp(email, password))
+    async signUp(email: string, password: string, name: string) {
+      const s = await this.run(() => api.signUp(email, password, name))
       if (s) {
         this.session = s
         this.resumes = []

@@ -20,7 +20,7 @@ describe('account 스토어 — 세션', () => {
 
   it('가입하면 로그인 상태가 된다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     expect(a.signedIn).toBe(true)
     expect(a.tier).toBe('member')
     expect(a.isPremium).toBe(false)
@@ -28,7 +28,7 @@ describe('account 스토어 — 세션', () => {
 
   it('새로고침(load)으로 세션과 이력서를 되찾는다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.saveResume({ kind: 'company', title: 'x', text: 'y'.repeat(60) })
 
     setActivePinia(createPinia())
@@ -40,7 +40,7 @@ describe('account 스토어 — 세션', () => {
 
   it('로그아웃하면 이력서도 비운다 — 다음 사람에게 보이면 안 된다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.saveResume({ kind: 'company', title: 'x', text: 'y'.repeat(60) })
     expect(a.resumes).toHaveLength(1)
     await a.signOut()
@@ -50,7 +50,7 @@ describe('account 스토어 — 세션', () => {
 
   it('이름·나이를 저장한다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.saveProfile({ name: '홍길동', age: 19 })
     expect(a.profile).toEqual({ name: '홍길동', age: 19 })
   })
@@ -63,7 +63,7 @@ describe('account 스토어 — 세션', () => {
 describe('account 스토어 — 오류를 던지지 않고 담는다', () => {
   it('실패하면 error에 코드가 담기고 상태는 그대로다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.signOut()
     await a.signIn('a@b.com', 'wrongpw1')
     expect(a.error?.code).toBe('bad_credentials')
@@ -74,7 +74,7 @@ describe('account 스토어 — 오류를 던지지 않고 담는다', () => {
     const a = useAccountStore()
     await a.signIn('none@b.com', 'pw123456')
     expect(a.error).not.toBeNull()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     expect(a.error).toBeNull()
   })
 
@@ -95,7 +95,7 @@ describe('account 스토어 — 오류를 던지지 않고 담는다', () => {
 
 describe('account 스토어 — 이력서', () => {
   beforeEach(async () => {
-    await useAccountStore().signUp('a@b.com', 'pw123456')
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
   })
 
   it('종류별 슬롯을 세어 준다', async () => {
@@ -125,7 +125,7 @@ describe('account 스토어 — 이력서', () => {
 describe('account 스토어 — 프리미엄', () => {
   it('결제하면 프리미엄이 되고 티켓이 10장이다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.purchasePremium()
     expect(a.isPremium).toBe(true)
     expect(a.tickets).toBe(10)
@@ -133,7 +133,7 @@ describe('account 스토어 — 프리미엄', () => {
 
   it('티켓을 쓰면 하나 준다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.purchasePremium()
     await a.spendTicket()
     expect(a.tickets).toBe(9)
@@ -141,7 +141,7 @@ describe('account 스토어 — 프리미엄', () => {
 
   it('티켓이 없으면 no_tickets를 담고 등급은 그대로다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.spendTicket()
     expect(a.error?.code).toBe('no_tickets')
     expect(a.tickets).toBe(0)
@@ -171,7 +171,7 @@ describe('account 스토어 — 보관함', () => {
   }
 
   beforeEach(async () => {
-    await useAccountStore().signUp('a@b.com', 'pw123456')
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
   })
 
   it('저장하면 목록이 갱신된다', async () => {

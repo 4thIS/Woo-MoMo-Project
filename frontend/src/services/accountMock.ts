@@ -116,20 +116,23 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       return load().users.some((u) => u.email === email)
     },
 
-    async signUp(email, password) {
+    async signUp(email, password, name) {
       await wait()
       const db = load()
       if (db.users.some((u) => u.email === email))
         throw new AccountError('email_taken', '이미 가입된 이메일입니다')
       if (password.length < PASSWORD_MIN)
         throw new AccountError('weak_password', `비밀번호는 ${PASSWORD_MIN}자 이상이어야 합니다`)
+      // 폼도 막지만 여기서도 막는다 — 서버가 받는 값은 폼을 거치지 않을 수도 있다
+      const trimmed = name.trim()
+      if (!trimmed) throw new AccountError('missing_name', '이름을 입력하세요')
       const u: User = {
         userId: newId('u'),
         email,
         password,
         tier: 'member',
         tickets: 0,
-        profile: { name: null, age: null },
+        profile: { name: trimmed, age: null },
         createdAt: now(),
       }
       db.users.push(u)
