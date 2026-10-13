@@ -1,3 +1,4 @@
+import type { Track } from '@/services/account'
 import voices from './voices.json'
 import sheets64 from '../../public/sprites/interviewers64/manifest.json'
 import legacyManifest from '../../public/sprites/interviewers/manifest.json'
@@ -35,8 +36,15 @@ export interface SideSprites {
 }
 export interface Interviewer {
   id: InterviewerId
+  /** 사람 이름 — 데이빗·쥴리·올리비아·벤 */
+  displayName: string
+  /** 수식 — 기본 면접관(남) 등. 전에는 이게 name이었다 */
   name: string
   tagline: string
+  /** 이 면접관이 보는 면접. null이면 고를 때 사용자가 정한다(벤) */
+  track: Track | null
+  /** 티켓이 있어야 쓸 수 있다 */
+  premium: boolean
   /** PERSONAS의 키 — 프롬프트·리포트 말투 */
   persona: PersonaId
   /** manifest.tts.voices의 id */
@@ -109,14 +117,20 @@ export const LEGACY_SIDE: SideSprites = {
 
 const make = (
   id: InterviewerId,
+  displayName: string,
   name: string,
   tagline: string,
   persona: PersonaId,
+  track: Track | null,
+  premium = false,
 ): Interviewer => ({
   id,
+  displayName,
   name,
   tagline,
   persona,
+  track,
+  premium,
   voiceId: voices[id].voice,
   preview: { text: voices[id].text, src: `/voices/preview/${id}.ogg` },
   sprites: centerSheets(id),
@@ -124,13 +138,15 @@ const make = (
 
 /** 이 순서가 고르기 카드 순서다 */
 export const INTERVIEWERS: readonly Interviewer[] = [
-  make('m1', '기본 면접관(남)', '차분하게 진행합니다', 'standard'),
-  make('f3', '기본 면접관(여)', '차분하게 진행합니다', 'standard'),
-  make('m2', '압박 면접관(남)', '근거를 보여 주세요', 'sharp'),
-  make('f2', '압박 면접관(여)', '근거를 보여 주세요', 'sharp'),
+  make('m1', '데이빗', '기본 면접관(남)', '차분하게 진행합니다', 'standard', 'company'),
+  make('f2', '쥴리', '압박 면접관(여)', '근거를 보여 주세요', 'sharp', 'company'),
+  make('f3', '올리비아', '기본 면접관(여)', '차분하게 진행합니다', 'standard', 'admission'),
+  // 벤만 둘 다 본다 — track이 null이라 고를 때 사용자가 정한다
+  make('m2', '벤', '압박 면접관(남)', '더 전문적인 질문', 'sharp', null, true),
 ]
 
-export const DEFAULT_INTERVIEWER: InterviewerId = 'f3'
+/** 회사 면접의 기본값. 올리비아는 대입 전용이라 기본이 될 수 없다 */
+export const DEFAULT_INTERVIEWER: InterviewerId = 'm1'
 
 export function interviewerById(id: string | null | undefined): Interviewer | null {
   return INTERVIEWERS.find((iv) => iv.id === id) ?? null

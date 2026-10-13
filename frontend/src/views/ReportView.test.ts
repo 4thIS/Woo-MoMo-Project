@@ -7,6 +7,8 @@ vi.mock('@/services/api', () => ({ getQuestions: vi.fn(), getManifest: vi.fn() }
 import { useInterviewStore } from '@/stores/interview'
 import ReportView from './ReportView.vue'
 import ReportViewSource from './ReportView.vue?raw'
+import { useAccountStore } from '@/stores/account'
+import { useModalStore } from '@/stores/modal'
 
 beforeEach(() => setActivePinia(createPinia()))
 
@@ -304,6 +306,79 @@ describe('ReportView — 면접관', () => {
       profile: { field: 'it', job: '백엔드' },
       interviewerId: 'f2',
     })
-    expect(mount(ReportView).text()).toContain('면접관: 압박 면접관(여)')
+    expect(mount(ReportView).text()).toContain('면접관: 쥴리')
+  })
+})
+
+describe('ReportView — 보관함 안내', () => {
+  const session = {
+    userId: 'u1',
+    email: 'a@b.com',
+    tier: 'member' as const,
+    tickets: 0,
+    profile: { name: null, age: null },
+    createdAt: '2026-10-09T00:00:00Z',
+  }
+  const done = (patch: Record<string, unknown> = {}) => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+      ...patch,
+    })
+    return mount(ReportView)
+  }
+
+  it('비로그인에게 로그인하면 보관할 수 있다고 알린다', () => {
+    const w = done()
+    expect(w.find('[data-test="save-cta"]').exists()).toBe(true)
+    expect(w.text()).toContain('로그인')
+  })
+
+  it('안내의 버튼을 누르면 로그인 모달이 열린다 — 전환이 가장 잘 일어나는 자리다', async () => {
+    const w = done()
+    await w.get('[data-test="save-cta"] button').trigger('click')
+    expect(useModalStore().open).toBe('login')
+  })
+
+  it('저장되면 보관함에 남았다고 알린다', () => {
+    useAccountStore().$patch({ session })
+    const w = done({ archiveSaved: true })
+    expect(w.find('[data-test="saved"]').exists()).toBe(true)
+    expect(w.find('[data-test="save-cta"]').exists()).toBe(false)
+  })
+
+  it('밀려난 기록이 있으면 사라졌다고 알린다', () => {
+    useAccountStore().$patch({ session })
+    const w = done({ archiveSaved: true, archiveEvicted: ['old1'] })
+    expect(w.find('[data-test="evicted"]').exists()).toBe(true)
+  })
+
+  it('저장에 실패하면 실패했다고 말한다 — 성공한 척하지 않는다', () => {
+    useAccountStore().$patch({ session })
+    const w = done({ archiveSaved: false })
+    expect(w.find('[data-test="save-failed"]').exists()).toBe(true)
+    expect(w.find('[data-test="saved"]').exists()).toBe(false)
+  })
+
+  it('리포트를 쓰는 중에는 보관 얘기를 하지 않는다', () => {
+    const w = done({ reportStatus: 'writing' })
+    expect(w.find('[data-test="save-cta"]').exists()).toBe(false)
+  })
+})
+
+describe('ReportView — 면접관 표기', () => {
+  it('수식이 아니라 사람 이름을 적는다', () => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      interviewerId: 'f3',
+      profile: { field: 'it', job: '백엔드' },
+    })
+    const t = mount(ReportView).text()
+    expect(t).toContain('면접관: 올리비아')
+    expect(t).not.toContain('면접관(여)')
   })
 })

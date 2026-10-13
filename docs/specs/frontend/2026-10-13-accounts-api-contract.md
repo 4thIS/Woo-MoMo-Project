@@ -49,13 +49,17 @@
 
 ```jsonc
 // 요청
-{ "email": "a@b.com", "password": "..." }
+{ "email": "a@b.com", "password": "...", "name": "이우진" }
 // 201 → Session (쿠키 설정)
 // 409 { "error": "email_taken" }
 // 422 { "error": "weak_password", "field": "password" }
+// 422 { "error": "missing_name", "field": "name" }
 ```
 
 이메일 인증은 하지 않는다(회의 결정). 중복 검사만.
+
+`name`은 **필수**다. 가입할 때 받아 `Session.profile.name`에 넣어 주세요 — 대입 면접의 이름 칸을 이 값으로 미리 채운다. 앞뒤 공백은 서버에서 털고, 털어서 비면 `missing_name`.
+구글 로그인은 폼이 없으니 **구글이 주는 이름**을 그대로 넣어 주세요.
 
 ### GET /api/auth/email-taken?email=a@b.com
 

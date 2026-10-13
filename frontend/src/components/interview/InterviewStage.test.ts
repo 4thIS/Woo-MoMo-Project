@@ -124,15 +124,15 @@ describe('InterviewStage 1회 재생', () => {
   it('말하기: question_in 1회 → question 반복 → 끝나면 question_out 1회 → idle', async () => {
     const w = mount(InterviewStage, { props: base })
     await w.setProps({ stage: 'speaking' })
-    expect(srcOf(w, 'center')).toContain('f3/center_question_in.png')
-    await tick(w, 8 * F + 50) // f3 question_in 8f
-    expect(srcOf(w, 'center')).toContain('f3/center_question.png')
+    expect(srcOf(w, 'center')).toContain('m1/center_question_in.png')
+    await tick(w, 8 * F + 50) // m1 question_in 8f
+    expect(srcOf(w, 'center')).toContain('m1/center_question.png')
     await tick(w, 30 * F) // 말하는 동안 계속 question
-    expect(srcOf(w, 'center')).toContain('f3/center_question.png')
+    expect(srcOf(w, 'center')).toContain('m1/center_question.png')
     await w.setProps({ stage: 'waiting' })
-    expect(srcOf(w, 'center')).toContain('f3/center_question_out.png')
+    expect(srcOf(w, 'center')).toContain('m1/center_question_out.png')
     await tick(w, 8 * F + 50) // question_out 8f
-    expect(srcOf(w, 'center')).toContain('f3/center_idle.png')
+    expect(srcOf(w, 'center')).toContain('m1/center_idle.png')
   })
 
   it('집어 드는 중에 말이 끝나면 다 든 뒤에 내려놓는다(이음새 포즈 유지)', async () => {
@@ -144,7 +144,7 @@ describe('InterviewStage 1회 재생', () => {
     await tick(w, 5 * F + 50)
     expect(srcOf(w, 'center')).toContain('center_question_out.png')
     await tick(w, 8 * F + 50)
-    expect(srcOf(w, 'center')).toContain('f3/center_idle.png')
+    expect(srcOf(w, 'center')).toContain('m1/center_idle.png')
   })
 
   it('잔동작 중에 말을 시작하면 바로 question_in으로 바뀐다', async () => {

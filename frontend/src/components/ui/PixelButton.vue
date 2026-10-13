@@ -29,7 +29,9 @@ const onClick = (e: MouseEvent) => {
 </template>
 
 <style scoped>
-/* 누를 수 있는 것은 "떠 있게": 테두리 + 오른쪽 아래 픽셀 그림자. hover면 반전, 누르면 그림자만큼 내려앉는다 */
+/* 주 버튼은 노랑으로 **채운다**. 예전에는 테두리만 흰색이라 옆의 창들과 구별되지 않았다.
+   깊이는 검은 하드 그림자가 내고, 호버하면 살짝 떠오르고 누르면 그림자만큼 내려앉는다.
+   실제 모션은 base.css의 .press가 맡는다 — 여기서는 색과 그림자 색만 정한다 */
 .btn {
   height: 52px;
   padding: 0 28px;
@@ -39,29 +41,33 @@ const onClick = (e: MouseEvent) => {
   gap: var(--sp-3);
   font-size: var(--fs-button);
   line-height: 1;
-  border: 2px solid var(--line);
-  --press-shadow: var(--line);
-  box-shadow: 4px 4px 0 var(--press-shadow);
   cursor: pointer;
-  background: var(--raise);
-  color: var(--accent);
-}
-.btn:hover:not(.disabled) {
+  --press-shadow: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
   background: var(--accent);
   color: var(--bg);
-  border-color: var(--accent);
+  border: 2px solid var(--accent);
 }
+.btn:hover:not(.disabled),
+.btn:focus-visible:not(.disabled) {
+  /* 색을 뒤집지 않는다. 떠오르는 것만으로 충분하고, 뒤집으면 노랑이 사라져 어디였는지 놓친다 */
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+/* 보조는 테두리만. 주 버튼 옆에서 조용해야 둘의 무게가 갈린다 */
 .secondary {
   background: transparent;
-  color: var(--text);
-  --press-shadow: var(--raise);
+  color: var(--text-2);
+  border: 2px solid var(--line);
   font-size: var(--fs-body);
-  padding: 0 18px;
+  padding: 0 20px;
+  height: 46px;
 }
-.secondary:hover:not(.disabled) {
-  background: var(--raise);
-  color: var(--accent);
-  border-color: var(--line);
+.secondary:hover:not(.disabled),
+.secondary:focus-visible:not(.disabled) {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--text-2);
 }
 .disabled {
   color: var(--text-3);

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
+import { useAccountStore } from '@/stores/account'
+import type { Track } from '@/services/account'
+
+const TRACK_LABEL = { company: '회사', admission: '대입', both: '대입·회사' } as const
 
 /** 카드 캐릭터 배율: 92 × 2 = 184px(정수배 — 픽셀이 고르게) */
 const PICKER_SCALE = 2
@@ -15,12 +19,29 @@ const PICKER_SCALE = 2
  */
 const iv = useInterviewerStore()
 const model = useModelStore()
+const account = useAccountStore()
+const emit = defineEmits<{ 'need-premium': []; 'track-change': [Track | null] }>()
 const cards = ref<HTMLButtonElement[]>([])
+/** 벤만 쓴다 — 둘 다 보기 때문에 고를 때 정한다 */
+const chosenTrack = ref<Track | null>(null)
 onMounted(() => void iv.probeSprites())
 
+/** 티켓이 있어야 쓸 수 있다. **등급이 아니라 티켓 수**다 — 10장을 다 쓰면 다시 사야 한다 */
+const canUsePremium = computed(() => account.signedIn && account.tickets > 0)
+
 function pick(id: InterviewerId) {
+  const who = INTERVIEWERS.find((p) => p.id === id)
+  // 막는 게 아니라 길을 여는 버튼이다 — 흐리게 하지 않고, 누르면 요금제로 보낸다
+  if (who?.premium && !canUsePremium.value) return emit('need-premium')
+  chosenTrack.value = null
+  emit('track-change', null)
   void model.chooseInterviewer(id)
   void iv.preview(id)
+}
+
+function pickTrack(t: Track) {
+  chosenTrack.value = t
+  emit('track-change', t)
 }
 function onKey(e: KeyboardEvent) {
   const dir =
@@ -69,9 +90,32 @@ const sheet = (id: InterviewerId) => {
           :scale="PICKER_SCALE"
           :fps="8"
         />
-        <span class="name">{{ p.name }}</span>
-        <span class="tagline mono">{{ p.tagline }}</span>
-        <PixelTag v-if="iv.id === p.id" tone="ok">선택됨</PixelTag>
+        <span class="name">{{ p.displayName }}</span>
+        <span class="tagline mono">{{ p.name }}</span>
+        <span class="mono trk" :class="p.track ?? 'both'">{{
+          TRACK_LABEL[p.track ?? 'both']
+        }}</span>
+        <span v-if="p.premium" class="mono tix" :class="{ lit: canUsePremium }">
+          <i aria-hidden="true" />{{ account.signedIn ? `티켓 ${account.tickets}장` : '프리미엄' }}
+        </span>
+        <PixelTag v-else-if="iv.id === p.id" tone="ok">선택됨</PixelTag>
+        <!-- 모서리 리본 — CSS로 그린다. 에셋을 새로 뽑지 않는다 -->
+        <span v-if="p.premium" class="ribbon" aria-hidden="true"><i /><b>P</b></span>
+      </button>
+    </div>
+    <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다 -->
+    <div v-if="iv.current?.track === null" class="track" data-test="track-pick">
+      <span class="mono q">어느 면접으로 볼까요?</span>
+      <button
+        v-for="t in ['admission', 'company'] as const"
+        :key="t"
+        type="button"
+        class="mono tbtn"
+        :class="{ on: chosenTrack === t }"
+        :data-test="`track-${t}`"
+        @click="pickTrack(t)"
+      >
+        {{ TRACK_LABEL[t] }}
       </button>
     </div>
     <p v-if="iv.previewFailed" class="mono err" data-test="preview-error">
@@ -107,7 +151,103 @@ const sheet = (id: InterviewerId) => {
     grid-template-columns: auto;
   }
 }
+/* 모서리 리본 — 카드 안쪽에 머물러 여백을 먹지 않는다 */
+.ribbon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ribbon i {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-top: 46px solid var(--accent);
+  border-left: 46px solid transparent;
+}
+.ribbon b {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  font-family: var(--font-display);
+  font-size: var(--fs-meta);
+  color: var(--bg);
+  line-height: 1;
+}
+.trk {
+  font-size: var(--fs-meta);
+  border: 2px solid var(--raise);
+  padding: 2px var(--sp-2);
+  color: var(--text-3);
+}
+.trk.company {
+  border-color: var(--line);
+  color: var(--text-2);
+}
+.trk.admission {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.trk.both {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* 티켓 램프 — 요금 카드와 같은 어법 */
+.tix {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-meta);
+  border: 2px solid var(--off);
+  color: var(--text-3);
+  padding: 2px var(--sp-2);
+}
+.tix i {
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentcolor;
+  display: block;
+}
+.tix.lit {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tix.lit i {
+  background: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+}
+.track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  border: 2px solid var(--accent);
+  padding: var(--sp-3) var(--sp-4);
+}
+.track .q {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.tbtn {
+  font-size: var(--fs-label);
+  background: none;
+  color: var(--text-2);
+  border: 2px solid var(--line);
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+}
+.tbtn.on {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
 .card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -120,8 +260,8 @@ const sheet = (id: InterviewerId) => {
   box-shadow: 4px 4px 0 var(--press-shadow);
   cursor: pointer;
   transition:
-    transform 120ms steps(2),
-    opacity 120ms steps(2);
+    transform var(--dur-1) var(--ease),
+    opacity var(--dur-1) var(--ease);
 }
 .card.selected {
   border-color: var(--accent);

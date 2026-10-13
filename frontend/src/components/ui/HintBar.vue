@@ -98,7 +98,7 @@ function dismiss(key: string) {
   padding: var(--sp-4) var(--sp-5);
   background: var(--win);
   border: var(--win-border);
-  box-shadow: var(--win-inner);
+  box-shadow: var(--win-shadow);
 }
 .text {
   margin: 0;
@@ -135,8 +135,8 @@ button:focus-visible {
 .hint-enter-active,
 .hint-leave-active {
   transition:
-    opacity 160ms steps(4),
-    transform 160ms steps(4);
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
 }
 .hint-enter-from,
 .hint-leave-to {

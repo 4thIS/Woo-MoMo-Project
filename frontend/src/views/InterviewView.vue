@@ -77,7 +77,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :warning="s.ttsWarning ?? ''"
         :center-sprites="iv.spritesFor(s.sessionInterviewer.id)"
         :side-sprites="iv.sideSprites"
-        :interviewer-name="s.sessionInterviewer.name"
+        :interviewer-name="s.sessionInterviewer.displayName"
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />
@@ -117,6 +117,12 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
             다시 물어보기
           </PixelButton>
         </p>
+        <p v-if="s.recordingOn" class="mono note rec" data-test="rec">
+          <span class="dot" aria-hidden="true" />이 면접의 답변은 녹음되어 보관함에 함께 남습니다.
+        </p>
+        <p v-else-if="s.recordingWarning" class="mono note" data-test="rec-warn">
+          {{ s.recordingWarning }}
+        </p>
         <AnswerInput
           :generating="s.generating"
           :disabled="inputDisabled"
@@ -131,6 +137,17 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
 </template>
 
 <style scoped>
+.rec {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rec .dot {
+  width: 8px;
+  height: 8px;
+  background: var(--danger);
+  border-radius: 50%;
+}
 .interview {
   height: 100vh;
   display: grid;
