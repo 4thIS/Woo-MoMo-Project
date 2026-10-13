@@ -15,11 +15,13 @@ import SpeechText from '@/components/ui/SpeechText.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { useModalStore } from '@/stores/modal'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 
 const model = useModelStore()
 const interview = useInterviewStore()
 const iv = useInterviewerStore()
+const modal = useModalStore()
 
 /* 히어로 페이드: 스크롤 진행률 0→1 (스크롤 컨테이너는 .snap-root인 루트 요소) */
 const root = ref<HTMLElement | null>(null)
@@ -176,7 +178,7 @@ function startDownload() {
             <SpeechText
               text="반갑습니다. 저희 넷 중 한 명이 여러분의 이력서를 읽고 질문 다섯 개를 준비합니다. 카드를 누르면 목소리를 들어 볼 수 있어요. 끝나면 점수 대신 문항별 피드백을 드리겠습니다."
             />
-            <InterviewerPicker />
+            <InterviewerPicker @need-premium="modal.show('premium')" />
             <p class="note">
               단, 저희는 서버가 아니라 이 브라우저 안에서 움직입니다. 그래서 처음 한 번은 몸(모델
               파일)을 내려받아야 합니다.

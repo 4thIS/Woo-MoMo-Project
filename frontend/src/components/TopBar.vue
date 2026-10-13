@@ -6,24 +6,23 @@
  *
  * "한 번에 하나만 연다"는 규칙을 여기서 지킨다 — 모달 상태가 이 하나뿐이다.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
+import { useModalStore } from '@/stores/modal'
 import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
 import PixelModal from '@/components/ui/PixelModal.vue'
 
-type Which = 'login' | 'premium' | 'me' | 'archive'
-
 const account = useAccountStore()
 const interview = useInterviewStore()
-const open = ref<Which | null>(null)
+const modal = useModalStore()
 const shown = computed(() => interview.phase !== 'interview')
 
 // 바가 사라지는 화면으로 넘어가면 열려 있던 모달도 거둔다
 watch(shown, (on) => {
-  if (!on) open.value = null
+  if (!on) modal.close()
 })
 
 onMounted(() => void account.load())
@@ -39,7 +38,7 @@ onMounted(() => void account.load())
           class="mono link press premium"
           :class="{ lit: account.isPremium }"
           data-test="top-premium"
-          @click="open = 'premium'"
+          @click="modal.show('premium')"
         >
           <span class="led" aria-hidden="true" />
           모모 프리미엄
@@ -48,11 +47,11 @@ onMounted(() => void account.load())
           type="button"
           class="mono link press"
           data-test="top-archive"
-          @click="open = 'archive'"
+          @click="modal.show('archive')"
         >
           보관함
         </button>
-        <button type="button" class="mono link press" data-test="top-me" @click="open = 'me'">
+        <button type="button" class="mono link press" data-test="top-me" @click="modal.show('me')">
           내정보
         </button>
       </template>
@@ -61,18 +60,22 @@ onMounted(() => void account.load())
         type="button"
         class="display cta press"
         data-test="top-login"
-        @click="open = 'login'"
+        @click="modal.show('login')"
       >
         로그인
       </button>
     </div>
   </header>
 
-  <AuthModal :open="open === 'login'" @close="open = null" />
-  <PremiumModal :open="open === 'premium'" @close="open = null" @need-login="open = 'login'" />
-  <MeModal :open="open === 'me'" @close="open = null" />
+  <AuthModal :open="modal.open === 'login'" @close="modal.close()" />
+  <PremiumModal
+    :open="modal.open === 'premium'"
+    @close="modal.close()"
+    @need-login="modal.show('login')"
+  />
+  <MeModal :open="modal.open === 'me'" @close="modal.close()" />
   <!-- 보관함은 2/2 계획에서 채운다 -->
-  <PixelModal :open="open === 'archive'" title="보관함" @close="open = null" />
+  <PixelModal :open="modal.open === 'archive'" title="보관함" @close="modal.close()" />
 </template>
 
 <style scoped>

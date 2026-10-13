@@ -6,6 +6,7 @@ import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { useModalStore } from '@/stores/modal'
 import { useHintsStore } from '@/stores/hints'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
@@ -23,6 +24,7 @@ const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
 useSectionWheel(root)
 const iv = useInterviewerStore()
+const modal = useModalStore()
 const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
@@ -420,7 +422,7 @@ async function clearAndRetry() {
             도움말 다시 보기
           </button>
         </div>
-        <InterviewerPicker v-if="pickerOpen && !busy" />
+        <InterviewerPicker v-if="pickerOpen && !busy" @need-premium="modal.show('premium')" />
         <div class="start-row">
           <ul class="mono checklist">
             <li>
