@@ -6,6 +6,7 @@ import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
+import { useModalStore } from '@/stores/modal'
 import { useHintsStore } from '@/stores/hints'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
@@ -23,11 +24,31 @@ const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
 useSectionWheel(root)
 const iv = useInterviewerStore()
+const modal = useModalStore()
+
+/** 대입 입력 — 트랙이 대입일 때만 쓴다 */
+type AdField = 'name' | 'university' | 'department'
+const setAd = (k: AdField, v: string) => interview.setAdmission({ [k]: v })
+const setAge = (v: string) => {
+  const n = Number(v)
+  interview.setAdmission({ age: v.trim() && Number.isFinite(n) ? n : null })
+}
+/** 2단계에서 받는 긴 글의 이름 — 트랙에 따라 다르다 */
+const longDocLabel = computed(() => (interview.track === 'admission' ? '자기소개서' : '이력서'))
+/** 1단계(지원 정보)가 찼는가 — 트랙마다 보는 칸이 다르다 */
+const infoDone = computed(() => {
+  const p = interview.profile
+  return interview.track === 'admission'
+    ? Boolean(p.name.trim() && p.age !== null && p.university.trim() && p.department.trim())
+    : interview.profileDone
+})
 const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 // 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
-const interviewerName = computed(() => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).name)
+const interviewerName = computed(
+  () => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).displayName,
+)
 
 const fieldItems = (Object.keys(FIELD_LABELS) as Field[]).map((value) => ({
   value,
@@ -298,34 +319,98 @@ async function clearAndRetry() {
 
           <Transition name="fade" mode="out-in">
             <div v-if="step === 1" key="profile" class="step" data-test="step-profile">
-              <div class="field">
-                <span class="mono label">기업 분야</span>
-                <ChoiceMenu
-                  :items="fieldItems"
-                  :model-value="interview.profile.field"
-                  direction="horizontal"
-                  aria-label="기업 분야"
-                  @update:model-value="onField"
-                />
-              </div>
-              <div class="field">
-                <label class="mono label" for="job">지원 직무</label>
-                <input
-                  id="job"
-                  data-test="job"
-                  class="input"
-                  :value="interview.profile.job"
-                  maxlength="40"
-                  placeholder="예: 백엔드 개발자"
-                  @input="interview.setJob(($event.target as HTMLInputElement).value)"
-                  @keydown.enter="tryAdvance"
-                  @blur="tryAdvance"
-                />
-                <span class="mono hint"
-                  >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산 관리
-                  — 입력을 마치면 이력서 단계로 넘어갑니다</span
-                >
-              </div>
+              <!-- 트랙이 보는 칸만 그린다. 2단계 구조는 그대로 두고 안의 칸만 바뀐다 -->
+              <template v-if="interview.track === 'admission'">
+                <div class="two-up">
+                  <div class="field">
+                    <label class="mono label" for="ad-name">이름</label>
+                    <input
+                      id="ad-name"
+                      data-test="ad-name"
+                      class="input"
+                      maxlength="20"
+                      :value="interview.profile.name"
+                      placeholder="예: 홍길동"
+                      @input="setAd('name', ($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="mono label" for="ad-age">나이</label>
+                    <input
+                      id="ad-age"
+                      data-test="ad-age"
+                      class="input"
+                      type="number"
+                      min="10"
+                      max="99"
+                      :value="interview.profile.age ?? ''"
+                      placeholder="예: 19"
+                      @input="setAge(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="mono label" for="ad-univ">지원 대학</label>
+                  <input
+                    id="ad-univ"
+                    data-test="ad-university"
+                    class="input"
+                    maxlength="40"
+                    :value="interview.profile.university"
+                    placeholder="예: 한국대학교"
+                    @input="setAd('university', ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="field">
+                  <label class="mono label" for="ad-dept">지원 학과</label>
+                  <input
+                    id="ad-dept"
+                    data-test="ad-department"
+                    class="input"
+                    maxlength="40"
+                    :value="interview.profile.department"
+                    placeholder="예: 컴퓨터공학과"
+                    @input="setAd('department', ($event.target as HTMLInputElement).value)"
+                    @keydown.enter="tryAdvance"
+                    @blur="tryAdvance"
+                  />
+                  <span class="mono hint"
+                    >면접관이 질문의 방향을 잡는 데 씁니다 — 입력을 마치면 자기소개서 단계로
+                    넘어갑니다</span
+                  >
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="field">
+                  <span class="mono label">기업 분야</span>
+                  <ChoiceMenu
+                    :items="fieldItems"
+                    :model-value="interview.profile.field"
+                    direction="horizontal"
+                    aria-label="기업 분야"
+                    @update:model-value="onField"
+                  />
+                </div>
+                <div class="field">
+                  <label class="mono label" for="job">지원 직무</label>
+                  <input
+                    id="job"
+                    data-test="job"
+                    class="input"
+                    :value="interview.profile.job"
+                    maxlength="40"
+                    placeholder="예: 백엔드 개발자"
+                    @input="interview.setJob(($event.target as HTMLInputElement).value)"
+                    @keydown.enter="tryAdvance"
+                    @blur="tryAdvance"
+                  />
+                  <span class="mono hint"
+                    >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산
+                    관리 — 입력을 마치면 이력서 단계로 넘어갑니다</span
+                  >
+                </div>
+              </template>
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
@@ -339,7 +424,7 @@ async function clearAndRetry() {
               >
                 <DocIcon />
                 <span class="mono name">{{
-                  interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
+                  interview.resumeName ?? `${longDocLabel} PDF를 끌어다 놓거나 클릭해서 선택`
                 }}</span>
                 <span class="mono pick">{{
                   interview.resumeName && interview.resumeName !== FORM_NAME
@@ -362,8 +447,8 @@ async function clearAndRetry() {
               >
                 {{
                   interview.resumeName === FORM_NAME
-                    ? '간단 이력서 수정'
-                    : 'PDF가 없다면 간단 이력서 작성'
+                    ? `간단 ${longDocLabel} 수정`
+                    : `PDF가 없다면 간단 ${longDocLabel} 작성`
                 }}
               </PixelButton>
               <ResumeForm v-show="formOpen" @done="onFormDone" />
@@ -373,15 +458,15 @@ async function clearAndRetry() {
               </div>
               <template v-if="tooShort && !formOpen">
                 <p class="mono warn">
-                  글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 이력서 내용을 직접
-                  붙여넣어 주세요.
+                  글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을
+                  직접 붙여넣어 주세요.
                 </p>
                 <textarea
                   v-model="pasted"
                   data-test="paste"
                   class="input paste"
                   rows="6"
-                  placeholder="이력서 내용을 붙여넣기"
+                  :placeholder="`${longDocLabel} 내용을 붙여넣기`"
                   @input="usePasted"
                   @blur="usePasted"
                 />
@@ -418,15 +503,16 @@ async function clearAndRetry() {
             도움말 다시 보기
           </button>
         </div>
-        <InterviewerPicker v-if="pickerOpen && !busy" />
+        <InterviewerPicker v-if="pickerOpen && !busy" @need-premium="modal.show('premium')" />
         <div class="start-row">
           <ul class="mono checklist">
             <li>
-              <i :class="{ ok: interview.profileDone, wait: !interview.profileDone }" /> 분야 · 직무
-              입력
+              <i :class="{ ok: infoDone, wait: !infoDone }" />
+              {{ interview.track === 'admission' ? '이름 · 학교 · 학과 입력' : '분야 · 직무 입력' }}
             </li>
             <li>
-              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" /> 이력서 읽기
+              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" />
+              {{ longDocLabel }} 읽기
             </li>
             <li>
               <i
@@ -495,6 +581,17 @@ async function clearAndRetry() {
 </template>
 
 <style scoped>
+/* 이름·나이는 짧아 나란히 둔다 */
+.two-up {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--sp-4);
+}
+@media (max-width: 560px) {
+  .two-up {
+    grid-template-columns: 1fr;
+  }
+}
 .prepare {
   scroll-padding-top: 72px; /* 고정 상단바 아래에 섹션이 맞춰진다 */
 }

@@ -17,8 +17,12 @@ import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
+import { canStartWith, trackOf } from '@/utils/track'
+import type { ArchiveDraft, Track } from '@/services/account'
+import { useAccountStore } from './account'
 import { parseReport, type ReportItem } from '@/utils/reportParser'
 import { synthesize } from '@/services/tts'
+import { startRecording, type Recorder } from '@/services/recorder'
 import { playClip, setMuted } from '@/services/audio'
 
 export type Phase = 'landing' | 'prepare' | 'interview' | 'report'
@@ -40,6 +44,9 @@ export const SYNTH_TIMEOUT_MS = 15_000
 export const PLAY_GRACE_MS = 1_000
 const REVEAL_TICK_MS = 50
 export const TTS_WARNING = '음성을 만들지 못했습니다'
+/** 한 면접의 녹음 합계 상한. 라즈베리파이 디스크를 지키는 값이다 — cw가 정한 값이 오면 그 값으로 */
+export const RECORDING_MAX_BYTES = 30 * 1024 * 1024
+export const RECORDING_FULL = '녹음 용량이 차서 이후 답변은 녹음되지 않습니다'
 const MUTED_KEY = 'momo.muted'
 function loadMuted(): boolean {
   try {
@@ -57,6 +64,8 @@ export interface ChatMessage {
 // 엔진 컨텍스트 상한 − maxOutputTokens(리포트/응답 최대 생성량) − 여유
 export const TOKEN_LIMIT = MAX_NUM_TOKENS - 1024 - 512
 
+let recorder: Recorder | null = null
+let recordedBytes = 0
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
 let abortCtl: AbortController | null = null
 let inflight: Promise<void> | null = null // 진행 중 generate — abort()/finish()가 정리 완료를 기다리는 데 쓴다
@@ -72,7 +81,18 @@ let speakText = '' // 재생 중인 발화 전문 — 중단 시 이걸로 revea
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
     phase: 'landing' as Phase,
-    profile: { field: null as Field | null, job: '' },
+    /** 트랙이 보는 칸만 쓴다. 유니온으로 가르면 화면 분기만 늘어난다 —
+     *  어느 칸을 볼지는 canStartWith가 트랙별로 안다 */
+    profile: {
+      field: null as Field | null,
+      job: '',
+      name: '',
+      age: null as number | null,
+      university: '',
+      department: '',
+    },
+    /** 벤처럼 둘 다 보는 면접관에서만 쓴다. 다른 면접관은 자기 트랙이 이긴다 */
+    chosenTrack: null as Track | null,
     resumeText: '',
     resumeName: null as string | null,
     fallbackQuestions: [] as string[],
@@ -95,12 +115,33 @@ export const useInterviewStore = defineStore('interview', {
     endedAt: null as number | null,
     /** 이 면접의 면접관 — start()에서 고정(spec 3.5) */
     interviewerId: null as InterviewerId | null,
+    /** 답변별 녹음. 프리미엄 면접에서만 찬다 */
+    recordings: [] as { turn: number; url: string }[],
+    /** 지금 녹음 중인가. 화면이 "몰래 녹음하지 않는다"를 보여 주는 근거 */
+    recordingOn: false,
+    /** 상한에 걸렸을 때만 채운다 — 녹음이 없는 것과 못 하는 것은 다르다 */
+    recordingWarning: null as string | null,
+    /** 보관함에 남았나. 비로그인·저장 실패는 둘 다 false — 화면이 각각 다르게 말한다 */
+    archiveSaved: false,
+    /** 한도에 밀려 사라진 기록의 id. 말해 주지 않으면 사용자는 없어진 걸 모른다 */
+    archiveEvicted: [] as string[],
   }),
   getters: {
     profileDone: (s) => s.profile.field !== null && s.profile.job.trim().length > 0,
+    /** 고른 면접관이 정한다 — 스토어에 따로 들고 있지 않는다.
+     *  선택이 없으면 기본 면접관으로 떨어진다. 칩·프롬프트가 이미 그렇게 하고 있어
+     *  여기서만 null을 내면 "면접관은 데이빗인데 트랙은 없음"이 된다 */
+    track(): Track | null {
+      return trackOf(useInterviewerStore().id ?? DEFAULT_INTERVIEWER, this.chosenTrack)
+    },
     resumeDone: (s) => s.resumeText.length >= RESUME_MIN,
     canStart(): boolean {
-      return useModelStore().ready && this.profileDone && this.resumeDone
+      return canStartWith({
+        track: this.track,
+        modelReady: useModelStore().ready,
+        resumeDone: this.resumeDone,
+        ...this.profile,
+      })
     },
     startBlockReason(): string | null {
       if (this.canStart) return null
@@ -134,6 +175,16 @@ export const useInterviewStore = defineStore('interview', {
     },
     setJob(job: string) {
       this.profile.job = job.slice(0, 40)
+    },
+    /** 벤에서 고른 트랙. 다른 면접관으로 바꾸면 비운다 */
+    setTrack(t: Track | null) {
+      this.chosenTrack = t
+    },
+    /** 대입 입력 네 칸 */
+    setAdmission(
+      v: Partial<Pick<typeof this.profile, 'name' | 'age' | 'university' | 'department'>>,
+    ) {
+      Object.assign(this.profile, v)
     },
     setResume(name: string, rawText: string) {
       this.resumeName = name
@@ -177,6 +228,10 @@ export const useInterviewStore = defineStore('interview', {
         this.startedAt = Date.now()
         this.endedAt = null
         this.phase = 'interview'
+        // 녹음은 프리미엄 면접에서만. 거절해도 null이 올 뿐 면접은 그대로 간다
+        recorder = chosen.premium ? await startRecording() : null
+        this.recordingOn = recorder !== null
+        recordedBytes = 0
         await this.generate(KICKOFF)
       } finally {
         starting = false
@@ -187,6 +242,9 @@ export const useInterviewStore = defineStore('interview', {
       const t = text.trim()
       if (!t || this.interviewerTurn || this.ended) return
       this.messages.push({ role: 'user', text: t, at: Date.now() })
+      // 녹음이 없으면 await를 끼우지 않는다 — generate 시작이 한 틱 밀리면
+      // 진행 중 생성과 finish의 중단 순서가 어긋난다
+      if (recorder) await this.keepClip()
       this.reactPending = isGoodAnswer(t)
       await this.generate(t)
     },
@@ -248,6 +306,8 @@ export const useInterviewStore = defineStore('interview', {
         else
           this.revealed = [...this.messages].reverse().find((m) => m.role === 'model')?.text ?? ''
         this.stage = 'waiting'
+        // 면접관이 말한 구간은 녹음에서 버린다 — 다음 조각이 지원자 답변만 담게
+        if (recorder) await recorder.cut()
         await this.refreshTokens()
       }
       inflight = run()
@@ -374,6 +434,8 @@ export const useInterviewStore = defineStore('interview', {
       // abort()가 항상 inflight를 기다리므로 generate()의 꼬리(refreshTokens 등)와
       // 리포트 send가 겹치지 않는다
       await this.abort()
+      // 마지막 조각(면접관 인사말)은 버리고 마이크를 놓는다. 저장 전에 놓아야 hasRecording이 맞다
+      await this.releaseMic()
       // 프롬프트 override(파인튜닝 모델)가 있으면 페르소나 미적용 — 리포트 말투도 뺀다(spec 5.1·7절)
       const override = useModelStore().manifest?.systemPromptOverride
       try {
@@ -384,9 +446,71 @@ export const useInterviewStore = defineStore('interview', {
         this.reportRaw = raw
         this.report = parseReport(raw)
         this.reportStatus = 'done'
+        await this.archiveNow()
       } catch (e) {
         this.genError = e instanceof Error ? e.message : String(e)
         this.reportStatus = 'error'
+      }
+    },
+
+    /** 방금 답변 구간을 끊어 보관한다. 상한을 넘으면 마이크를 놓고 알린다 */
+    async keepClip() {
+      const blob = await recorder?.cut()
+      if (!blob) return
+      recordedBytes += blob.size
+      if (recordedBytes > RECORDING_MAX_BYTES) {
+        this.recordingWarning = RECORDING_FULL
+        await this.releaseMic()
+      }
+      // 지원자 답변 순번 — 조각이 비어 건너뛰어도 순번이 어긋나지 않게 메시지에서 센다
+      const turn = this.messages.filter((m) => m.role === 'user').length - 1
+      // ponytail: 목업은 Blob URL이라 새로고침하면 끊긴다. 서버 업로드 계약이 오면 그 url로 바뀐다
+      this.recordings.push({ turn, url: URL.createObjectURL(blob) })
+    },
+
+    async releaseMic() {
+      const r = recorder
+      recorder = null
+      this.recordingOn = false
+      await r?.stop()
+    },
+
+    /** 리포트가 **다 나온 뒤** 한 번만. 중간에 저장하면 반쪽짜리가 남는다.
+     *  비로그인은 저장하지 않는다 — 기기에만 남기는 것이 이 서비스의 약속이다 */
+    async archiveNow() {
+      if (this.archiveSaved) return
+      const account = useAccountStore()
+      if (!account.signedIn) return
+      const r = await account.saveArchive(this.archiveDraft())
+      this.archiveSaved = r !== null
+      this.archiveEvicted = r?.evicted ?? []
+    },
+
+    /** 스토어가 이미 가진 값으로 보관할 한 건을 만든다. 트랙이 보는 칸만 담는다 */
+    archiveDraft(): ArchiveDraft {
+      const iv = this.sessionInterviewer
+      const track = this.track ?? 'company'
+      const p = this.profile
+      return {
+        interviewerId: iv.id,
+        premium: iv.premium,
+        track,
+        startedAt: new Date(this.startedAt ?? Date.now()).toISOString(),
+        endedAt: new Date(this.endedAt ?? Date.now()).toISOString(),
+        questionCount: this.report?.length ?? 0,
+        hasRecording: this.recordings.length > 0,
+        ...(track === 'company'
+          ? { field: p.field ?? undefined, job: p.job }
+          : {
+              name: p.name,
+              age: p.age ?? undefined,
+              university: p.university,
+              department: p.department,
+            }),
+        messages: this.messages.map((m) => ({ role: m.role, text: m.text, at: m.at })),
+        report: this.report ?? [],
+        reportRaw: this.reportRaw,
+        recordings: [...this.recordings],
       }
     },
 
@@ -410,13 +534,21 @@ export const useInterviewStore = defineStore('interview', {
       this.report = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = { field: null, job: '' }
+      this.profile = { field: null, job: '', name: '', age: null, university: '', department: '' }
+      this.chosenTrack = null
       this.resumeText = ''
       this.resumeName = null
       this.fallbackQuestions = []
       this.startedAt = null
       this.endedAt = null
       this.interviewerId = null
+      this.archiveSaved = false
+      this.archiveEvicted = []
+      await this.releaseMic()
+      recordedBytes = 0
+      // ponytail: Blob URL은 거두지 않는다 — 보관함에 남긴 기록이 아직 가리키고 있다
+      this.recordings = []
+      this.recordingWarning = null
       this.phase = 'prepare'
     },
   },

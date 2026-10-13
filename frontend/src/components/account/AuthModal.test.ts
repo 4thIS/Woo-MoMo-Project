@@ -1,0 +1,200 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import AuthModal from './AuthModal.vue'
+import { useAccountStore, setAccountApi } from '@/stores/account'
+import { makeMockAccount } from '@/services/accountMock'
+
+/** Teleport로 body에 붙으므로 끝나면 반드시 거둔다 — 안 그러면 다음 테스트의 querySelector가
+ *  앞 테스트의 모달을 집는다 */
+let mounted: ReturnType<typeof mount> | null = null
+const modal = () => {
+  mounted = mount(AuthModal, { props: { open: true }, attachTo: document.body })
+  return mounted as ReturnType<typeof mount<typeof AuthModal>>
+}
+
+afterEach(() => {
+  mounted?.unmount()
+  mounted = null
+})
+
+beforeEach(() => {
+  localStorage.clear()
+  document.body.innerHTML = ''
+  setActivePinia(createPinia())
+  setAccountApi(makeMockAccount({ delayMs: 0 }))
+})
+
+const q = <T extends Element = HTMLElement>(key: string) =>
+  document.querySelector<T>(`[data-test=${key}]`)!
+/** 목업은 delayMs 0이라도 setTimeout을 거친다. signIn처럼 서비스를 두 번 부르는 흐름은
+ *  타이머도 두 번이라 한 바퀴로는 안 끝난다 — 넉넉히 돌린다 */
+const settle = async () => {
+  for (let i = 0; i < 5; i++) {
+    await new Promise((r) => setTimeout(r, 0))
+    await flushPromises()
+  }
+}
+const text = (key: string) => q(key).textContent ?? ''
+const set = async (key: string, value: string) => {
+  const el = q<HTMLInputElement>(key)
+  el.value = value
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  await settle()
+}
+const click = async (key: string) => {
+  q<HTMLButtonElement>(key).click()
+  await settle()
+}
+
+async function fill(email: string, pw: string, pw2?: string) {
+  await set('auth-email', email)
+  await set('auth-password', pw)
+  if (pw2 !== undefined) await set('auth-password2', pw2)
+}
+
+describe('AuthModal — 탭', () => {
+  it('기본은 로그인 탭이다 — 비밀번호 확인이 없다', () => {
+    modal()
+    expect(document.querySelector('[data-test=auth-password2]')).toBeNull()
+  })
+
+  it('회원가입 탭에는 비밀번호 확인과 저장 동의가 있다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=auth-password2]')).not.toBeNull()
+    expect(text('auth-consent')).toContain('서버에 저장')
+    expect(text('auth-consent')).toContain('로그인하지 않으면')
+  })
+
+  it('탭을 바꾸면 오류가 지워진다', async () => {
+    modal()
+    await fill('none@b.com', 'pw123456')
+    await click('auth-submit')
+    expect(document.querySelector('[data-test=auth-error]')).not.toBeNull()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=auth-error]')).toBeNull()
+  })
+})
+
+describe('AuthModal — 회원가입', () => {
+  it('가입하면 로그인되고 닫힌다', async () => {
+    const w = modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-submit')
+    expect(useAccountStore().signedIn).toBe(true)
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+
+  it('비밀번호 확인이 다르면 보내지 않는다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'different')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('비밀번호가 서로 다릅니다')
+    expect(useAccountStore().signedIn).toBe(false)
+  })
+
+  it('짧은 비밀번호는 서비스가 거른다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'short', 'short')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('8자 이상')
+  })
+
+  it('이미 쓰는 이메일이면 알려 준다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    await a.signOut()
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('이미 가입된')
+  })
+
+  it('입력을 떠나면 중복을 미리 알려 준다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    await a.signOut()
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    q('auth-email').dispatchEvent(new Event('blur', { bubbles: true }))
+    await settle()
+    expect(text('auth-error')).toContain('이미 가입된')
+  })
+
+  it('로그인 탭에서는 중복을 미리 보지 않는다 — 가입 여부를 흘리지 않는다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    await a.signOut()
+    modal()
+    await set('auth-email', 'a@b.com')
+    q('auth-email').dispatchEvent(new Event('blur', { bubbles: true }))
+    await settle()
+    expect(document.querySelector('[data-test=auth-error]')).toBeNull()
+  })
+})
+
+describe('AuthModal — 로그인', () => {
+  it('로그인하면 닫힌다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    await a.signOut()
+    const w = modal()
+    await fill('a@b.com', 'pw123456')
+    await click('auth-submit')
+    expect(useAccountStore().signedIn).toBe(true)
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+
+  it('실패 문구는 계정 존재 여부를 흘리지 않는다', async () => {
+    modal()
+    await fill('none@b.com', 'pw123456')
+    await click('auth-submit')
+    expect(text('auth-error')).toBe('이메일 또는 비밀번호가 올바르지 않습니다')
+  })
+
+  it('구글로 계속하기도 로그인시킨다', async () => {
+    const w = modal()
+    await click('auth-google')
+    expect(useAccountStore().signedIn).toBe(true)
+    expect(w.emitted('close')).toHaveLength(1)
+  })
+})
+
+describe('AuthModal — 보내는 동안', () => {
+  it('버튼이 잠긴다', async () => {
+    setAccountApi(makeMockAccount({ delayMs: 20 }))
+    modal()
+    await fill('a@b.com', 'pw123456')
+    q<HTMLButtonElement>('auth-submit').click()
+    await flushPromises()
+    expect(q<HTMLButtonElement>('auth-submit').disabled).toBe(true)
+    await new Promise((r) => setTimeout(r, 30))
+    await flushPromises()
+  })
+
+  it('빈 칸이면 보내지 않는다', async () => {
+    modal()
+    await click('auth-submit')
+    expect(useAccountStore().loading).toBe(false)
+    expect(text('auth-error')).toContain('이메일과 비밀번호')
+  })
+})
+
+describe('AuthModal — 다시 열 때', () => {
+  it('닫았다 열면 입력과 오류가 비어 있다', async () => {
+    const w = modal()
+    await fill('none@b.com', 'pw123456')
+    await click('auth-submit')
+    expect(document.querySelector('[data-test=auth-error]')).not.toBeNull()
+    await w.setProps({ open: false })
+    await w.setProps({ open: true })
+    expect(document.querySelector('[data-test=auth-error]')).toBeNull()
+    expect(q<HTMLInputElement>('auth-email').value).toBe('')
+  })
+})

@@ -122,13 +122,13 @@ describe('stores/interviewer — 스프라이트 대체', () => {
     expect(s.spritesFor('m1')).toEqual(LEGACY_CENTER)
     expect(s.spritesFor('m2')).toEqual(interviewerById('m2')!.sprites) // 다른 면접관은 그대로
   })
-  it('spritesFor(null)은 기본 면접관(f3) 세트, 기본 면접관이 깨지면 LEGACY_CENTER', async () => {
+  it('spritesFor(null)은 기본 면접관(m1·데이빗) 세트, 기본 면접관이 깨지면 LEGACY_CENTER', async () => {
     const s = useInterviewerStore()
-    expect(s.spritesFor(null)).toEqual(interviewerById('f3')!.sprites)
-    vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/f3/center_idle.png'))
+    expect(s.spritesFor(null)).toEqual(interviewerById('m1')!.sprites)
+    vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/m1/center_idle.png'))
     await s.probeSprites()
     expect(s.spritesFor(null)).toEqual(LEGACY_CENTER)
-    expect(s.spritesFor('f3')).toEqual(LEGACY_CENTER)
+    expect(s.spritesFor('m1')).toEqual(LEGACY_CENTER)
   })
   it('배석자 새 시트(sl·sr) 중 하나라도 안 뜨면 좌우 모두 기존 left_*·right_*(LEGACY_SIDE)', async () => {
     vi.mocked(probeImage).mockImplementation(async (u) => !u.endsWith('/sr/right_pentap.png'))

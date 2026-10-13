@@ -214,7 +214,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   position: relative;
   background: var(--win);
   border: var(--win-border);
-  box-shadow: var(--win-inner);
+  box-shadow: var(--win-shadow);
   height: 100%;
   overflow: hidden;
   display: flex;
