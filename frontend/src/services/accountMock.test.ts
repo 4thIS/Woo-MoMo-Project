@@ -222,7 +222,7 @@ describe('mockAccount — 보관함', () => {
 
   it('목록은 가볍다 — 대화·리포트는 담기지 않는다', async () => {
     await api.saveArchive(draft())
-    const row = (await api.listArchive())[0] as Record<string, unknown>
+    const row = (await api.listArchive())[0] as unknown as Record<string, unknown>
     expect(row.messages).toBeUndefined()
     expect(row.report).toBeUndefined()
   })

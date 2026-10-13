@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
-import { clip, reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
+import { clip, reportHeader, reportToText } from '@/utils/reportParser'
 import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
 import { answersForReport } from '@/utils/reportAnswers'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
+import ReportCards from '@/components/report/ReportCards.vue'
 
 const s = useInterviewStore()
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
@@ -112,28 +113,7 @@ function printReport() {
       <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
     </PixelWindow>
 
-    <template v-else-if="s.report">
-      <PixelWindow
-        v-for="(it, i) in s.report"
-        :key="i"
-        :title="`Q${i + 1}. ${it.question}`"
-        data-test="card"
-      >
-        <dl class="kv">
-          <dt class="mono">내 답변</dt>
-          <dd class="answers" data-test="answers">
-            <p v-for="(a, j) in answers[i]" :key="j">{{ a }}</p>
-            <p v-if="!answers[i]?.length" class="none">(답변 없음)</p>
-          </dd>
-          <dt class="mono">피드백</dt>
-          <dd>
-            <template v-for="(p, j) in splitEmphasis(it.feedback)" :key="j">
-              <span :class="{ strong: p.strong }">{{ p.text }}</span>
-            </template>
-          </dd>
-        </dl>
-      </PixelWindow>
-    </template>
+    <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
 
     <PixelWindow v-else title="리포트 원문" data-test="raw">
       <pre class="mono raw">{{ s.reportRaw }}</pre>
@@ -178,34 +158,6 @@ function printReport() {
   color: var(--text-3);
   font-size: var(--fs-meta);
   margin: 0;
-}
-.kv {
-  display: grid;
-  grid-template-columns: 80px 1fr;
-  gap: var(--sp-2) var(--sp-4);
-  margin: 0;
-}
-.answers p {
-  margin: 0;
-  white-space: pre-wrap; /* 지원자가 친 줄바꿈 그대로 */
-}
-.answers p + p {
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
-  border-top: 2px dashed var(--raise); /* 꼬리질문 답변 구분 */
-}
-.answers .none {
-  color: var(--text-3);
-}
-.kv dt {
-  color: var(--text-3);
-}
-.kv dd {
-  margin: 0;
-  line-height: 1.6;
-}
-.strong {
-  color: var(--accent);
 }
 /* .danger를 쓰지 않는 이유: scoped 규칙이 자식(PixelTag) 루트의 tone 클래스에도 걸려 태그 글자색을 덮어쓴다 */
 .err {
@@ -257,10 +209,6 @@ function printReport() {
   }
   .head h1 {
     font-size: var(--fs-h2);
-  }
-  .strong {
-    font-weight: 700;
-    text-decoration: underline;
   }
   /* 카드가 페이지 중간에서 잘리지 않게 */
   .report > * {
