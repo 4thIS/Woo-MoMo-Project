@@ -39,13 +39,30 @@ describe('TopBar — 등급별로 보이는 것', () => {
       expect(w.find(`[data-test=${k}]`).exists()).toBe(true)
   })
 
-  it('프리미엄이면 등급 표시가 붙는다', async () => {
+  it('프리미엄이면 램프에 불이 들어온다', async () => {
     const w = bar()
     const a = useAccountStore()
     await a.signUp('a@b.com', 'pw123456')
     await a.purchasePremium()
     await flushPromises()
-    expect(w.get('[data-test=top-premium]').text()).toContain('★')
+    expect(w.get('[data-test=top-premium]').classes()).toContain('lit')
+  })
+
+  it('프리미엄이 아니면 램프가 꺼져 있다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456')
+    await flushPromises()
+    expect(w.get('[data-test=top-premium]').classes()).not.toContain('lit')
+  })
+
+  it('프리미엄은 보관함 왼쪽에 놓인다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456')
+    await flushPromises()
+    const keys = [...w.element.querySelectorAll('[data-test^=top-]')].map(
+      (e) => (e as HTMLElement).dataset.test,
+    )
+    expect(keys).toEqual(['top-premium', 'top-archive', 'top-me'])
   })
 
   it('뜰 때 저장된 세션을 되찾는다', async () => {

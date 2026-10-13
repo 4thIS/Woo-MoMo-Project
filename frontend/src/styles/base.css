@@ -143,6 +143,13 @@ a:hover {
   box-shadow: none;
   transition: none;
 }
+/* 글자만 있는 버튼(.link)은 테두리가 없어 그림자를 받을 면이 없다.
+   떠오르는 대신 색만 바뀐다 — 안 그러면 글자 뒤에 검은 사각형이 생긴다 */
+.press.link:hover:not(:disabled):not(.disabled),
+.press.link:active:not(:disabled):not(.disabled) {
+  transform: none;
+  box-shadow: none;
+}
 @keyframes nudge {
   0%,
   49% {

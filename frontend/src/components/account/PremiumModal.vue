@@ -56,7 +56,7 @@ async function pay() {
 <template>
   <PixelModal
     :open="open"
-    :title="step === 'compare' ? undefined : '모모 프리미엄'"
+    :title="step === 'compare' ? undefined : '모모 프리미엄 요금제'"
     :chrome="step !== 'compare'"
     width="wide"
     @close="emit('close')"
@@ -64,7 +64,7 @@ async function pay() {
     <!-- 판을 뺀 비교 단계는 제목 줄을 직접 둔다 -->
     <template v-if="step === 'compare'" #head>
       <header class="bare-head">
-        <h2 class="display btitle">모모 프리미엄</h2>
+        <h2 class="display btitle">모모 프리미엄 요금제</h2>
         <button type="button" class="mono x" data-test="modal-close" @click="emit('close')">
           닫기 ✕
         </button>

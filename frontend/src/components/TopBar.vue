@@ -32,18 +32,18 @@ onMounted(() => void account.load())
 <template>
   <header v-if="shown" class="topbar" data-test="topbar">
     <div class="side">
-      <button
-        v-if="account.signedIn"
-        type="button"
-        class="mono link press"
-        data-test="top-premium"
-        @click="open = 'premium'"
-      >
-        {{ account.isPremium ? '★ 모모 프리미엄' : '모모 프리미엄' }}
-      </button>
-    </div>
-    <div class="side">
       <template v-if="account.signedIn">
+        <!-- 램프가 지금 프리미엄인지 한눈에 알려 준다. 요금 카드의 램프와 같은 어법 -->
+        <button
+          type="button"
+          class="mono link press premium"
+          :class="{ lit: account.isPremium }"
+          data-test="top-premium"
+          @click="open = 'premium'"
+        >
+          <span class="led" aria-hidden="true" />
+          모모 프리미엄
+        </button>
         <button
           type="button"
           class="mono link press"
@@ -84,7 +84,7 @@ onMounted(() => void account.load())
   z-index: 40;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-6);
   pointer-events: none; /* 빈 자리가 아래 화면의 클릭을 막지 않게 */
@@ -106,6 +106,26 @@ onMounted(() => void account.load())
 .link:hover,
 .link:focus-visible {
   color: var(--accent);
+}
+.premium {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* 꺼진 램프는 빈 테두리만. 켜지면 채워지고 빛난다 — 요금 카드와 같은 규칙 */
+.premium .led {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--off);
+  background: none;
+}
+.premium.lit {
+  color: var(--accent);
+}
+.premium.lit .led {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
 }
 /* 로그인은 비로그인에게 가장 중요한 한 곳인데 글자만 있으면 안내 문구처럼 보인다.
    채우되 **노랑은 쓰지 않는다** — 노랑은 '면접 시작'·'결제하기' 같은 진행용이고,
