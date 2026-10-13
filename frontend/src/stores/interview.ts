@@ -18,7 +18,8 @@ import { approxTokens } from '@/utils/tokens'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
 import { canStartWith, trackOf } from '@/utils/track'
-import type { Track } from '@/services/account'
+import type { ArchiveDraft, Track } from '@/services/account'
+import { useAccountStore } from './account'
 import { parseReport, type ReportItem } from '@/utils/reportParser'
 import { synthesize } from '@/services/tts'
 import { playClip, setMuted } from '@/services/audio'
@@ -108,6 +109,10 @@ export const useInterviewStore = defineStore('interview', {
     endedAt: null as number | null,
     /** 이 면접의 면접관 — start()에서 고정(spec 3.5) */
     interviewerId: null as InterviewerId | null,
+    /** 보관함에 남았나. 비로그인·저장 실패는 둘 다 false — 화면이 각각 다르게 말한다 */
+    archiveSaved: false,
+    /** 한도에 밀려 사라진 기록의 id. 말해 주지 않으면 사용자는 없어진 걸 모른다 */
+    archiveEvicted: [] as string[],
   }),
   getters: {
     profileDone: (s) => s.profile.field !== null && s.profile.job.trim().length > 0,
@@ -418,9 +423,49 @@ export const useInterviewStore = defineStore('interview', {
         this.reportRaw = raw
         this.report = parseReport(raw)
         this.reportStatus = 'done'
+        await this.archiveNow()
       } catch (e) {
         this.genError = e instanceof Error ? e.message : String(e)
         this.reportStatus = 'error'
+      }
+    },
+
+    /** 리포트가 **다 나온 뒤** 한 번만. 중간에 저장하면 반쪽짜리가 남는다.
+     *  비로그인은 저장하지 않는다 — 기기에만 남기는 것이 이 서비스의 약속이다 */
+    async archiveNow() {
+      if (this.archiveSaved) return
+      const account = useAccountStore()
+      if (!account.signedIn) return
+      const r = await account.saveArchive(this.archiveDraft())
+      this.archiveSaved = r !== null
+      this.archiveEvicted = r?.evicted ?? []
+    },
+
+    /** 스토어가 이미 가진 값으로 보관할 한 건을 만든다. 트랙이 보는 칸만 담는다 */
+    archiveDraft(): ArchiveDraft {
+      const iv = this.sessionInterviewer
+      const track = this.track ?? 'company'
+      const p = this.profile
+      return {
+        interviewerId: iv.id,
+        premium: iv.premium,
+        track,
+        startedAt: new Date(this.startedAt ?? Date.now()).toISOString(),
+        endedAt: new Date(this.endedAt ?? Date.now()).toISOString(),
+        questionCount: this.report?.length ?? 0,
+        hasRecording: false,
+        ...(track === 'company'
+          ? { field: p.field ?? undefined, job: p.job }
+          : {
+              name: p.name,
+              age: p.age ?? undefined,
+              university: p.university,
+              department: p.department,
+            }),
+        messages: this.messages.map((m) => ({ role: m.role, text: m.text, at: m.at })),
+        report: this.report ?? [],
+        reportRaw: this.reportRaw,
+        recordings: [],
       }
     },
 
@@ -452,6 +497,8 @@ export const useInterviewStore = defineStore('interview', {
       this.startedAt = null
       this.endedAt = null
       this.interviewerId = null
+      this.archiveSaved = false
+      this.archiveEvicted = []
       this.phase = 'prepare'
     },
   },

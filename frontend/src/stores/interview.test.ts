@@ -20,6 +20,8 @@ import {
 } from './interview'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
+import { useAccountStore, setAccountApi } from './account'
+import { makeMockAccount } from '@/services/accountMock'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -892,5 +894,127 @@ describe('interview store — 트랙별 입력', () => {
     useInterviewerStore().select('m1')
     s.setTrack(null)
     expect(s.track).toBe('company')
+  })
+})
+
+describe('면접이 끝나면 보관함에 남긴다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+  const withReport = () => fakeSession(['q', '```json\n' + REPORT + '\n```'])
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+  })
+
+  async function signedIn() {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    return a
+  }
+
+  it('로그인 상태로 면접을 마치면 보관함에 남는다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(a.archive).toHaveLength(1)
+    expect(s.archiveSaved).toBe(true)
+    expect(a.archive[0]).toMatchObject({ interviewerId: 'm1', premium: false, track: 'company' })
+  })
+
+  it('대화와 리포트를 함께 남긴다 — 상세로 다시 볼 수 있어야 한다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    const full = await a.getArchive(a.archive[0].id)
+    expect(full?.report).toHaveLength(1)
+    expect(full?.messages.length).toBeGreaterThan(0)
+    expect(full?.field).toBe('it')
+    expect(full?.job).toBe('백엔드')
+  })
+
+  it('비로그인은 저장하지 않는다 — 조용히 실패하지도 않는다', async () => {
+    const a = useAccountStore()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(a.archive).toEqual([])
+    expect(a.error).toBeNull()
+    expect(s.reportStatus).toBe('done')
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('리포트가 실패하면 저장하지 않는다 — 반쪽짜리를 남기지 않는다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue({
+      ...withReport(),
+      send: vi.fn().mockRejectedValue(new Error('down')),
+    } as unknown as LlmSession)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportStatus).toBe('error')
+    expect(a.archive).toEqual([])
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('저장이 실패하면 리포트는 그대로 보이고 저장만 안 된 것으로 둔다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue(null)
+    await s.finish()
+    expect(s.reportStatus).toBe('done')
+    expect(s.report).toHaveLength(1)
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('밀려난 기록이 있으면 알려 준다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue({
+      entry: a.archive[0] ?? ({ id: 'a1' } as never),
+      evicted: ['old1'],
+    })
+    await s.finish()
+    expect(s.archiveEvicted).toEqual(['old1'])
+  })
+
+  it('벤으로 본 면접은 premium: true로 저장된다', async () => {
+    const a = await signedIn()
+    useInterviewerStore().select('m2')
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    s.setTrack('company')
+    await s.start()
+    await s.finish()
+    expect(a.archive[0]).toMatchObject({ interviewerId: 'm2', premium: true })
+  })
+
+  it('finish가 두 번 불려도 한 번만 저장한다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    await s.finish()
+    expect(a.archive).toHaveLength(1)
+  })
+
+  it('reset은 저장 흔적을 지운다 — 다음 면접에 남으면 안 된다', async () => {
+    await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    await s.reset()
+    expect(s.archiveSaved).toBe(false)
+    expect(s.archiveEvicted).toEqual([])
   })
 })

@@ -8,8 +8,13 @@ import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import ReportCards from '@/components/report/ReportCards.vue'
+import { useAccountStore } from '@/stores/account'
+import { useModalStore } from '@/stores/modal'
+import { ARCHIVE_LIMIT } from '@/utils/archive'
 
 const s = useInterviewStore()
+const acc = useAccountStore()
+const modal = useModalStore()
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const modelTurns = computed(() => s.messages.filter((m) => m.role === 'model').length)
 const nQ = computed(() => s.report?.length ?? 0)
@@ -64,7 +69,9 @@ function printReport() {
           >총 {{ formatDuration(total) }}</PixelTag
         >
       </div>
-      <p class="mono note">이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.</p>
+      <p v-if="!s.archiveSaved" class="mono note">
+        이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.
+      </p>
       <div class="btns">
         <PixelButton
           variant="secondary"
@@ -83,6 +90,22 @@ function printReport() {
         <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
       </div>
     </header>
+
+    <!-- 보관 안내. 리포트가 다 나온 뒤에만 말한다 — 쓰는 중에 꺼내면 아직 거짓이다 -->
+    <div v-if="s.reportStatus === 'done'" class="shelf mono">
+      <p v-if="!acc.signedIn" data-test="save-cta">
+        <span>로그인하면 이 리포트가 보관함에 남습니다.</span>
+        <PixelButton variant="secondary" @click="modal.show('login')">로그인</PixelButton>
+      </p>
+      <p v-else-if="s.archiveSaved" class="ok" data-test="saved">보관함에 남겼습니다.</p>
+      <p v-else data-test="save-failed">
+        보관함에 남기지 못했습니다 — 이 리포트는 이 화면에만 있습니다.
+      </p>
+      <p v-if="s.archiveEvicted.length" class="gone" data-test="evicted">
+        보관 한도({{ ARCHIVE_LIMIT }}개)를 넘어 가장 오래된 기록 {{ s.archiveEvicted.length }}개가
+        사라졌습니다.
+      </p>
+    </div>
 
     <PixelWindow v-if="timing && turns.length" title="시간" data-test="timing" padding="sm">
       <template #tag>
@@ -154,6 +177,25 @@ function printReport() {
 .btns.bottom {
   justify-content: center;
 }
+.shelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+}
+.shelf p {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  color: var(--text-2);
+}
+.shelf .ok {
+  color: var(--accent-2);
+}
+.shelf .gone {
+  color: var(--text-3);
+}
 .note {
   color: var(--text-3);
   font-size: var(--fs-meta);
@@ -204,7 +246,8 @@ function printReport() {
     gap: var(--sp-4);
   }
   .btns,
-  .note {
+  .note,
+  .shelf {
     display: none;
   }
   .head h1 {
