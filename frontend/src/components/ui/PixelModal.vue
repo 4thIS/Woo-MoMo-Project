@@ -7,10 +7,18 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = withDefaults(
-  defineProps<{ open: boolean; title?: string; width?: 'md' | 'wide' }>(),
+  defineProps<{
+    open: boolean
+    title?: string
+    width?: 'md' | 'wide'
+    /** false면 판(배경·테두리·그림자·여백)을 빼고 내용만 띄운다.
+     *  내용 자체가 이미 카드 묶음일 때 판이 한 겹 더 있으면 자리만 먹는다 */
+    chrome?: boolean
+  }>(),
   {
     title: undefined,
     width: 'md',
+    chrome: true,
   },
 )
 const emit = defineEmits<{ close: [] }>()
@@ -53,11 +61,17 @@ onBeforeUnmount(detach)
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="open" class="veil" data-test="modal-veil" @click.self="close">
+      <div
+        v-if="open"
+        class="veil"
+        :class="{ deep: !chrome }"
+        data-test="modal-veil"
+        @click.self="close"
+      >
         <div
           ref="box"
           class="box"
-          :class="width"
+          :class="[width, { bare: !chrome }]"
           role="dialog"
           aria-modal="true"
           tabindex="-1"
@@ -89,6 +103,10 @@ onBeforeUnmount(detach)
   place-items: center;
   padding: var(--sp-6) var(--sp-4);
 }
+/* 판이 없으면 카드 사이로 뒤가 더 보인다 */
+.veil.deep {
+  background: var(--veil-deep);
+}
 .box {
   background-color: var(--win);
   background-image: repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
@@ -102,8 +120,20 @@ onBeforeUnmount(detach)
   flex-direction: column;
   gap: var(--sp-6);
 }
+/* 대화상자 자체는 조작 요소가 아니다. 열 때 포커스를 받는 건 Esc·Tab을 위해서일 뿐이라
+   링을 그리면 창 전체에 테두리가 하나 더 생긴 것처럼 보인다. 안쪽 요소의 링은 그대로 둔다 */
+.box:focus {
+  outline: none;
+}
 .box.wide {
   max-width: 1160px;
+}
+/* 판을 뺀 모드 — 덮개 위에 내용만 뜬다 */
+.box.bare {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
 }
 .head {
   display: flex;

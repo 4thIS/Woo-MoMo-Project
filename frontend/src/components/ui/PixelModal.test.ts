@@ -109,6 +109,16 @@ describe('PixelModal', () => {
     expect(document.querySelector('[data-test=modal]')!.classList).toContain('wide')
   })
 
+  it('chrome이 false면 판을 뺀다 — 내용이 이미 카드 묶음일 때 쓴다', () => {
+    open({ chrome: false })
+    expect(document.querySelector('[data-test=modal]')!.classList).toContain('bare')
+  })
+
+  it('기본은 판이 있다', () => {
+    open()
+    expect(document.querySelector('[data-test=modal]')!.classList).not.toContain('bare')
+  })
+
   it('role과 aria가 붙는다', () => {
     open()
     const el = document.querySelector('[data-test=modal]')!

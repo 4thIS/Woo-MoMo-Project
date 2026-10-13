@@ -54,15 +54,31 @@ async function pay() {
 </script>
 
 <template>
-  <PixelModal :open="open" title="모모 프리미엄" width="wide" @close="emit('close')">
+  <PixelModal
+    :open="open"
+    :title="step === 'compare' ? undefined : '모모 프리미엄'"
+    :chrome="step !== 'compare'"
+    width="wide"
+    @close="emit('close')"
+  >
+    <!-- 판을 뺀 비교 단계는 제목 줄을 직접 둔다 -->
+    <template v-if="step === 'compare'" #head>
+      <header class="bare-head">
+        <h2 class="display btitle">모모 프리미엄</h2>
+        <button type="button" class="mono x" data-test="modal-close" @click="emit('close')">
+          닫기 ✕
+        </button>
+      </header>
+    </template>
     <!-- 1) 요금 카드 — 세 칸이 같은 목록을 같은 순서로 보여 주고 되는 것만 불이 들어온다 -->
     <template v-if="step === 'compare'">
       <div class="cards">
         <section
-          v-for="t in PLAN_TIERS"
+          v-for="(t, i) in PLAN_TIERS"
           :key="t.key"
           class="card"
           :class="{ here: t.key === now, best: t.key === 'premium' }"
+          :style="{ '--i': i }"
           data-test="plan-card"
         >
           <span v-if="t.key === now" class="mono badge">지금 여기</span>
@@ -134,6 +150,28 @@ async function pay() {
 </template>
 
 <style scoped>
+.bare-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+}
+.btitle {
+  margin: 0;
+  font-size: var(--fs-h2);
+}
+.x {
+  font-size: var(--fs-label);
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.x:hover,
+.x:focus-visible {
+  color: var(--text);
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -144,12 +182,28 @@ async function pay() {
     grid-template-columns: 1fr;
   }
 }
+/* 판을 뺀 만큼 카드가 바탕색을 직접 깐다. 치수는 8줄이 스크롤 없이 들어가게 줄였다 */
 .card {
+  background-color: var(--win);
+  background-image: repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
   border: 2px solid var(--raise);
-  padding: var(--sp-5) var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+}
+/* 왼쪽부터 차례로 들어온다 */
+@media (prefers-reduced-motion: no-preference) {
+  .card {
+    animation: deal var(--dur-3) var(--ease) backwards;
+    animation-delay: calc(var(--i) * 80ms);
+  }
+}
+@keyframes deal {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
 }
 .card.here {
   border-color: var(--line);
@@ -177,7 +231,7 @@ async function pay() {
 }
 .chead .nm {
   margin: 0;
-  font-size: var(--fs-h2);
+  font-size: var(--fs-body-md);
 }
 .chead .pr {
   margin: 0;
@@ -229,8 +283,8 @@ async function pay() {
   grid-template-columns: 16px 1fr;
   gap: var(--sp-3);
   align-items: start;
-  padding: var(--sp-3) 0;
-  border-top: 2px solid var(--win);
+  padding: var(--sp-2) 0;
+  border-top: 2px solid var(--raise);
 }
 .feats li:first-child {
   border-top: 0;
@@ -242,16 +296,16 @@ async function pay() {
 }
 .txt .nm {
   font-size: var(--fs-label);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 .txt .val {
   font-size: var(--fs-meta);
 }
 /* 램프. 색을 color로 두고 테두리·채움·빛을 currentColor로 받아 한 곳만 바꾸면 된다 */
 .led {
-  width: 14px;
-  height: 14px;
-  margin-top: 3px;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
   border: 2px solid currentcolor;
   color: var(--off);
 }
