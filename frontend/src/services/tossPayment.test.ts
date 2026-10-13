@@ -65,10 +65,14 @@ describe('requestPayment — 결제창을 띄우고 결과를 기다린다', () 
   })
 
   it('사용자가 결제창을 닫으면 PAY_PROCESS_CANCELED다', async () => {
-    const p = requestPayment(req)
+    // 거부 핸들러를 **타이머를 돌리기 전에** 붙인다 — 나중에 붙이면 그 사이에
+    // unhandled rejection으로 잡혀 테스트는 통과해도 실행이 실패한다
+    const p = expect(requestPayment(req)).rejects.toMatchObject({
+      code: 'PAY_PROCESS_CANCELED',
+    })
     win!.closed = true
     await vi.advanceTimersByTimeAsync(1000)
-    await expect(p).rejects.toMatchObject({ code: 'PAY_PROCESS_CANCELED' })
+    await p
   })
 
   it('결제창이 실패를 알리면 그 코드를 그대로 전한다', async () => {
@@ -95,9 +99,10 @@ describe('requestPayment — 결제창을 띄우고 결과를 기다린다', () 
     )
     await vi.advanceTimersByTimeAsync(1000)
     expect(settled).toBe(false)
+    const done = expect(p).rejects.toMatchObject({ code: 'PAY_PROCESS_CANCELED' })
     win!.closed = true
     await vi.advanceTimersByTimeAsync(1000)
-    await expect(p).rejects.toMatchObject({ code: 'PAY_PROCESS_CANCELED' })
+    await done
   })
 
   it('다른 주문의 메시지는 무시한다 — 앞 결제창이 늦게 보낸 것일 수 있다', async () => {
