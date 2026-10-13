@@ -106,7 +106,7 @@ async function pay() {
               <span class="led" aria-hidden="true" />
               <span class="txt">
                 <span class="nm">{{ f.label }}</span>
-                <span class="mono val">{{ f.note[t.key] ?? '—' }}</span>
+                <span class="mono val">{{ f.note[t.key] ?? '' }}</span>
               </span>
             </li>
           </ul>
@@ -177,7 +177,8 @@ async function pay() {
   grid-template-columns: repeat(3, 1fr);
   gap: var(--sp-4);
 }
-@media (max-width: 980px) {
+/* 세로로 쌓으면 길이가 세 배가 된다. 휴대폰 폭이 될 때까지 3단을 버틴다 */
+@media (max-width: 620px) {
   .cards {
     grid-template-columns: 1fr;
   }
@@ -187,10 +188,10 @@ async function pay() {
   background-color: var(--win);
   background-image: repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
   border: 2px solid var(--raise);
-  padding: var(--sp-4) var(--sp-5);
+  padding: clamp(10px, 1.7vh, 16px) clamp(12px, 1.4vw, 20px);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: clamp(6px, 1.1vh, 12px);
 }
 /* 왼쪽부터 차례로 들어온다 */
 @media (prefers-reduced-motion: no-preference) {
@@ -231,7 +232,7 @@ async function pay() {
 }
 .chead .nm {
   margin: 0;
-  font-size: var(--fs-body-md);
+  font-size: clamp(15px, 2.2vh, 20px);
 }
 .chead .pr {
   margin: 0;
@@ -259,8 +260,8 @@ async function pay() {
   gap: 3px;
 }
 .meter i {
-  width: 9px;
-  height: 9px;
+  width: clamp(6px, 1vh, 9px);
+  height: clamp(6px, 1vh, 9px);
   display: block;
   background: var(--off);
 }
@@ -283,7 +284,7 @@ async function pay() {
   grid-template-columns: 16px 1fr;
   gap: var(--sp-3);
   align-items: start;
-  padding: var(--sp-2) 0;
+  padding: clamp(3px, 0.95vh, 8px) 0;
   border-top: 2px solid var(--raise);
 }
 .feats li:first-child {
@@ -295,17 +296,27 @@ async function pay() {
   gap: 2px;
 }
 .txt .nm {
-  font-size: var(--fs-label);
-  line-height: 1.4;
+  font-size: clamp(12px, 1.7vh, 14px);
+  line-height: 1.35;
 }
 .txt .val {
-  font-size: var(--fs-meta);
+  font-size: clamp(10px, 1.4vh, 13px);
+  line-height: 1.35;
+  /* 꺼진 줄은 내용이 없어도 자리를 지킨다 — 세 카드의 줄이 어긋나면 비교가 안 된다 */
+  min-height: 1.35em;
+}
+/* 화면이 낮으면 보조 설명을 접는다. 글자를 더 줄이는 것보다 낫다 —
+   목록과 램프는 그대로라 비교는 계속 된다 */
+@media (max-height: 680px), (max-width: 860px) {
+  .txt .val {
+    display: none;
+  }
 }
 /* 램프. 색을 color로 두고 테두리·채움·빛을 currentColor로 받아 한 곳만 바꾸면 된다 */
 .led {
-  width: 12px;
-  height: 12px;
-  margin-top: 4px;
+  width: clamp(9px, 1.4vh, 12px);
+  height: clamp(9px, 1.4vh, 12px);
+  margin-top: 3px;
   border: 2px solid currentcolor;
   color: var(--off);
 }
@@ -336,6 +347,13 @@ async function pay() {
   .led {
     transition: all var(--dur-2) var(--ease);
   }
+}
+
+.card :deep(.btn) {
+  height: clamp(40px, 6vh, 52px);
+  width: 100%;
+  justify-content: center;
+  font-size: clamp(14px, 2vh, 18px);
 }
 
 .pay {
