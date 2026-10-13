@@ -120,8 +120,8 @@ const sheet = (id: InterviewerId) => {
   box-shadow: 4px 4px 0 var(--press-shadow);
   cursor: pointer;
   transition:
-    transform 120ms steps(2),
-    opacity 120ms steps(2);
+    transform var(--dur-1) var(--ease),
+    opacity var(--dur-1) var(--ease);
 }
 .card.selected {
   border-color: var(--accent);

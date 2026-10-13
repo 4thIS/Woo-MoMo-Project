@@ -52,28 +52,30 @@ onBeforeUnmount(detach)
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="veil" data-test="modal-veil" @click.self="close">
-      <div
-        ref="box"
-        class="box"
-        :class="width"
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        data-test="modal"
-      >
-        <slot name="head">
-          <header class="head">
-            <h2 v-if="title" class="display ttl">{{ title }}</h2>
-            <button type="button" class="mono x" data-test="modal-close" @click="close">
-              닫기 ✕
-            </button>
-          </header>
-        </slot>
-        <div class="body"><slot /></div>
-        <footer v-if="$slots.foot" class="foot"><slot name="foot" /></footer>
+    <Transition name="modal">
+      <div v-if="open" class="veil" data-test="modal-veil" @click.self="close">
+        <div
+          ref="box"
+          class="box"
+          :class="width"
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+          data-test="modal"
+        >
+          <slot name="head">
+            <header class="head">
+              <h2 v-if="title" class="display ttl">{{ title }}</h2>
+              <button type="button" class="mono x" data-test="modal-close" @click="close">
+                닫기 ✕
+              </button>
+            </header>
+          </slot>
+          <div class="body"><slot /></div>
+          <footer v-if="$slots.foot" class="foot"><slot name="foot" /></footer>
+        </div>
       </div>
-    </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -88,9 +90,10 @@ onBeforeUnmount(detach)
   padding: var(--sp-6) var(--sp-4);
 }
 .box {
-  background: var(--win);
+  background-color: var(--win);
+  background-image: repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
   border: var(--win-border);
-  box-shadow: var(--win-inner);
+  box-shadow: var(--win-shadow);
   width: 100%;
   max-width: 960px;
   max-height: calc(100vh - var(--sp-10));
@@ -136,6 +139,35 @@ onBeforeUnmount(detach)
   justify-content: flex-end;
   gap: var(--sp-3);
 }
+/* 열고 닫기: 막은 번지고 창은 살짝 솟는다. 사람의 행동에 대한 응답이라 넣는 모션이다 */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity var(--dur-2) var(--ease);
+}
+.modal-enter-active .box,
+.modal-leave-active .box {
+  transition:
+    transform var(--dur-2) var(--ease),
+    opacity var(--dur-2) var(--ease);
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+.modal-enter-from .box,
+.modal-leave-to .box {
+  opacity: 0;
+  transform: translateY(10px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active,
+  .modal-leave-active,
+  .modal-enter-active .box,
+  .modal-leave-active .box {
+    transition: none;
+  }
+}
+
 @media (max-width: 720px) {
   .veil {
     padding: var(--sp-3);

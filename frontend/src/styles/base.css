@@ -131,12 +131,12 @@ a:hover {
    그림자 색은 --press-shadow(기본 --line). 앞의 ▶ 커서(svg)는 hover 중 RPG 메뉴 커서처럼 좌우로 깜빡 이동 */
 .press {
   transition:
-    transform 0.12s steps(2),
-    box-shadow 0.12s steps(2);
+    transform var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
 }
 .press:hover:not(:disabled):not(.disabled) {
   transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0 var(--press-shadow, var(--line));
+  box-shadow: 6px 6px 0 var(--press-shadow, var(--ink));
 }
 .press:active:not(:disabled):not(.disabled) {
   transform: translate(4px, 4px);
@@ -162,7 +162,7 @@ a:hover {
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(48px);
+    transform: translateY(24px);
   }
   to {
     opacity: 1;
@@ -170,7 +170,7 @@ a:hover {
   }
 }
 .rise {
-  animation: rise 0.5s steps(6) both;
+  animation: rise var(--dur-3) var(--ease) both;
 }
 
 /* 한 화면 = 한 섹션. 스크롤하면 다음 섹션 시작점에 자동으로 맞춰진다 */
@@ -199,7 +199,7 @@ a:hover {
   margin-left: -10px;
   background: var(--accent);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
-  animation: bob 1.4s steps(4) infinite;
+  animation: bob 1.6s ease-in-out infinite;
   pointer-events: none;
 }
 @keyframes bob {
@@ -217,7 +217,7 @@ a:hover {
 .snap > .content {
   width: 100%;
   max-width: var(--content-w);
-  animation: rise 0.5s steps(6) both;
+  animation: rise var(--dur-3) var(--ease) both;
   animation-timeline: view();
   animation-range: entry 10% entry 70%;
 }
