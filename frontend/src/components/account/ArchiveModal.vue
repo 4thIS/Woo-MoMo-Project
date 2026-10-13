@@ -74,7 +74,12 @@ async function remove() {
       </div>
 
       <div class="pane">
-        <p v-if="account.archiveFull" class="mono warn" data-test="archive-full">
+        <!-- 한도는 일반 기록 얘기다. 프리미엄 탭에서 꺼내면 엉뚱한 자리에서 겁을 준다 -->
+        <p
+          v-if="account.archiveFull && tab !== 'premium'"
+          class="mono warn"
+          data-test="archive-full"
+        >
           일반 기록이 {{ ARCHIVE_LIMIT }}개로 찼습니다 — 다음 면접을 마치면 가장 오래된 하나가
           사라집니다.
         </p>

@@ -28,7 +28,12 @@ const took = computed(() =>
     ),
   ),
 )
-const when = computed(() => new Date(props.entry.startedAt).toLocaleString('ko-KR'))
+const when = computed(() =>
+  new Date(props.entry.startedAt).toLocaleString('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }),
+)
 const subject = computed(() => {
   const e = props.entry
   if (e.track === 'company')
@@ -127,6 +132,8 @@ function answerIndex(i: number): number {
   /* 요금 카드와 같은 어법 — 높이를 묶어 작은 화면에서도 모달이 넘치지 않게 */
   max-height: clamp(280px, 56vh, 620px);
   overflow-y: auto;
+  /* 스크롤바가 카드 오른쪽 테두리를 먹지 않게 */
+  padding-right: var(--sp-3);
 }
 .ttl {
   margin: 0;

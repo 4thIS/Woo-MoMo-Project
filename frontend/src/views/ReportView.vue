@@ -60,7 +60,7 @@ function printReport() {
       <div class="meta">
         <PixelTag tone="muted"
           >{{ fieldLabel }} · {{ s.profile.job }} · 면접관:
-          {{ s.sessionInterviewer.name }}</PixelTag
+          {{ s.sessionInterviewer.displayName }}</PixelTag
         >
         <PixelTag v-if="s.reportStatus === 'done' && s.report" tone="muted"
           >질문 {{ nQ }} · 꼬리질문 {{ nFollow }}</PixelTag

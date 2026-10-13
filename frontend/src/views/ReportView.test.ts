@@ -306,7 +306,7 @@ describe('ReportView — 면접관', () => {
       profile: { field: 'it', job: '백엔드' },
       interviewerId: 'f2',
     })
-    expect(mount(ReportView).text()).toContain('면접관: 압박 면접관(여)')
+    expect(mount(ReportView).text()).toContain('면접관: 쥴리')
   })
 })
 
@@ -365,5 +365,20 @@ describe('ReportView — 보관함 안내', () => {
   it('리포트를 쓰는 중에는 보관 얘기를 하지 않는다', () => {
     const w = done({ reportStatus: 'writing' })
     expect(w.find('[data-test="save-cta"]').exists()).toBe(false)
+  })
+})
+
+describe('ReportView — 면접관 표기', () => {
+  it('수식이 아니라 사람 이름을 적는다', () => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      interviewerId: 'f3',
+      profile: { field: 'it', job: '백엔드' },
+    })
+    const t = mount(ReportView).text()
+    expect(t).toContain('면접관: 올리비아')
+    expect(t).not.toContain('면접관(여)')
   })
 })

@@ -77,7 +77,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         :warning="s.ttsWarning ?? ''"
         :center-sprites="iv.spritesFor(s.sessionInterviewer.id)"
         :side-sprites="iv.sideSprites"
-        :interviewer-name="s.sessionInterviewer.name"
+        :interviewer-name="s.sessionInterviewer.displayName"
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />

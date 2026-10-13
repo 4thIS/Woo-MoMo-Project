@@ -192,3 +192,14 @@ describe('ArchiveModal — 상세', () => {
     expect(q('[data-test="archive-detail"]')).toBeNull()
   })
 })
+
+describe('ArchiveModal — 한도 경고 자리', () => {
+  it('프리미엄 탭에서는 일반 한도 경고를 꺼내지 않는다', async () => {
+    await withEntries(
+      ...[1, 2, 3, 4, 5].map((i) => draft({ startedAt: `2026-10-0${i}T00:00:00Z` })),
+    )
+    document.querySelectorAll<HTMLElement>('[data-test="archive-tab"]')[2].click()
+    await settle()
+    expect(q('[data-test="archive-full"]')).toBeNull()
+  })
+})
