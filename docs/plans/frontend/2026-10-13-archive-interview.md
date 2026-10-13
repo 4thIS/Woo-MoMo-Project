@@ -50,7 +50,7 @@ tests가 다루지 않지만 사람이 먼저 밟을 입력들. 각 줄의 테�
 
 **설계 메모:** 한도는 **일반 기록에만** 걸린다. 지우는 주체는 서버지만, 프론트도 "곧 하나가 사라집니다"를 미리 보여 줘야 해서 같은 계산이 필요하다.
 
-- [ ] **Step 1: `services/account.ts`에 보관함 타입 추가**
+- [x] **Step 1: `services/account.ts`에 보관함 타입 추가**
 
 ```ts
 export type Track = 'company' | 'admission'
@@ -94,7 +94,7 @@ export interface ArchiveDetail extends ArchiveEntry {
   deleteArchive(id: string): Promise<void>
 ```
 
-- [ ] **Step 2: 실패 테스트 작성**
+- [x] **Step 2: 실패 테스트 작성**
 
 ```ts
 // frontend/src/utils/archive.test.ts
@@ -164,12 +164,12 @@ describe('willEvict — 다음에 무엇이 밀려나나', () => {
 })
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run: `cd frontend && pnpm exec vitest run utils/archive.test.ts`
 Expected: FAIL — `Failed to resolve import "./archive"`
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 ```ts
 // frontend/src/utils/archive.ts
@@ -196,12 +196,12 @@ export function willEvict(
 }
 ```
 
-- [ ] **Step 5: 통과 확인**
+- [x] **Step 5: 통과 확인**
 
 Run: `cd frontend && pnpm exec vitest run utils/archive.test.ts`
 Expected: PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add frontend/src/utils/archive.ts frontend/src/utils/archive.test.ts frontend/src/services/account.ts
@@ -220,7 +220,7 @@ git commit -m "feat(frontend): 보관함 한도 계산 — 한도는 일반 기�
 - Consumes: Task 1의 타입과 `ARCHIVE_LIMIT`
 - Produces: 목업의 보관함 네 메서드, 스토어 state `archive`, actions `refreshArchive` · `saveArchive` · `getArchive` · `deleteArchive`, getter `archiveFull`
 
-- [ ] **Step 1: 실패 테스트 작성 (목업)**
+- [x] **Step 1: 실패 테스트 작성 (목업)**
 
 `accountMock.test.ts`에 더한다:
 
@@ -348,12 +348,12 @@ describe('account 스토어 — 보관함', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cd frontend && pnpm exec vitest run services/accountMock.test.ts stores/account.test.ts`
 Expected: FAIL — `api.saveArchive is not a function`
 
-- [ ] **Step 3: 목업 구현**
+- [x] **Step 3: 목업 구현**
 
 `Db`에 `archive: ArchiveDetail[]` 를 더하고 `owner`를 그대로 쓴다. `saveArchive`는:
 
@@ -380,18 +380,18 @@ async saveArchive(d) {
 
 `strip`은 상세에서 목록용 필드만 남긴다(`messages`·`report`·`reportRaw`·`recordings` 제거). 목록이 가벼워야 상세를 따로 받는 뜻이 있다.
 
-- [ ] **Step 4: 스토어 구현**
+- [x] **Step 4: 스토어 구현**
 
 state에 `archive: [] as ArchiveEntry[]`, getter `archiveFull: (s) => isFull(s.archive)`,
 actions `refreshArchive` · `saveArchive`(저장 후 `refreshArchive`) · `getArchive` · `deleteArchive`.
 `signOut`과 `load`에서 `archive`도 함께 비우고 채운다.
 
-- [ ] **Step 5: 통과 확인**
+- [x] **Step 5: 통과 확인**
 
 Run: `cd frontend && pnpm exec vitest run services stores`
 Expected: PASS
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add frontend/src/services frontend/src/stores
@@ -413,7 +413,7 @@ git commit -m "feat(frontend): 보관함 목업과 스토어 — 한도는 서�
 
 **설계 메모:** 리포트 화면과 보관함 상세가 **같은 것**을 보여 준다. 두 벌을 만들면 둘이 어긋난다. 지금 `ReportView`의 `v-for="(it, i) in s.report"` 블록을 그대로 떼어 낸다 — 모양을 바꾸지 않는다.
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 ```ts
 // frontend/src/components/report/ReportCards.test.ts
@@ -454,12 +454,12 @@ describe('ReportCards', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cd frontend && pnpm exec vitest run components/report/ReportCards.test.ts`
 Expected: FAIL — 파일 없음
 
-- [ ] **Step 3: `ReportView`에서 떼어 내기**
+- [x] **Step 3: `ReportView`에서 떼어 내기**
 
 `ReportView.vue`의 `<template v-else-if="s.report">` 안쪽 `PixelWindow v-for` 블록과 그에 딸린 `.kv`·`.answers`·`.strong` 스타일을 `ReportCards.vue`로 옮긴다. `splitEmphasis`도 함께 옮긴다.
 
@@ -469,12 +469,12 @@ Expected: FAIL — 파일 없음
 <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
 ```
 
-- [ ] **Step 4: 통과 확인 — 리포트 화면이 그대로인지**
+- [x] **Step 4: 통과 확인 — 리포트 화면이 그대로인지**
 
 Run: `cd frontend && pnpm exec vitest run components/report views/ReportView.test.ts`
 Expected: PASS. **`ReportView.test.ts`를 고치지 않고 통과해야 한다** — 고쳐야 한다면 모양이 바뀐 것이다
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src/components/report frontend/src/views/ReportView.vue
@@ -505,7 +505,7 @@ git commit -m "refactor(frontend): 리포트 본문을 공용 컴포넌트로 �
 
 기본 면접관은 **데이빗(`m1`)**. 스프라이트·목소리는 그대로 쓴다. **페르소나 문구는 건드리지 않는다**(cw 몫).
 
-- [ ] **Step 1: `utils/track.ts` 실패 테스트**
+- [x] **Step 1: `utils/track.ts` 실패 테스트**
 
 ```ts
 // frontend/src/utils/track.test.ts
@@ -575,7 +575,7 @@ describe('canStartWith — 트랙별 시작 조건', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 Run: `cd frontend && pnpm exec vitest run utils/track.test.ts` → FAIL
 
@@ -616,7 +616,7 @@ export function canStartWith(c: StartContext): boolean {
 
 `interviewers/index.ts`의 `Interviewer`에 `displayName: string`, `track: Track | null`, `premium: boolean`을 더하고 목록을 위 표 순서로 바꾼다. `DEFAULT_INTERVIEWER = 'm1'`.
 
-- [ ] **Step 3: 고르기 화면 실패 테스트**
+- [x] **Step 3: 고르기 화면 실패 테스트**
 
 ```ts
 it('카드 순서가 데이빗·쥴리·올리비아·벤이다', () => { /* data-test 순서 확인 */ })
@@ -632,7 +632,7 @@ it('트랙을 고르기 전에는 선택이 끝나지 않는다', async () => { 
 it('다른 면접관을 고르면 트랙 선택이 사라진다', async () => { /* 숨김 */ })
 ```
 
-- [ ] **Step 4: 구현 → 통과 확인**
+- [x] **Step 4: 구현 → 통과 확인**
 
 **확정된 모양(2026-10-13 시안):** 가로 4열 유지 · 벤에 **모서리 리본 배지**(사선 삼각형 + `P`, CSS로 그린다) · 카드에 남은 티켓 램프.
 
@@ -649,7 +649,7 @@ it('다른 면접관을 고르면 트랙 선택이 사라진다', async () => { 
 Run: `cd frontend && pnpm exec vitest run utils/track.test.ts components/InterviewerPicker.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src/interviewers frontend/src/utils/track.ts frontend/src/utils/track.test.ts frontend/src/components/InterviewerPicker.vue frontend/src/components/InterviewerPicker.test.ts
@@ -675,7 +675,7 @@ git commit -m "feat(frontend): 면접관 4명 — 이름·순서·트랙·벤 �
 | 회사 | 기업 분야 · 지원 직무 | 이력서 |
 | 대입 | 이름 · 나이 · **지원 대학** · **지원 학과** | 자기소개서 |
 
-- [ ] **Step 1: 스토어 실패 테스트**
+- [x] **Step 1: 스토어 실패 테스트**
 
 ```ts
 it('면접관에서 트랙을 끌어낸다 — 따로 들고 있지 않는다', () => { /* iv=f3 → 'admission' */ })
@@ -686,7 +686,7 @@ it('면접관을 바꿔 트랙이 바뀌면 앞 트랙의 입력은 쓰지 않�
 it('로그인 사용자의 이름·나이로 대입 입력을 미리 채운다', () => { /* prefillFromProfile */ })
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 ```ts
 // stores/interview.ts
@@ -718,7 +718,7 @@ canStart(): boolean {
 },
 ```
 
-- [ ] **Step 3: 화면 실패 테스트**
+- [x] **Step 3: 화면 실패 테스트**
 
 ```ts
 it('올리비아를 고르면 대입 5칸이 나온다', async () => { /* me-name 등 */ })
@@ -728,7 +728,7 @@ it('대입에서 다섯 칸을 다 채워야 시작 버튼이 열린다', async 
 it('로그인 사용자는 저장한 이력서를 불러올 수 있다', async () => { /* [data-test=load-resume] */ })
 ```
 
-- [ ] **Step 4: 구현 → 통과 확인**
+- [x] **Step 4: 구현 → 통과 확인**
 
 `지원 직무` 칸 자리에 트랙별 칸을 넣는다. **라벨은 `지원 대학`**(출신 고교가 아니다).
 로그인 사용자는 `account.profile`로 이름·나이를 미리 채우고, 저장한 이력서를 고르는 줄을 2단계에 둔다.
@@ -736,7 +736,7 @@ it('로그인 사용자는 저장한 이력서를 불러올 수 있다', async (
 Run: `cd frontend && pnpm exec vitest run views/PrepareView.test.ts stores/interview.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src/stores/interview.ts frontend/src/views/PrepareView.vue frontend/src/views/PrepareView.test.ts frontend/src/stores/interview.test.ts
@@ -757,7 +757,7 @@ git commit -m "feat(frontend): 준비 화면 트랙별 입력 — 회사 3칸 / 
 
 **설계 메모:** 리포트가 **다 나온 뒤** 저장한다. 중간에 저장하면 반쪽짜리가 남는다. 비로그인은 저장하지 않고, 대신 리포트 화면에서 **로그인하면 보관할 수 있다**고 알린다 — 전환이 가장 잘 일어나는 자리다(spec 6절).
 
-- [ ] **Step 1: 실패 테스트**
+- [x] **Step 1: 실패 테스트**
 
 ```ts
 it('로그인 상태로 면접을 마치면 보관함에 남는다', async () => { /* account.archive 1개 */ })
@@ -782,7 +782,7 @@ it('밀려난 기록이 있으면 사라졌다고 알린다', () => { /* [data-t
 it('저장에 실패하면 실패했다고 말한다 — 성공한 척하지 않는다', () => {})
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 `finish()` 끝(`reportStatus = 'done'` 직후)에서:
 
@@ -797,12 +797,12 @@ this.archiveEvicted = r?.evicted ?? []
 
 `archiveDraft()`는 스토어가 이미 가진 값으로 `ArchiveDetail`을 만든다(트랙별 칸 포함, `questionCount = report.length`).
 
-- [ ] **Step 3: 통과 확인**
+- [x] **Step 3: 통과 확인**
 
 Run: `cd frontend && pnpm exec vitest run stores/interview.test.ts views/ReportView.test.ts`
 Expected: PASS
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add frontend/src/stores/interview.ts frontend/src/views/ReportView.vue frontend/src/stores/interview.test.ts frontend/src/views/ReportView.test.ts
@@ -829,7 +829,7 @@ git commit -m "feat(frontend): 면접이 끝나면 보관함에 남긴다 — �
 - 프리미엄 탭이 비어도 **숨기지 않고** 권유 자리로 쓴다
 - 상세는 같은 모달 안에서 갈아 낀다. 왼쪽 위 `← 보관함`, 왼쪽에 문항 목록, 오른쪽에 `ReportCards` 한 장
 
-- [ ] **Step 1: 실패 테스트**
+- [x] **Step 1: 실패 테스트**
 
 ```ts
 it('탭 셋을 그리고 개수를 적는다', () => {})
@@ -846,12 +846,12 @@ it('닫았다 열면 목록부터 시작한다', async () => {})
 it('5개가 차면 다음에 하나가 사라진다고 미리 알린다', async () => {})
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 `PixelModal`을 `width="wide"`로 쓴다. 상세는 **같은 모달 안에서** `view` 상태로 갈아 끼운다(쌓지 않는다).
 목록·상세 모두 **요금 카드와 같이 `clamp`로 높이를 묶어** 작은 화면에서 스크롤이 덜 생기게 한다.
 
-- [ ] **Step 3: TopBar에 연결**
+- [x] **Step 3: TopBar에 연결**
 
 ```vue
 <ArchiveModal :open="open === 'archive'" @close="open = null" @need-premium="open = 'premium'" />
@@ -859,12 +859,12 @@ it('5개가 차면 다음에 하나가 사라진다고 미리 알린다', async 
 
 `TopBar.test.ts`의 "빈 모달" 전제가 있으면 함께 고친다.
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `cd frontend && pnpm exec vitest run components`
 Expected: PASS
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src/components
@@ -886,7 +886,7 @@ git commit -m "feat(frontend): 보관함 모달과 기록 상세 — 탭으로 �
 
 **설계 메모:** 녹음은 **프리미엄 면접에서만**. 권한을 거절해도 **면접은 그대로 진행된다** — 녹음은 덤이지 조건이 아니다. 티켓은 이미 썼으니 막으면 안 된다.
 
-- [ ] **Step 1: 실패 테스트**
+- [x] **Step 1: 실패 테스트**
 
 ```ts
 it('지원하지 않는 브라우저에서는 null을 준다', async () => { /* MediaRecorder 없음 */ })
@@ -902,18 +902,18 @@ it('권한을 거절해도 면접은 시작된다', async () => { /* stage가 �
 it('녹음이 없으면 hasRecording: false로 저장된다', async () => {})
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 `services/recorder.ts`는 `navigator.mediaDevices.getUserMedia`와 `MediaRecorder`를 감싸고 **어떤 실패에도 던지지 않는다**(`null`). 스토어는 `null`이면 그냥 녹음 없이 간다.
 
 답변 턴마다 끊어 저장하고(`turn` 번호), 면접이 끝나면 `uploadRecording`으로 올린다.
 **상한**: 한 기록당 합계가 30MB를 넘으면 더 녹음하지 않고 안내한다(cw가 정한 값이 오면 그 값으로).
 
-- [ ] **Step 3: 상세에서 재생**
+- [x] **Step 3: 상세에서 재생**
 
 `ArchiveDetail`의 문항마다 녹음이 있으면 재생 줄을 둔다. 없으면 그 줄을 그리지 않는다.
 
-- [ ] **Step 4: 통과 확인 + 전체 게이트**
+- [x] **Step 4: 통과 확인 + 전체 게이트**
 
 Run:
 ```bash
@@ -921,7 +921,7 @@ cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm 
 ```
 Expected: 전부 통과. 린트 경고는 기존 4건 그대로
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add frontend/src
