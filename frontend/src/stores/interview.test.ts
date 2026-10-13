@@ -759,11 +759,11 @@ describe('interview store — 면접관 페르소나', () => {
     expect(prompt).not.toContain(PERSONAS.gentle.character!)
     expect(prompt).not.toContain(PERSONAS.sharp.character!)
   })
-  it('선택이 없으면 기본 면접관(f3, standard) — 온화·압박 성격 문장이 없다', async () => {
+  it('선택이 없으면 기본 면접관(m1·데이빗, standard) — 온화·압박 성격 문장이 없다', async () => {
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
     await s.start()
-    expect(s.interviewerId).toBe('f3')
+    expect(s.interviewerId).toBe('m1')
     const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
     expect(prompt).not.toContain(PERSONAS.gentle.character!)
     expect(prompt).not.toContain(PERSONAS.sharp.character!)

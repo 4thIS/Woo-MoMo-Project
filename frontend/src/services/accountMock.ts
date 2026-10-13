@@ -11,11 +11,15 @@ import {
   PREMIUM_TICKETS,
   RESUME_SLOTS,
   type AccountApi,
+  type ArchiveDetail,
+  type ArchiveDraft,
+  type ArchiveEntry,
   type Profile,
   type ResumeDraft,
   type ResumeSlot,
   type Session,
 } from './account'
+import { ARCHIVE_LIMIT } from '@/utils/archive'
 
 const KEY = 'momo.mock.account'
 
@@ -25,12 +29,13 @@ interface User extends Session {
 interface Db {
   users: User[]
   resumes: ResumeSlot[]
+  archive: ArchiveDetail[]
   /** 이력서 id → 주인 userId */
   owner: Record<string, string>
   sessionId: string | null
 }
 
-const empty = (): Db => ({ users: [], resumes: [], owner: {}, sessionId: null })
+const empty = (): Db => ({ users: [], resumes: [], archive: [], owner: {}, sessionId: null })
 
 function load(): Db {
   try {
@@ -63,6 +68,27 @@ function strip(u: User): Session {
     tickets: u.tickets,
     profile: { ...u.profile },
     createdAt: u.createdAt,
+  }
+}
+
+/** 목록은 가볍게. 상세를 따로 받는 뜻이 있으려면 대화·리포트를 담지 않아야 한다.
+ *  뺄 것을 버리는 대신 **남길 것을 적는다** — 상세에 필드가 늘어도 목록이 무거워지지 않는다 */
+function toEntry(d: ArchiveDetail): ArchiveEntry {
+  return {
+    id: d.id,
+    interviewerId: d.interviewerId,
+    premium: d.premium,
+    track: d.track,
+    startedAt: d.startedAt,
+    endedAt: d.endedAt,
+    questionCount: d.questionCount,
+    hasRecording: d.hasRecording,
+    field: d.field,
+    job: d.job,
+    name: d.name,
+    age: d.age,
+    university: d.university,
+    department: d.department,
   }
 }
 
@@ -204,6 +230,57 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       const u = current(db)
       if (db.owner[id] !== u.userId) throw new AccountError('unauthorized', '없는 이력서입니다')
       db.resumes = db.resumes.filter((r) => r.id !== id)
+      delete db.owner[id]
+      save(db)
+    },
+
+    async listArchive() {
+      await wait()
+      const db = load()
+      const u = current(db)
+      return db.archive
+        .filter((e) => db.owner[e.id] === u.userId)
+        .map(toEntry)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    },
+
+    async getArchive(id) {
+      await wait()
+      const db = load()
+      const u = current(db)
+      const found = db.archive.find((e) => e.id === id)
+      if (!found || db.owner[id] !== u.userId)
+        throw new AccountError('unauthorized', '없는 기록입니다')
+      return { ...found }
+    },
+
+    async saveArchive(draft: ArchiveDraft) {
+      await wait()
+      const db = load()
+      const u = current(db)
+      const entry: ArchiveDetail = { ...draft, id: newId('a') }
+      db.archive.push(entry)
+      db.owner[entry.id] = u.userId
+      // 한도는 서버가 집행한다. 프론트와 두 곳에서 세면 어긋난다
+      const mine = db.archive.filter((e) => db.owner[e.id] === u.userId && !e.premium)
+      const evicted = mine
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(ARCHIVE_LIMIT)
+        .map((e) => e.id)
+      for (const id of evicted) {
+        db.archive = db.archive.filter((e) => e.id !== id)
+        delete db.owner[id]
+      }
+      save(db)
+      return { entry: toEntry(entry), evicted }
+    },
+
+    async deleteArchive(id) {
+      await wait()
+      const db = load()
+      const u = current(db)
+      if (db.owner[id] !== u.userId) throw new AccountError('unauthorized', '없는 기록입니다')
+      db.archive = db.archive.filter((e) => e.id !== id)
       delete db.owner[id]
       save(db)
     },

@@ -27,7 +27,9 @@ const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 // 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
-const interviewerName = computed(() => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).name)
+const interviewerName = computed(
+  () => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).displayName,
+)
 
 const fieldItems = (Object.keys(FIELD_LABELS) as Field[]).map((value) => ({
   value,

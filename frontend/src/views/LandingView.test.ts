@@ -361,7 +361,7 @@ describe('LandingView — 면접관 고르기', () => {
     vi.mocked(hasModel).mockResolvedValue(true)
     const w = mountView()
     await flushPromises()
-    expect(w.find('[data-test="interviewer-f3"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-test="interviewer-m1"]').attributes('aria-checked')).toBe('true')
     expect(w.find('[data-test="go-prepare"]').attributes('disabled')).toBeUndefined()
   })
 })

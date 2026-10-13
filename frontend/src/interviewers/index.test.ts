@@ -48,32 +48,34 @@ function expectSheetMatchesAsset(
 }
 
 describe('interviewers', () => {
-  it('4명: 기본(남·여) · 압박(남·여) 순서(고르기 카드 순서), id 유일', () => {
-    expect(INTERVIEWERS.map((i) => i.id)).toEqual(['m1', 'f3', 'm2', 'f2'])
+  it('4명: 데이빗·쥴리·올리비아·벤 순서(고르기 카드 순서), id 유일', () => {
+    expect(INTERVIEWERS.map((i) => i.id)).toEqual(['m1', 'f2', 'f3', 'm2'])
+    expect(INTERVIEWERS.map((i) => i.displayName)).toEqual(['데이빗', '쥴리', '올리비아', '벤'])
     expect(INTERVIEWERS.map((i) => i.name)).toEqual([
       '기본 면접관(남)',
+      '압박 면접관(여)',
       '기본 면접관(여)',
       '압박 면접관(남)',
-      '압박 면접관(여)',
-    ])
-    expect(INTERVIEWERS.map((i) => i.tagline)).toEqual([
-      '차분하게 진행합니다',
-      '차분하게 진행합니다',
-      '근거를 보여 주세요',
-      '근거를 보여 주세요',
     ])
     expect(new Set(INTERVIEWERS.map((i) => i.id)).size).toBe(4)
   })
+  it('트랙: 데이빗·쥴리는 회사, 올리비아는 대입, 벤만 둘 다라 null', () => {
+    expect(INTERVIEWERS.map((i) => i.track)).toEqual(['company', 'company', 'admission', null])
+  })
+  it('프리미엄은 벤 하나뿐이다', () => {
+    expect(INTERVIEWERS.filter((i) => i.premium).map((i) => i.displayName)).toEqual(['벤'])
+  })
   it('면접관 id와 페르소나 id는 따로다: 기본 둘은 standard, 압박 둘은 sharp(gentle은 연결된 면접관 없음)', () => {
-    expect(INTERVIEWERS.map((i) => i.persona)).toEqual(['standard', 'standard', 'sharp', 'sharp'])
+    expect(INTERVIEWERS.map((i) => i.persona)).toEqual(['standard', 'sharp', 'standard', 'sharp'])
     for (const iv of INTERVIEWERS) expect(PERSONAS[iv.persona]).toBeDefined()
   })
-  it('목소리: m1 M4 · f3 F3 · m2 M5 · f2 F4', () => {
-    expect(INTERVIEWERS.map((i) => i.voiceId)).toEqual(['M4', 'F3', 'M5', 'F4'])
+  it('목소리: 데이빗 M4 · 쥴리 F4 · 올리비아 F3 · 벤 M5', () => {
+    expect(INTERVIEWERS.map((i) => i.voiceId)).toEqual(['M4', 'F4', 'F3', 'M5'])
   })
-  it('기본값은 f3(기본 면접관(여))', () => {
-    expect(DEFAULT_INTERVIEWER).toBe('f3')
-    expect(interviewerById(DEFAULT_INTERVIEWER)?.name).toBe('기본 면접관(여)')
+  it('기본값은 데이빗 — 올리비아는 대입 전용이라 회사 면접 기본이 될 수 없다', () => {
+    expect(DEFAULT_INTERVIEWER).toBe('m1')
+    expect(interviewerById(DEFAULT_INTERVIEWER)?.displayName).toBe('데이빗')
+    expect(interviewerById(DEFAULT_INTERVIEWER)?.track).toBe('company')
   })
   it('목소리·미리 듣기는 voices.json을 따른다', () => {
     for (const iv of INTERVIEWERS) {
