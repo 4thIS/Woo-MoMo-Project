@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>결제 · 데모</title>
+    <!--
+      토스페이먼츠 결제창을 **흉내 낸 데모 화면**입니다. 실제 결제는 일어나지 않고
+      어떤 결제 정보도 받지 않습니다(카드번호 입력 칸이 없는 이유). 흐름만 실물을 따릅니다:
+      결제수단 → 카드사 → 인증 → opener에 paymentKey·orderId·amount 전달.
+      이 파일은 Vue 앱 바깥의 정적 페이지라 디자인 토큰을 쓰지 않습니다 — 토스의 생김새를 따릅니다.
+    -->
+    <style>
+      :root {
+        --blue: #3182f6;
+        --blue-dark: #1b64da;
+        --ink: #191f28;
+        --gray-1: #f2f4f6;
+        --gray-2: #e5e8eb;
+        --gray-t: #8b95a1;
+        --white: #fff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        background: var(--white);
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard',
+          'Malgun Gothic', 'Noto Sans KR', sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      /* 흉내는 내되 속이지 않는다 — 창 맨 위에 데모임을 박아 둔다 */
+      .demo {
+        background: #fff4e6;
+        color: #8a5300;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+        padding: 7px 12px;
+        border-bottom: 1px solid #ffe0b2;
+      }
+      header.bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--gray-2);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+      }
+      .brand .mark {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--blue);
+        color: var(--white);
+        font-size: 13px;
+        font-weight: 800;
+        display: grid;
+        place-items: center;
+      }
+      .x {
+        border: 0;
+        background: none;
+        font-size: 20px;
+        color: var(--gray-t);
+        cursor: pointer;
+        line-height: 1;
+        padding: 4px;
+      }
+      main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+      }
+      .order {
+        background: var(--gray-1);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 22px;
+      }
+      .order .nm {
+        color: var(--gray-t);
+        font-size: 13px;
+      }
+      .order .amt {
+        font-size: 26px;
+        font-weight: 700;
+        letter-spacing: -0.6px;
+        margin-top: 2px;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 10px;
+      }
+      .methods {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 22px;
+      }
+      .m {
+        border: 1px solid var(--gray-2);
+        background: var(--white);
+        border-radius: 10px;
+        padding: 12px 6px;
+        font-size: 13px;
+        color: var(--ink);
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      .m[aria-pressed='true'] {
+        border-color: var(--blue);
+        color: var(--blue);
+        font-weight: 600;
+        box-shadow: inset 0 0 0 1px var(--blue);
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .c {
+        border: 1px solid var(--gray-2);
+        background: var(--white);
+        border-radius: 10px;
+        padding: 14px 4px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .c[aria-pressed='true'] {
+        border-color: var(--blue);
+        color: var(--blue);
+        font-weight: 600;
+        box-shadow: inset 0 0 0 1px var(--blue);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0;
+        border-top: 1px solid var(--gray-2);
+        margin-top: 22px;
+      }
+      .row .hint {
+        color: var(--gray-t);
+        font-size: 13px;
+      }
+      .terms {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--gray-t);
+        padding-top: 14px;
+        border-top: 1px solid var(--gray-2);
+      }
+      .terms input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--blue);
+        margin: 1px 0 0;
+      }
+      footer {
+        padding: 14px 20px 20px;
+        border-top: 1px solid var(--gray-2);
+      }
+      .go {
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        background: var(--blue);
+        color: var(--white);
+        font-size: 16px;
+        font-weight: 700;
+        padding: 15px;
+        cursor: pointer;
+      }
+      .go:hover:not(:disabled) {
+        background: var(--blue-dark);
+      }
+      .go:disabled {
+        background: var(--gray-2);
+        color: var(--gray-t);
+        cursor: not-allowed;
+      }
+      /* 인증 화면 — 실물에서 카드사 앱으로 넘어가는 그 자리 */
+      .auth {
+        position: fixed;
+        inset: 0;
+        background: var(--white);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        text-align: center;
+        padding: 24px;
+      }
+      .auth.on {
+        display: flex;
+      }
+      .spin {
+        width: 44px;
+        height: 44px;
+        border: 4px solid var(--gray-2);
+        border-top-color: var(--blue);
+        border-radius: 50%;
+        animation: r 0.8s linear infinite;
+      }
+      @keyframes r {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .auth .t {
+        font-weight: 600;
+      }
+      .auth .s {
+        color: var(--gray-t);
+        font-size: 13px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spin {
+          animation-duration: 3s;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <p class="demo">데모 결제창입니다 · 실제 결제가 일어나지 않고 결제 정보를 받지 않습니다</p>
+
+    <header class="bar">
+      <span class="brand"><span class="mark">t</span>toss</span>
+      <button type="button" class="x" id="close" aria-label="결제 취소">✕</button>
+    </header>
+
+    <main>
+      <div class="order">
+        <p class="nm" id="shop">모두의 모의면접</p>
+        <p class="amt"><span id="amount">0</span>원</p>
+        <p class="nm" id="orderName"></p>
+      </div>
+
+      <h2>결제 수단</h2>
+      <div class="methods" id="methods">
+        <button type="button" class="m" aria-pressed="true" data-m="card">신용·체크카드</button>
+        <button type="button" class="m" aria-pressed="false" data-m="tosspay">토스페이</button>
+        <button type="button" class="m" aria-pressed="false" data-m="transfer">계좌이체</button>
+      </div>
+
+      <div id="cardPane">
+        <h2>카드사</h2>
+        <div class="cards" id="cards"></div>
+
+        <div class="row">
+          <span>할부</span>
+          <span class="hint">5만원 이상부터 할부할 수 있어요</span>
+        </div>
+      </div>
+
+      <label class="terms">
+        <input type="checkbox" id="agree" />
+        <span>결제 진행에 필요한 약관에 동의합니다 (데모)</span>
+      </label>
+    </main>
+
+    <footer>
+      <button type="button" class="go" id="go" disabled><span id="goAmt">0</span>원 결제하기</button>
+    </footer>
+
+    <div class="auth" id="auth">
+      <div class="spin"></div>
+      <p class="t" id="authT">카드사로 인증을 요청하고 있어요</p>
+      <p class="s">창을 닫지 마세요</p>
+    </div>
+
+    <script>
+      ;(function () {
+        var q = new URLSearchParams(location.search)
+        var orderId = q.get('orderId') || ''
+        var amount = Number(q.get('amount') || 0)
+        var won = amount.toLocaleString('ko-KR')
+        document.getElementById('amount').textContent = won
+        document.getElementById('goAmt').textContent = won
+        document.getElementById('orderName').textContent = q.get('orderName') || ''
+        document.title = won + '원 결제 · 데모'
+
+        var CARDS = [
+          '신한',
+          'KB국민',
+          '현대',
+          '삼성',
+          '롯데',
+          '하나',
+          'BC',
+          'NH농협',
+          '우리',
+          '카카오뱅크',
+          '토스뱅크',
+          '씨티',
+        ]
+        var picked = null
+        var box = document.getElementById('cards')
+        CARDS.forEach(function (name) {
+          var b = document.createElement('button')
+          b.type = 'button'
+          b.className = 'c'
+          b.textContent = name
+          b.setAttribute('aria-pressed', 'false')
+          b.addEventListener('click', function () {
+            picked = name
+            Array.prototype.forEach.call(box.children, function (el) {
+              el.setAttribute('aria-pressed', String(el === b))
+            })
+            sync()
+          })
+          box.appendChild(b)
+        })
+
+        var method = 'card'
+        var methods = document.getElementById('methods')
+        var cardPane = document.getElementById('cardPane')
+        Array.prototype.forEach.call(methods.children, function (b) {
+          b.addEventListener('click', function () {
+            method = b.dataset.m
+            Array.prototype.forEach.call(methods.children, function (el) {
+              el.setAttribute('aria-pressed', String(el === b))
+            })
+            // 카드가 아니면 카드사 고르기를 숨긴다 — 실물도 수단마다 아래가 바뀐다
+            cardPane.style.display = method === 'card' ? '' : 'none'
+            sync()
+          })
+        })
+
+        var agree = document.getElementById('agree')
+        var go = document.getElementById('go')
+        function sync() {
+          var ready = agree.checked && (method !== 'card' || picked !== null)
+          go.disabled = !ready
+        }
+        agree.addEventListener('change', sync)
+
+        /** 결과를 연 쪽에 돌려준다. 실물은 successUrl로 리다이렉트하지만 서버가 없다 */
+        function send(body) {
+          body.source = 'momo-toss-mock'
+          body.orderId = orderId
+          try {
+            if (window.opener) window.opener.postMessage(body, location.origin)
+          } catch (e) {
+            /* 연 쪽이 이미 사라졌다 */
+          }
+          window.close()
+        }
+
+        document.getElementById('close').addEventListener('click', function () {
+          send({ status: 'fail', code: 'PAY_PROCESS_CANCELED', message: '결제를 취소했습니다' })
+        })
+        // 사용자가 창 버튼으로 닫아도 연 쪽이 알아챈다(requestPayment가 closed를 본다)
+
+        go.addEventListener('click', function () {
+          document.getElementById('auth').classList.add('on')
+          setTimeout(function () {
+            document.getElementById('authT').textContent = '결제를 승인하고 있어요'
+          }, 900)
+          setTimeout(function () {
+            send({ status: 'success', paymentKey: 'mock_' + orderId })
+          }, 1900)
+        })
+      })()
+    </script>
+  </body>
+</html>

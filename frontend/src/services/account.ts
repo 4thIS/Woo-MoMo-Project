@@ -47,6 +47,7 @@ export interface ResumeDraft {
 export type AccountErrorCode =
   | 'email_taken'
   | 'weak_password'
+  | 'missing_name'
   | 'bad_credentials'
   | 'unauthorized'
   | 'no_tickets'
@@ -102,7 +103,8 @@ export interface AccountApi {
   /** 비로그인은 오류가 아니라 null이다 */
   me(): Promise<Session | null>
   emailTaken(email: string): Promise<boolean>
-  signUp(email: string, password: string): Promise<Session>
+  /** 이름은 가입할 때 받는다 — 대입 면접의 이름 칸을 미리 채우는 값이다 */
+  signUp(email: string, password: string, name: string): Promise<Session>
   signIn(email: string, password: string): Promise<Session>
   /** 실제 구현은 리다이렉트. 목업은 이메일을 직접 받는다 */
   signInWithGoogle(email?: string): Promise<Session>

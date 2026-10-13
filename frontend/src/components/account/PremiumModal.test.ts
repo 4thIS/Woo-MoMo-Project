@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+vi.mock('@/services/tossPayment', async (orig) => ({
+  ...(await orig<typeof import('@/services/tossPayment')>()),
+  requestPayment: vi.fn(),
+}))
+import { requestPayment, TossError } from '@/services/tossPayment'
+import { PREMIUM_PRICE } from '@/utils/plans'
 import PremiumModal from './PremiumModal.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
@@ -41,10 +47,15 @@ beforeEach(() => {
   vi.useFakeTimers()
   setActivePinia(createPinia())
   setAccountApi(makeMockAccount({ delayMs: 0 }))
+  vi.mocked(requestPayment).mockResolvedValue({
+    paymentKey: 'mock_k',
+    orderId: 'momo_1',
+    amount: PREMIUM_PRICE,
+  })
 })
 
 const signUp = async () => {
-  const p = useAccountStore().signUp('a@b.com', 'pw123456')
+  const p = useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
   await settle()
   await p
 }
@@ -186,5 +197,71 @@ describe('PremiumModal — 결제 목업', () => {
     await click('premium-start')
     await click('pay-confirm')
     expect(useAccountStore().tickets).toBe(20)
+  })
+})
+
+describe('PremiumModal — 토스 결제창', () => {
+  it('결제하기를 누르면 결제창을 띄운다', async () => {
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    expect(requestPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: PREMIUM_PRICE }))
+  })
+
+  it('결제창에서 취소하면 티켓이 들어오지 않고 결제 화면에 머문다', async () => {
+    vi.mocked(requestPayment).mockRejectedValue(
+      new TossError('PAY_PROCESS_CANCELED', '결제를 취소했습니다'),
+    )
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    expect(useAccountStore().tickets).toBe(0)
+    expect(document.querySelector('[data-test=pay-done]')).toBeNull()
+    expect(q('pay-error').textContent).toContain('취소')
+  })
+
+  it('취소한 뒤에 다시 결제할 수 있다 — 한 번 막히고 끝나면 안 된다', async () => {
+    vi.mocked(requestPayment).mockRejectedValueOnce(
+      new TossError('PAY_PROCESS_CANCELED', '결제를 취소했습니다'),
+    )
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    await click('pay-confirm')
+    expect(useAccountStore().tickets).toBe(10)
+  })
+
+  it('팝업이 막히면 팝업 차단을 풀라고 말한다', async () => {
+    vi.mocked(requestPayment).mockRejectedValue(
+      new TossError('POPUP_BLOCKED', '결제창이 열리지 않았습니다 — 팝업 차단을 풀고 다시'),
+    )
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    expect(q('pay-error').textContent).toContain('팝업')
+  })
+
+  it('카드사가 거절하면 그 문구를 그대로 보여 준다', async () => {
+    vi.mocked(requestPayment).mockRejectedValue(
+      new TossError('REJECT_CARD_COMPANY', '카드사가 결제를 거절했습니다'),
+    )
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    expect(q('pay-error').textContent).toContain('카드사')
+  })
+
+  it('승인까지 끝나야 완료 화면이다 — 인증만으로 티켓을 주지 않는다', async () => {
+    modal()
+    await signUp()
+    await click('premium-start')
+    await click('pay-confirm')
+    expect(q('pay-done')).not.toBeNull()
+    expect(useAccountStore().tickets).toBe(10)
   })
 })

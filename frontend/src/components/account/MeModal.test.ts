@@ -44,7 +44,7 @@ beforeEach(async () => {
   document.body.innerHTML = ''
   setActivePinia(createPinia())
   setAccountApi(makeMockAccount({ delayMs: 0 }))
-  await useAccountStore().signUp('a@b.com', 'pw123456')
+  await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
 })
 
 describe('MeModal — 계정 띠', () => {

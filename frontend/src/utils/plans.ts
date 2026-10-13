@@ -15,10 +15,17 @@ export interface PlanTier {
   price: string
 }
 
+/** 결제창에 넘기는 금액. 표시 문구와 어긋나지 않게 여기 하나만 둔다 */
+export const PREMIUM_PRICE = 4900
+
 export const PLAN_TIERS: readonly PlanTier[] = [
   { key: 'guest', label: '비로그인', price: '무료' },
   { key: 'member', label: '로그인', price: '무료' },
-  { key: 'premium', label: '모모 프리미엄', price: '4,900원 · 티켓 10회' },
+  {
+    key: 'premium',
+    label: '모모 프리미엄',
+    price: `${PREMIUM_PRICE.toLocaleString('ko-KR')}원 · 티켓 10회`,
+  },
 ]
 
 export interface PlanFeature {

@@ -41,7 +41,7 @@ beforeEach(() => {
 
 async function withEntries(...drafts: ArchiveDraft[]) {
   const a = useAccountStore()
-  await a.signUp('a@b.com', 'pw123456')
+  await a.signUp('a@b.com', 'pw123456', '이우진')
   for (const d of drafts) await a.saveArchive(d)
   w = mount(ArchiveModal, { props: { open: true } })
   await settle()
@@ -152,7 +152,7 @@ describe('ArchiveModal — 상세', () => {
 
   it('녹음이 있으면 답변 옆에서 재생할 수 있다', async () => {
     const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456')
+    await a.signUp('a@b.com', 'pw123456', '이우진')
     await a.saveArchive(
       draft({ premium: true, hasRecording: true, recordings: [{ turn: 0, url: 'blob:x' }] }),
     )
