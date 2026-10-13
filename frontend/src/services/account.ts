@@ -4,7 +4,11 @@
  * 화면은 구현을 모르므로 API가 없는 동안에도 전부 만들 수 있다.
  */
 
+import type { ReportItem } from '@/utils/reportParser'
+
 export type Tier = 'member' | 'premium'
+/** 면접의 갈래. 고른 면접관이 정한다 — 둘 다 보는 벤만 사용자가 고른다 */
+export type Track = 'company' | 'admission'
 export type ResumeKind = 'admission' | 'company'
 
 /** 대입 면접에서 미리 채울 값. 내정보에서 고친다 */
@@ -62,6 +66,38 @@ export class AccountError extends Error {
   }
 }
 
+/** 보관함 목록용 — 가볍다. 대화·리포트는 담기지 않는다 */
+export interface ArchiveEntry {
+  id: string
+  interviewerId: string
+  /** 벤으로 본 면접인가 — 보관 한도에서 빠진다 */
+  premium: boolean
+  track: Track
+  startedAt: string
+  endedAt: string
+  questionCount: number
+  hasRecording: boolean
+  /** track === 'company'일 때만 */
+  field?: string
+  job?: string
+  /** track === 'admission'일 때만 */
+  name?: string
+  age?: number
+  university?: string
+  department?: string
+}
+
+/** 보관함 상세 — 목록에 더해 대화와 리포트까지 */
+export interface ArchiveDetail extends ArchiveEntry {
+  messages: { role: 'user' | 'model'; text: string; at?: number }[]
+  report: ReportItem[]
+  reportRaw: string
+  /** 프리미엄 면접만 */
+  recordings: { turn: number; url: string }[]
+}
+
+export type ArchiveDraft = Omit<ArchiveDetail, 'id'>
+
 export interface AccountApi {
   /** 비로그인은 오류가 아니라 null이다 */
   me(): Promise<Session | null>
@@ -76,6 +112,12 @@ export interface AccountApi {
   listResumes(): Promise<ResumeSlot[]>
   saveResume(draft: ResumeDraft): Promise<ResumeSlot>
   deleteResume(id: string): Promise<void>
+
+  listArchive(): Promise<ArchiveEntry[]>
+  getArchive(id: string): Promise<ArchiveDetail>
+  /** 한도는 서버가 집행한다. 밀려난 기록의 id를 함께 돌려준다 */
+  saveArchive(draft: ArchiveDraft): Promise<{ entry: ArchiveEntry; evicted: string[] }>
+  deleteArchive(id: string): Promise<void>
 
   purchasePremium(): Promise<Session>
   spendTicket(): Promise<Session>
