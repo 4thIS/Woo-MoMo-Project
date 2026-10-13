@@ -150,6 +150,24 @@ describe('ArchiveModal — 상세', () => {
     )
   })
 
+  it('녹음이 있으면 답변 옆에서 재생할 수 있다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456')
+    await a.saveArchive(
+      draft({ premium: true, hasRecording: true, recordings: [{ turn: 0, url: 'blob:x' }] }),
+    )
+    w = mount(ArchiveModal, { props: { open: true } })
+    await settle()
+    q('[data-test="archive-row"]')!.click()
+    await settle()
+    expect(document.querySelectorAll('[data-test="archive-clip"]')).toHaveLength(1)
+  })
+
+  it('녹음이 없으면 재생 줄을 그리지 않는다 — 빈 플레이어는 고장처럼 보인다', async () => {
+    await openDetail()
+    expect(q('[data-test="archive-clip"]')).toBeNull()
+  })
+
   it('상세의 뒤로가기로 목록에 돌아온다', async () => {
     await openDetail()
     q('[data-test="archive-back"]')!.click()

@@ -35,8 +35,14 @@ const subject = computed(() => {
     return [e.field ? FIELD_LABELS[e.field as Field] : null, e.job].filter(Boolean).join(' · ')
   return [e.university, e.department].filter(Boolean).join(' · ')
 })
-/** 문항별 녹음. Task 8이 채우기 전까지는 늘 비어 있다 */
+/** 답변 순번으로 녹음을 찾는다. 리포트 카드는 꼬리질문을 한 장에 합치므로
+ *  카드 번호에는 맞출 수 없다 — 녹음은 **답변 옆**이 제 자리다 */
 const clipOf = (turn: number) => props.entry.recordings.find((r) => r.turn === turn)
+/** 이 메시지가 몇 번째 답변인가. 면접관 턴이면 -1 */
+function answerIndex(i: number): number {
+  if (props.entry.messages[i].role !== 'user') return -1
+  return props.entry.messages.slice(0, i + 1).filter((m) => m.role === 'user').length - 1
+}
 </script>
 
 <template>
@@ -61,6 +67,15 @@ const clipOf = (turn: number) => props.entry.recordings.find((r) => r.turn === t
           <li v-for="(m, i) in entry.messages" :key="i" :class="m.role">
             <span class="mono who">{{ m.role === 'model' ? iv.displayName : '나' }}</span>
             <p>{{ m.text }}</p>
+            <!-- 녹음이 없는 답변에는 줄을 그리지 않는다 — 빈 플레이어는 고장처럼 보인다 -->
+            <audio
+              v-if="clipOf(answerIndex(i))"
+              class="clip"
+              data-test="archive-clip"
+              :src="clipOf(answerIndex(i))!.url"
+              controls
+              preload="none"
+            />
           </li>
         </ol>
       </section>
@@ -69,13 +84,6 @@ const clipOf = (turn: number) => props.entry.recordings.find((r) => r.turn === t
         <h3 class="mono ttl">리포트</h3>
         <ReportCards v-if="entry.report.length" :report="entry.report" :answers="answers" />
         <p v-else class="mono none">리포트가 남지 않았습니다.</p>
-        <!-- 녹음이 없는 문항에는 줄을 그리지 않는다 — 빈 플레이어는 고장처럼 보인다 -->
-        <template v-for="(_, i) in entry.report" :key="`clip-${i}`">
-          <div v-if="clipOf(i)" class="clip" data-test="archive-clip">
-            <span class="mono who">Q{{ i + 1 }} 녹음</span>
-            <audio :src="clipOf(i)!.url" controls preload="none" />
-          </div>
-        </template>
       </section>
     </div>
   </div>
@@ -153,12 +161,8 @@ const clipOf = (turn: number) => props.entry.recordings.find((r) => r.turn === t
   color: var(--text-3);
 }
 .clip {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-.clip audio {
   width: 100%;
+  margin-top: var(--sp-2);
 }
 
 @media (max-width: 760px) {

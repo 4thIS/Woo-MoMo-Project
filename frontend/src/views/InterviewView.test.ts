@@ -12,7 +12,7 @@ vi.mock('@/services/speech', () => ({
 }))
 vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
 vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
-import { useInterviewStore } from '@/stores/interview'
+import { RECORDING_FULL, useInterviewStore } from '@/stores/interview'
 import { useModelStore } from '@/stores/model'
 import InterviewView from './InterviewView.vue'
 
@@ -183,5 +183,25 @@ describe('InterviewView 답변 타이머', () => {
     })
     expect(b.w.find('[data-test="answer-timer"]').exists()).toBe(false)
     b.w.unmount()
+  })
+})
+
+describe('InterviewView — 녹음 표시', () => {
+  it('녹음 중이면 녹음 중이라고 알린다 — 몰래 녹음하지 않는다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', recordingOn: true })
+    expect(mount(InterviewView).find('[data-test="rec"]').exists()).toBe(true)
+  })
+
+  it('녹음하지 않으면 아무 말도 하지 않는다', () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    expect(mount(InterviewView).find('[data-test="rec"]').exists()).toBe(false)
+  })
+
+  it('용량이 차면 왜 멈췄는지 말한다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', recordingOn: false, recordingWarning: RECORDING_FULL })
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="rec-warn"]').text()).toContain('녹음')
   })
 })
