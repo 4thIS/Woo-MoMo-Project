@@ -13,7 +13,7 @@ import { useModalStore } from '@/stores/modal'
 import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
-import PixelModal from '@/components/ui/PixelModal.vue'
+import ArchiveModal from '@/components/account/ArchiveModal.vue'
 
 const account = useAccountStore()
 const interview = useInterviewStore()
@@ -74,8 +74,11 @@ onMounted(() => void account.load())
     @need-login="modal.show('login')"
   />
   <MeModal :open="modal.open === 'me'" @close="modal.close()" />
-  <!-- 보관함은 2/2 계획에서 채운다 -->
-  <PixelModal :open="modal.open === 'archive'" title="보관함" @close="modal.close()" />
+  <ArchiveModal
+    :open="modal.open === 'archive'"
+    @close="modal.close()"
+    @need-premium="modal.show('premium')"
+  />
 </template>
 
 <style scoped>
