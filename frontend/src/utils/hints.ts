@@ -43,13 +43,13 @@ export const HINTS: readonly Hint[] = [
   {
     key: 'prepare-profile',
     phase: 'prepare',
-    text: '모델을 받는 동안 직군과 희망 직무를 채워 주세요. 왼쪽 출근 장면이 다운로드 진행률입니다.',
+    text: '모델을 받는 동안 지원 정보를 채워 주세요. 왼쪽 출근 장면이 다운로드 진행률입니다.',
     when: (c) => !c.profileDone,
   },
   {
     key: 'prepare-resume',
     phase: 'prepare',
-    text: '이력서 PDF를 올리거나 붙여 넣으세요. 파일은 이 브라우저를 떠나지 않습니다.',
+    text: '이력서(또는 자기소개서)를 올리거나 붙여 넣으세요. 파일은 이 브라우저를 떠나지 않습니다.',
     when: (c) => c.profileDone && !c.resumeDone,
   },
   {

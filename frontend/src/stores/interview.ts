@@ -17,6 +17,8 @@ import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
+import { canStartWith, trackOf } from '@/utils/track'
+import type { Track } from '@/services/account'
 import { parseReport, type ReportItem } from '@/utils/reportParser'
 import { synthesize } from '@/services/tts'
 import { playClip, setMuted } from '@/services/audio'
@@ -72,7 +74,18 @@ let speakText = '' // 재생 중인 발화 전문 — 중단 시 이걸로 revea
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
     phase: 'landing' as Phase,
-    profile: { field: null as Field | null, job: '' },
+    /** 트랙이 보는 칸만 쓴다. 유니온으로 가르면 화면 분기만 늘어난다 —
+     *  어느 칸을 볼지는 canStartWith가 트랙별로 안다 */
+    profile: {
+      field: null as Field | null,
+      job: '',
+      name: '',
+      age: null as number | null,
+      university: '',
+      department: '',
+    },
+    /** 벤처럼 둘 다 보는 면접관에서만 쓴다. 다른 면접관은 자기 트랙이 이긴다 */
+    chosenTrack: null as Track | null,
     resumeText: '',
     resumeName: null as string | null,
     fallbackQuestions: [] as string[],
@@ -98,9 +111,20 @@ export const useInterviewStore = defineStore('interview', {
   }),
   getters: {
     profileDone: (s) => s.profile.field !== null && s.profile.job.trim().length > 0,
+    /** 고른 면접관이 정한다 — 스토어에 따로 들고 있지 않는다.
+     *  선택이 없으면 기본 면접관으로 떨어진다. 칩·프롬프트가 이미 그렇게 하고 있어
+     *  여기서만 null을 내면 "면접관은 데이빗인데 트랙은 없음"이 된다 */
+    track(): Track | null {
+      return trackOf(useInterviewerStore().id ?? DEFAULT_INTERVIEWER, this.chosenTrack)
+    },
     resumeDone: (s) => s.resumeText.length >= RESUME_MIN,
     canStart(): boolean {
-      return useModelStore().ready && this.profileDone && this.resumeDone
+      return canStartWith({
+        track: this.track,
+        modelReady: useModelStore().ready,
+        resumeDone: this.resumeDone,
+        ...this.profile,
+      })
     },
     startBlockReason(): string | null {
       if (this.canStart) return null
@@ -134,6 +158,16 @@ export const useInterviewStore = defineStore('interview', {
     },
     setJob(job: string) {
       this.profile.job = job.slice(0, 40)
+    },
+    /** 벤에서 고른 트랙. 다른 면접관으로 바꾸면 비운다 */
+    setTrack(t: Track | null) {
+      this.chosenTrack = t
+    },
+    /** 대입 입력 네 칸 */
+    setAdmission(
+      v: Partial<Pick<typeof this.profile, 'name' | 'age' | 'university' | 'department'>>,
+    ) {
+      Object.assign(this.profile, v)
     },
     setResume(name: string, rawText: string) {
       this.resumeName = name
@@ -410,7 +444,8 @@ export const useInterviewStore = defineStore('interview', {
       this.report = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = { field: null, job: '' }
+      this.profile = { field: null, job: '', name: '', age: null, university: '', department: '' }
+      this.chosenTrack = null
       this.resumeText = ''
       this.resumeName = null
       this.fallbackQuestions = []

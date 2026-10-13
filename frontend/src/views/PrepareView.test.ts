@@ -535,3 +535,66 @@ describe('PrepareView — 도움말 다시 켜기', () => {
     expect(w.find('[data-test=hints-on]').exists()).toBe(false)
   })
 })
+
+describe('PrepareView — 트랙별 입력', () => {
+  const pick = (id: 'm1' | 'f3') => useInterviewerStore().select(id)
+
+  it('회사 면접관이면 분야·직무 칸이 나온다', () => {
+    pick('m1')
+    const w = mountView()
+    expect(w.find('[data-test=job]').exists()).toBe(true)
+    expect(w.find('[data-test=ad-name]').exists()).toBe(false)
+  })
+
+  it('대입 면접관이면 다섯 칸 중 네 칸이 1단계에 나온다', () => {
+    pick('f3')
+    const w = mountView()
+    for (const k of ['ad-name', 'ad-age', 'ad-university', 'ad-department'])
+      expect(w.find(`[data-test=${k}]`).exists(), k).toBe(true)
+    expect(w.find('[data-test=job]').exists()).toBe(false)
+  })
+
+  it('대입이면 2단계 문구가 자기소개서로 바뀐다', async () => {
+    pick('f3')
+    const w = mountView()
+    await w.findAll('[data-test=step-next]')[0].trigger('click')
+    expect(w.text()).toContain('자기소개서')
+    expect(w.text()).not.toContain('이력서 PDF를')
+  })
+
+  it('대입은 네 칸을 다 채워야 시작 버튼이 열린다', async () => {
+    pick('f3')
+    vi.mocked(extractPdfText).mockResolvedValue('자소서 '.repeat(100))
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    const set = async (k: string, v: string) => {
+      await w.find(`[data-test=${k}]`).setValue(v)
+    }
+    await set('ad-name', '홍길동')
+    await set('ad-age', '19')
+    await set('ad-university', '한국대학교')
+    expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(true)
+    await set('ad-department', '컴퓨터공학과')
+    useInterviewStore().setResume('자소서.pdf', 'x'.repeat(200))
+    await flushPromises()
+    expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('면접관을 회사→대입으로 바꾸면 앞 입력으로는 시작할 수 없다', async () => {
+    pick('m1')
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const s = useInterviewStore()
+    s.setField('it')
+    s.setJob('백엔드 개발자')
+    s.setResume('이력서.pdf', 'x'.repeat(200))
+    const w = mountView()
+    expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(false)
+    pick('f3')
+    await flushPromises()
+    expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+})

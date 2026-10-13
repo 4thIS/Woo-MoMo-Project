@@ -11,7 +11,13 @@ import type { LlmSession } from '@/services/llm'
 import { useModelStore } from './model'
 import { synthesize } from '@/services/tts'
 import { playClip, setMuted } from '@/services/audio'
-import { PLAY_GRACE_MS, SYNTH_TIMEOUT_MS, TTS_WARNING, useInterviewStore } from './interview'
+import {
+  PLAY_GRACE_MS,
+  RESUME_MIN,
+  SYNTH_TIMEOUT_MS,
+  TTS_WARNING,
+  useInterviewStore,
+} from './interview'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
 
@@ -735,6 +741,7 @@ describe('interview store — 면접관 페르소나', () => {
     useInterviewerStore().select('m2')
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
+    s.setTrack('company') // 벤은 둘 다 봐서 트랙을 골라야 시작한다
     await s.start()
     expect(s.interviewerId).toBe('m2')
     expect(s.sessionInterviewer.name).toBe('압박 면접관(남)')
@@ -795,6 +802,7 @@ describe('interview store — 면접관 페르소나', () => {
     const sess = fakeSession(['q', json])
     vi.mocked(startSession).mockResolvedValue(sess)
     const s = await readyStore()
+    s.setTrack('company')
     useModelStore().manifest!.systemPromptOverride = '파인튜닝 모델 전용 프롬프트'
     await s.start()
     await s.finish()
@@ -809,5 +817,80 @@ describe('interview store — 면접관 페르소나', () => {
     expect(iv.playingId).toBeNull()
     await s.reset()
     expect(s.interviewerId).toBeNull()
+  })
+})
+
+describe('interview store — 트랙별 입력', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  const ready = () => {
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+  }
+
+  it('트랙은 고른 면접관에서 끌어낸다 — 따로 들고 있지 않는다', () => {
+    const s = useInterviewStore()
+    // 선택이 없으면 기본 면접관(데이빗)으로 떨어진다 — 칩·프롬프트와 같다
+    expect(s.track).toBe('company')
+    useInterviewerStore().select('f3')
+    expect(s.track).toBe('admission')
+    useInterviewerStore().select('m1')
+    expect(s.track).toBe('company')
+  })
+
+  it('벤은 트랙을 고르기 전에는 null이다', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    expect(s.track).toBeNull()
+    s.setTrack('admission')
+    expect(s.track).toBe('admission')
+  })
+
+  it('대입은 다섯 칸이 다 차야 시작할 수 있다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    expect(s.canStart).toBe(false)
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.canStart).toBe(true)
+  })
+
+  it('면접관을 바꿔 트랙이 바뀌면 앞 트랙의 입력은 쓰지 않는다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('m1')
+    s.setResume('이력서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setField('it')
+    s.setJob('백엔드 개발자')
+    expect(s.canStart).toBe(true)
+    // 대입으로 바꾸면 회사 입력만으로는 못 간다
+    useInterviewerStore().select('f3')
+    expect(s.canStart).toBe(false)
+  })
+
+  it('벤으로 트랙을 고르면 그 트랙의 조건을 본다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('m2')
+    s.setResume('이력서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setField('it')
+    s.setJob('백엔드 개발자')
+    expect(s.canStart).toBe(false) // 트랙 미선택
+    s.setTrack('company')
+    expect(s.canStart).toBe(true)
+  })
+
+  it('면접관을 바꾸면 벤에서 고른 트랙은 지워진다', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    s.setTrack('admission')
+    useInterviewerStore().select('m1')
+    s.setTrack(null)
+    expect(s.track).toBe('company')
   })
 })
