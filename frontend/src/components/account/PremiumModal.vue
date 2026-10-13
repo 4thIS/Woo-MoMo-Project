@@ -6,7 +6,8 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
-import { PLAN_FEATURES, PLAN_TIERS, litCount, planKeyOf } from '@/utils/plans'
+import { PLAN_FEATURES, PLAN_TIERS, PREMIUM_PRICE, litCount, planKeyOf } from '@/utils/plans'
+import { requestPayment, TossError } from '@/services/tossPayment'
 import { PREMIUM_TICKETS } from '@/services/account'
 import PixelModal from '@/components/ui/PixelModal.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
@@ -21,8 +22,8 @@ const step = ref<Step>('compare')
 /** 처리 중 가드 — 결제 버튼 연타로 티켓이 20장이 되지 않게 */
 let paying = false
 
-/** 토스 결제창을 흉내 내는 대기 */
-const PAY_MS = 2000
+/** 결제창이 돌려준 실패 문구. 성공한 척하지 않으려면 이것부터 보여 줘야 한다 */
+const payError = ref('')
 
 const now = computed(() => planKeyOf(account.tier))
 const startLabel = computed(() => (account.isPremium ? '티켓 더 받기' : '프리미엄 시작하기'))
@@ -32,6 +33,7 @@ watch(
   (on) => {
     if (on) {
       step.value = 'compare'
+      payError.value = ''
       paying = false
     }
   },
@@ -39,17 +41,35 @@ watch(
 
 function start() {
   if (!account.signedIn) return emit('need-login')
+  payError.value = ''
   step.value = 'pay'
 }
 
+/** 실물과 같은 두 걸음: 결제창에서 **인증**을 받고, 그 값으로 **승인**한다.
+ *  인증만으로 티켓을 주면 창을 닫은 사람에게도 티켓이 간다 */
 async function pay() {
   if (paying) return
   paying = true
+  payError.value = ''
   step.value = 'paying'
-  await new Promise((r) => setTimeout(r, PAY_MS))
+  try {
+    await requestPayment({
+      amount: PREMIUM_PRICE,
+      orderName: `모모 프리미엄 · 티켓 ${PREMIUM_TICKETS}회`,
+      customerName: account.profile.name ?? undefined,
+    })
+  } catch (e) {
+    payError.value =
+      e instanceof TossError ? e.message : '결제창과 연결하지 못했습니다 — 다시 시도하세요'
+    paying = false
+    step.value = 'pay'
+    return
+  }
+  // 승인. 서버가 오면 여기서 paymentKey·orderId·amount를 보낸다
   await account.purchasePremium()
   paying = false
-  step.value = 'done'
+  step.value = account.error ? 'pay' : 'done'
+  if (account.error) payError.value = account.error.message
 }
 </script>
 
@@ -123,14 +143,15 @@ async function pay() {
       <p class="display amount">모모 프리미엄 · 티켓 {{ PREMIUM_TICKETS }}회</p>
       <dl class="kv mono">
         <dt>결제 수단</dt>
-        <dd>토스페이</dd>
+        <dd>토스페이먼츠</dd>
         <dt>결제 금액</dt>
-        <dd>4,900원</dd>
+        <dd>{{ PREMIUM_PRICE.toLocaleString('ko-KR') }}원</dd>
       </dl>
       <p class="mono note">※ 데모입니다. 실제로 결제되지 않습니다.</p>
+      <p v-if="payError" class="mono err" data-test="pay-error">{{ payError }}</p>
       <div class="acts">
         <PixelButton :disabled="step === 'paying'" data-test="pay-confirm" @click="pay">
-          {{ step === 'paying' ? '처리 중…' : '결제하기' }}
+          {{ step === 'paying' ? '결제창에서 진행 중…' : '결제하기' }}
         </PixelButton>
       </div>
     </div>
@@ -356,6 +377,11 @@ async function pay() {
   font-size: clamp(14px, 2vh, 18px);
 }
 
+.err {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-label);
+}
 .pay {
   display: flex;
   flex-direction: column;
