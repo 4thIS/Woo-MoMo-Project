@@ -59,7 +59,7 @@ onMounted(() => void account.load())
       <button
         v-else
         type="button"
-        class="mono link press"
+        class="display cta press"
         data-test="top-login"
         @click="open = 'login'"
       >
@@ -106,5 +106,19 @@ onMounted(() => void account.load())
 .link:hover,
 .link:focus-visible {
   color: var(--accent);
+}
+/* 로그인은 비로그인에게 가장 중요한 한 곳인데 글자만 있으면 안내 문구처럼 보인다.
+   채우되 **노랑은 쓰지 않는다** — 노랑은 '면접 시작'·'결제하기' 같은 진행용이고,
+   한 화면에 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다. 계정은 민트가 맡는다 */
+.cta {
+  font-size: var(--fs-body-sm);
+  line-height: 1;
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--accent-2);
+  color: var(--bg);
+  border: 2px solid var(--accent-2);
+  --press-shadow: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
 }
 </style>
