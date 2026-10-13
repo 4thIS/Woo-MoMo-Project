@@ -152,3 +152,73 @@ describe('account 스토어 — 프리미엄', () => {
     expect(useAccountStore().tickets).toBe(0)
   })
 })
+
+describe('account 스토어 — 보관함', () => {
+  const DRAFT = {
+    interviewerId: 'm1',
+    premium: false,
+    track: 'company' as const,
+    startedAt: '2026-10-09T00:00:00Z',
+    endedAt: '2026-10-09T00:20:00Z',
+    questionCount: 5,
+    hasRecording: false,
+    field: 'it',
+    job: '백엔드 개발자',
+    messages: [{ role: 'model' as const, text: '자기소개를 해 주세요' }],
+    report: [{ question: 'Q1', answerSummary: 'A', feedback: 'F' }],
+    reportRaw: '{}',
+    recordings: [],
+  }
+
+  beforeEach(async () => {
+    await useAccountStore().signUp('a@b.com', 'pw123456')
+  })
+
+  it('저장하면 목록이 갱신된다', async () => {
+    const a = useAccountStore()
+    await a.saveArchive(DRAFT)
+    expect(a.archive).toHaveLength(1)
+  })
+
+  it('밀려난 기록을 알려 준다 — 사라졌다고 말해 줘야 한다', async () => {
+    const a = useAccountStore()
+    for (let i = 0; i < 5; i++)
+      await a.saveArchive({ ...DRAFT, startedAt: `2026-10-0${i + 1}T00:00:00Z` })
+    const r = await a.saveArchive({ ...DRAFT, startedAt: '2026-10-09T00:00:00Z' })
+    expect(r?.evicted).toHaveLength(1)
+  })
+
+  it('찼는지 알려 준다', async () => {
+    const a = useAccountStore()
+    for (let i = 0; i < 5; i++) await a.saveArchive(DRAFT)
+    expect(a.archiveFull).toBe(true)
+  })
+
+  it('상세를 따로 받아 온다', async () => {
+    const a = useAccountStore()
+    const saved = await a.saveArchive(DRAFT)
+    const full = await a.getArchive(saved!.entry.id)
+    expect(full?.messages).toHaveLength(1)
+  })
+
+  it('지우면 목록에서 빠진다', async () => {
+    const a = useAccountStore()
+    const saved = await a.saveArchive(DRAFT)
+    await a.deleteArchive(saved!.entry.id)
+    expect(a.archive).toEqual([])
+  })
+
+  it('로그아웃하면 보관함도 비운다', async () => {
+    const a = useAccountStore()
+    await a.saveArchive(DRAFT)
+    await a.signOut()
+    expect(a.archive).toEqual([])
+  })
+
+  it('저장이 실패하면 null을 돌려주고 error에 담는다 — 성공한 척하지 않는다', async () => {
+    const a = useAccountStore()
+    await a.signOut()
+    expect(await a.saveArchive(DRAFT)).toBeNull()
+    expect(a.error?.code).toBe('unauthorized')
+  })
+})

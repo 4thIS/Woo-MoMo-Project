@@ -8,12 +8,16 @@ import { account as defaultApi } from '@/services/accountMock'
 import {
   AccountError,
   type AccountApi,
+  type ArchiveDetail,
+  type ArchiveDraft,
+  type ArchiveEntry,
   type Profile,
   type ResumeDraft,
   type ResumeKind,
   type ResumeSlot,
   type Session,
 } from '@/services/account'
+import { isFull } from '@/utils/archive'
 
 let api: AccountApi = defaultApi
 /** 테스트·실제 API 전환용 */
@@ -25,6 +29,7 @@ export const useAccountStore = defineStore('account', {
   state: () => ({
     session: null as Session | null,
     resumes: [] as ResumeSlot[],
+    archive: [] as ArchiveEntry[],
     loading: false,
     error: null as AccountError | null,
   }),
@@ -35,6 +40,7 @@ export const useAccountStore = defineStore('account', {
     isPremium: (s) => s.session?.tier === 'premium',
     profile: (s): Profile => s.session?.profile ?? { name: null, age: null },
     slotsOf: (s) => (kind: ResumeKind) => s.resumes.filter((r) => r.kind === kind),
+    archiveFull: (s) => isFull(s.archive),
   },
   actions: {
     /** 모든 호출의 공통 껍데기 — loading을 켜고 오류를 담는다. 성공하면 값, 실패하면 null */
@@ -55,7 +61,10 @@ export const useAccountStore = defineStore('account', {
     async load() {
       const s = await this.run(() => api.me())
       this.session = s ?? null
-      if (s) await this.refreshResumes()
+      if (s) {
+        await this.refreshResumes()
+        await this.refreshArchive()
+      }
     },
 
     /** 폼 안내용 — 실패해도 error를 건드리지 않는다 */
@@ -72,6 +81,7 @@ export const useAccountStore = defineStore('account', {
       if (s) {
         this.session = s
         this.resumes = []
+        this.archive = []
       }
     },
 
@@ -80,6 +90,7 @@ export const useAccountStore = defineStore('account', {
       if (s) {
         this.session = s
         await this.refreshResumes()
+        await this.refreshArchive()
       }
     },
 
@@ -88,6 +99,7 @@ export const useAccountStore = defineStore('account', {
       if (s) {
         this.session = s
         await this.refreshResumes()
+        await this.refreshArchive()
       }
     },
 
@@ -96,6 +108,7 @@ export const useAccountStore = defineStore('account', {
       // 실패해도 화면에서는 내보낸다 — 남겨 두는 쪽이 더 위험하다
       this.session = null
       this.resumes = []
+      this.archive = []
     },
 
     async saveProfile(profile: Profile) {
@@ -117,6 +130,30 @@ export const useAccountStore = defineStore('account', {
     async deleteResume(id: string) {
       const done = await this.run(() => api.deleteResume(id))
       if (done !== null) await this.refreshResumes()
+    },
+
+    async refreshArchive() {
+      const list = await this.run(() => api.listArchive())
+      if (list) this.archive = list
+    },
+
+    /** 돌려주는 `evicted`는 **밀려난 기록의 id** — 화면이 "하나가 사라졌습니다"를 말할 근거다 */
+    async saveArchive(
+      draft: ArchiveDraft,
+    ): Promise<{ entry: ArchiveEntry; evicted: string[] } | null> {
+      const saved = await this.run(() => api.saveArchive(draft))
+      if (saved) await this.refreshArchive()
+      return saved
+    },
+
+    /** 목록은 가벼우니 상세는 누를 때 받는다 */
+    async getArchive(id: string): Promise<ArchiveDetail | null> {
+      return await this.run(() => api.getArchive(id))
+    },
+
+    async deleteArchive(id: string) {
+      const done = await this.run(() => api.deleteArchive(id))
+      if (done !== null) await this.refreshArchive()
     },
 
     async purchasePremium() {

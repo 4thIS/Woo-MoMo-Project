@@ -186,3 +186,88 @@ describe('mockAccount — 저장이 막힌 브라우저', () => {
     expect(s.email).toBe('a@b.com')
   })
 })
+
+describe('mockAccount — 보관함', () => {
+  const draft = (premium = false) => ({
+    interviewerId: premium ? 'm2' : 'm1',
+    premium,
+    track: 'company' as const,
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    questionCount: 5,
+    hasRecording: false,
+    field: 'it',
+    job: '백엔드 개발자',
+    messages: [{ role: 'model' as const, text: '자기소개를 해 주세요' }],
+    report: [{ question: 'Q1', answerSummary: 'A', feedback: 'F' }],
+    reportRaw: '{}',
+    recordings: [],
+  })
+
+  beforeEach(async () => {
+    await api.signUp('a@b.com', 'pw123456')
+  })
+
+  it('저장하면 목록에 나온다', async () => {
+    await api.saveArchive(draft())
+    expect(await api.listArchive()).toHaveLength(1)
+  })
+
+  it('목록은 최신순이다', async () => {
+    const first = await api.saveArchive({ ...draft(), startedAt: '2026-10-01T00:00:00Z' })
+    const second = await api.saveArchive({ ...draft(), startedAt: '2026-10-09T00:00:00Z' })
+    expect((await api.listArchive())[0].id).toBe(second.entry.id)
+    expect((await api.listArchive())[1].id).toBe(first.entry.id)
+  })
+
+  it('목록은 가볍다 — 대화·리포트는 담기지 않는다', async () => {
+    await api.saveArchive(draft())
+    const row = (await api.listArchive())[0] as Record<string, unknown>
+    expect(row.messages).toBeUndefined()
+    expect(row.report).toBeUndefined()
+  })
+
+  it('상세는 대화와 리포트를 담는다', async () => {
+    const { entry } = await api.saveArchive(draft())
+    const full = await api.getArchive(entry.id)
+    expect(full.report).toHaveLength(1)
+    expect(full.messages).toHaveLength(1)
+  })
+
+  it('일반이 5개를 넘으면 가장 오래된 것이 밀려난다 — 서버가 지운다', async () => {
+    const ids: string[] = []
+    for (let i = 0; i < 5; i++)
+      ids.push(
+        (await api.saveArchive({ ...draft(), startedAt: `2026-10-0${i + 1}T00:00:00Z` })).entry.id,
+      )
+    const r = await api.saveArchive({ ...draft(), startedAt: '2026-10-09T00:00:00Z' })
+    expect(r.evicted).toEqual([ids[0]])
+    expect(await api.listArchive()).toHaveLength(5)
+  })
+
+  it('프리미엄 기록은 한도에 들어가지 않는다', async () => {
+    for (let i = 0; i < 5; i++) await api.saveArchive(draft())
+    const r = await api.saveArchive(draft(true))
+    expect(r.evicted).toEqual([])
+    expect(await api.listArchive()).toHaveLength(6)
+  })
+
+  it('지우면 사라진다', async () => {
+    const { entry } = await api.saveArchive(draft())
+    await api.deleteArchive(entry.id)
+    expect(await api.listArchive()).toHaveLength(0)
+  })
+
+  it('남의 기록은 보이지도 지워지지도 않는다', async () => {
+    const { entry } = await api.saveArchive(draft())
+    await api.signOut()
+    await api.signUp('other@b.com', 'pw123456')
+    expect(await api.listArchive()).toHaveLength(0)
+    await expect(api.getArchive(entry.id)).rejects.toMatchObject({ code: 'unauthorized' })
+  })
+
+  it('비로그인은 저장하지 못한다', async () => {
+    await api.signOut()
+    await expect(api.saveArchive(draft())).rejects.toMatchObject({ code: 'unauthorized' })
+  })
+})
