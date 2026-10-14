@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from app.ids import new_id
 
+TICKETS_PER_PURCHASE = 10
+
 
 @dataclass(frozen=True)
 class User:
@@ -103,3 +105,12 @@ def sync_admin(
             (password_hash, existing.id),
         )
     conn.execute("UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND email != ?", (login,))
+
+
+def grant_tickets(
+    conn: sqlite3.Connection, user_id: str, count: int = TICKETS_PER_PURCHASE
+) -> User:
+    conn.execute(
+        "UPDATE users SET tier = 'premium', tickets = tickets + ? WHERE id = ?", (count, user_id)
+    )
+    return _require(get_by_id(conn, user_id))
