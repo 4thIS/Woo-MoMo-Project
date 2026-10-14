@@ -2,6 +2,7 @@ import json
 
 from app.llm import prompts
 from app.llm.claude import TURN_MAX_TOKENS, ClaudeError
+from app.repos import premium
 from tests.helpers import logout, make_premium, open_db, signup, sse_events, start_ben
 
 
@@ -123,3 +124,37 @@ def test_member_is_forbidden(client):
     logout(client)
     signup(client, email="b@b.com")
     assert _turn(client, iid).json() == {"error": "premium_required"}
+
+
+def test_overlapping_turn_is_not_recorded(client, fake_claude, settings, monkeypatch):
+    iid = start_ben(client)
+    real = fake_claude.stream_text
+
+    def racing(**kwargs):
+        # 스트리밍 중에 다른 요청이 먼저 턴을 기록한 상황
+        with open_db(settings) as other:
+            premium.append_turn(
+                other,
+                interview_id=iid,
+                answer=None,
+                model_text="먼저 온 질문",
+                expected_model_turns=0,
+            )
+        yield from real(**kwargs)
+
+    monkeypatch.setattr(fake_claude, "stream_text", racing)
+    events = sse_events(_turn(client, iid).text)
+    assert events[-1] == ("error", {"code": "turn_conflict"})
+    assert all(name != "done" for name, _ in events)
+    row = _row(settings, iid)
+    assert row["model_turns"] == 1
+    assert json.loads(row["messages_json"]) == [{"role": "model", "text": "먼저 온 질문"}]
+
+
+def test_empty_reply_is_a_failure_and_not_recorded(client, fake_claude, settings):
+    iid = start_ben(client)
+    fake_claude.replies = [["  ", "\n"]]
+    events = sse_events(_turn(client, iid).text)
+    assert events[-1] == ("error", {"code": "claude_error"})
+    row = _row(settings, iid)
+    assert (row["model_turns"], row["messages_json"]) == (0, "[]")

@@ -31,6 +31,10 @@ class DailyLimitReached(Exception):
     """오늘(한국 날짜) 서버 전체 벤 면접 수가 상한에 닿았다."""
 
 
+class TurnConflict(Exception):
+    """다른 요청이 먼저 턴을 기록했거나, 면접이 이미 끝났거나, 15번을 채웠다."""
+
+
 def _interview(row: sqlite3.Row) -> PremiumInterview:
     return PremiumInterview(
         id=row["id"],
@@ -85,13 +89,29 @@ def get_interview(
 
 
 def append_turn(
-    conn: sqlite3.Connection, *, interview_id: str, answer: str | None, model_text: str
+    conn: sqlite3.Connection,
+    *,
+    interview_id: str,
+    answer: str | None,
+    model_text: str,
+    expected_model_turns: int,
 ) -> PremiumInterview:
-    """성공한 턴만 기록한다: (답변) + 면접관 응답, model_turns + 1."""
+    """성공한 턴만 기록한다: (답변) + 면접관 응답, model_turns + 1.
+
+    낙관적 잠금: 트랜잭션 안에서 다시 읽어 사전 검사 때 본 model_turns 그대로일 때만 쓴다.
+    """
     with transaction(conn):
         row = conn.execute(
-            "SELECT messages_json FROM premium_interviews WHERE id = ?", (interview_id,)
+            "SELECT messages_json, model_turns, status FROM premium_interviews WHERE id = ?",
+            (interview_id,),
         ).fetchone()
+        if (
+            row is None
+            or row["status"] == "done"
+            or row["model_turns"] != expected_model_turns
+            or row["model_turns"] >= MAX_MODEL_TURNS
+        ):
+            raise TurnConflict
         messages = json.loads(row["messages_json"])
         if answer is not None:
             messages.append({"role": "user", "text": answer})

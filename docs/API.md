@@ -294,6 +294,7 @@ data: {"ended":false}
 
 - `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 15번). 다음 턴은 `409 interview_over`. 리포트를 부른다.
 - Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.
+- SSE `error` 코드 `turn_conflict`: 같은 면접에 턴 요청이 겹쳐 뒤의 것을 기록하지 않음. 새로 고쳐 이어 가면 된다.
 
 **3) 리포트 — POST /api/premium/interviews/{id}/report**
 

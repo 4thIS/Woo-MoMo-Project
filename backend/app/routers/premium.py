@@ -118,10 +118,22 @@ def take_turn(
             # 실패한 턴은 기록하지 않는다 — 같은 요청으로 다시 시도한다
             yield sse("error", {"code": exc.code})
             return
-        with db.connection(db_path) as c:
-            saved = premium.append_turn(
-                c, interview_id=interview.id, answer=answer, model_text="".join(chunks)
-            )
+        reply = "".join(chunks)
+        if not reply.strip():
+            yield sse("error", {"code": "claude_error"})
+            return
+        try:
+            with db.connection(db_path) as c:
+                saved = premium.append_turn(
+                    c,
+                    interview_id=interview.id,
+                    answer=answer,
+                    model_text=reply,
+                    expected_model_turns=interview.model_turns,
+                )
+        except premium.TurnConflict:
+            yield sse("error", {"code": "turn_conflict"})
+            return
         yield sse("done", {"ended": is_over(saved)})
 
     return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)

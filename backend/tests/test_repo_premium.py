@@ -105,12 +105,20 @@ def test_append_turn_and_mark_done(path):
         uid = _premium_user(conn)
         iid = _start(conn, uid)
         iv = premium.append_turn(
-            conn, interview_id=iid, answer=None, model_text="자기소개 해 주세요."
+            conn,
+            interview_id=iid,
+            answer=None,
+            model_text="자기소개 해 주세요.",
+            expected_model_turns=0,
         )
         assert iv.messages == [{"role": "model", "text": "자기소개 해 주세요."}]
         assert iv.model_turns == 1
         iv = premium.append_turn(
-            conn, interview_id=iid, answer="안녕하세요", model_text="다음 질문"
+            conn,
+            interview_id=iid,
+            answer="안녕하세요",
+            model_text="다음 질문",
+            expected_model_turns=1,
         )
         assert [m["role"] for m in iv.messages] == ["model", "user", "model"]
         assert iv.model_turns == 2
@@ -124,3 +132,60 @@ def test_get_is_scoped_to_owner(path):
         other = _premium_user(conn, "b@b.com")
         iid = _start(conn, uid)
         assert premium.get_interview(conn, user_id=other, interview_id=iid) is None
+
+
+def _snapshot(conn, iid):
+    return tuple(
+        conn.execute(
+            "SELECT messages_json, model_turns, status FROM premium_interviews WHERE id = ?", (iid,)
+        ).fetchone()
+    )
+
+
+def test_append_turn_with_stale_expected_turns_conflicts(path):
+    with db.connection(path) as conn:
+        iid = _start(conn, _premium_user(conn))
+        premium.append_turn(
+            conn, interview_id=iid, answer=None, model_text="q1", expected_model_turns=0
+        )
+        before = _snapshot(conn, iid)
+        with pytest.raises(premium.TurnConflict):
+            premium.append_turn(
+                conn, interview_id=iid, answer="a", model_text="q2", expected_model_turns=0
+            )
+        assert _snapshot(conn, iid) == before
+
+
+def test_append_turn_on_done_interview_conflicts(path):
+    with db.connection(path) as conn:
+        iid = _start(conn, _premium_user(conn))
+        premium.mark_done(conn, interview_id=iid)
+        before = _snapshot(conn, iid)
+        with pytest.raises(premium.TurnConflict):
+            premium.append_turn(
+                conn, interview_id=iid, answer=None, model_text="q", expected_model_turns=0
+            )
+        assert _snapshot(conn, iid) == before
+
+
+def test_append_turn_at_max_turns_conflicts(path):
+    with db.connection(path) as conn:
+        iid = _start(conn, _premium_user(conn))
+        for i in range(premium.MAX_MODEL_TURNS):
+            premium.append_turn(
+                conn,
+                interview_id=iid,
+                answer=None if i == 0 else "a",
+                model_text="q",
+                expected_model_turns=i,
+            )
+        before = _snapshot(conn, iid)
+        with pytest.raises(premium.TurnConflict):
+            premium.append_turn(
+                conn,
+                interview_id=iid,
+                answer="a",
+                model_text="q",
+                expected_model_turns=premium.MAX_MODEL_TURNS,
+            )
+        assert _snapshot(conn, iid) == before
