@@ -1,18 +1,49 @@
 import json
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import Settings
 from app.main import create_app
+from tests.fakes import FakeClock
+from tests.helpers import ADMIN_LOGIN, ADMIN_PASSWORD, ORIGIN
 
 REPO_DATA = Path(__file__).resolve().parents[1] / "data"
 
 
 @pytest.fixture
-def client() -> TestClient:
-    with TestClient(create_app()) as c:
-        yield c
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def settings(tmp_path: Path) -> Settings:
+    # 테스트마다 새 DATA_DIR. 관리자 계정은 Task 14부터 기동 때 만들어진다.
+    return Settings(
+        storage_dir=tmp_path / "storage",
+        cookie_secure=False,
+        admin_login=ADMIN_LOGIN,
+        admin_password=ADMIN_PASSWORD,
+    )
+
+
+@pytest.fixture
+def make_client(clock: FakeClock) -> Iterator[Callable[[Settings], TestClient]]:
+    with ExitStack() as stack:
+
+        def _make(s: Settings) -> TestClient:
+            app = create_app(settings=s, clock=clock)
+            return stack.enter_context(TestClient(app, headers={"Origin": ORIGIN}))
+
+        yield _make
+
+
+@pytest.fixture
+def client(make_client: Callable[[Settings], TestClient], settings: Settings) -> TestClient:
+    return make_client(settings)
 
 
 @pytest.fixture
