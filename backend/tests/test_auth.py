@@ -169,7 +169,7 @@ def test_mixed_case_signup_then_login(client, settings, login_email):
     session = signup(client, email="MiXeD@Case.COM")
     assert session["email"] == "mixed@case.com"
     with open_db(settings) as conn:
-        stored = conn.execute("SELECT email FROM users").fetchone()["email"]
+        stored = conn.execute("SELECT email FROM users WHERE is_admin = 0").fetchone()["email"]
     assert stored == "mixed@case.com"
     logout(client)
     res = client.post(LOGIN, json={"email": login_email, "password": PASSWORD})

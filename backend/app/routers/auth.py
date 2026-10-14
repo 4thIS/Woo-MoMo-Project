@@ -88,7 +88,13 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
 
 
 def _login_allowed(request: Request, login_id: str) -> bool:
-    return is_email(login_id)
+    """일반 계정은 이메일만. 이메일이 아닌 아이디는 관리자 아이디일 때만(spec 4.4)."""
+    if is_email(login_id):
+        return True
+    cfg = request.app.state.settings
+    if not (cfg.admin_login and cfg.admin_password):
+        return False
+    return login_id == normalize_login(cfg.admin_login)
 
 
 @router.post("/auth/login", response_model=Session)

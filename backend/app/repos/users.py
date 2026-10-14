@@ -81,3 +81,25 @@ def update_profile(
 ) -> User:
     conn.execute("UPDATE users SET name = ?, age = ? WHERE id = ?", (name, age, user_id))
     return _require(get_by_id(conn, user_id))
+
+
+def sync_admin(
+    conn: sqlite3.Connection, *, login: str | None, password_hash: str | None, created_at: str
+) -> None:
+    """ADMIN_LOGIN 계정 하나만 관리자로 맞춘다(spec 4.4). 값이 없으면 관리자는 없다."""
+    if login is None or password_hash is None:
+        conn.execute("UPDATE users SET is_admin = 0 WHERE is_admin = 1")
+        return
+    existing = get_by_email(conn, login)
+    if existing is None:
+        conn.execute(
+            "INSERT INTO users (id, email, password_hash, is_admin, created_at)"
+            " VALUES (?, ?, ?, 1, ?)",
+            (new_id("u"), login, password_hash, created_at),
+        )
+    else:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, is_admin = 1 WHERE id = ?",
+            (password_hash, existing.id),
+        )
+    conn.execute("UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND email != ?", (login,))
