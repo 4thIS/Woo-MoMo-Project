@@ -6,7 +6,8 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 # 의존성 층: pyproject·uv.lock이 그대로면 캐시를 쓴다. 다운로드 캐시는 마운트로 빌드 간 공유
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \n    uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
 COPY data ./data
