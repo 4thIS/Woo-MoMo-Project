@@ -105,10 +105,13 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
       </div>
     </div>
 
-    <div class="side">
+    <div class="dock left">
       <PixelWindow padding="sm" class="log-win">
         <ChatLog :messages="s.messages" />
       </PixelWindow>
+    </div>
+
+    <div class="dock right">
       <PixelWindow padding="sm" class="input-win">
         <p v-if="s.overLimit" class="mono note">
           면접관이 마무리하려 합니다. 면접 종료를 눌러 리포트를 받으세요.
@@ -150,17 +153,33 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   background: var(--danger);
   border-radius: 50%;
 }
-/* 시안 C — 무대를 왼쪽 한 덩어리로 세우고 대화·답변을 오른쪽에 쌓는다.
-   세로로 쌓으면 무대가 눌려 지원자와 책상이 화면 밖으로 밀린다.
-   안내(가이드)는 무대 안에 쪽지로 뜨므로 바깥에 자리를 비우지 않는다 */
+/* 방이 곧 화면이다 — 창으로 감싸지 않고 브라우저 전체를 면접실로 쓴다.
+   면접관과 지원자가 가운데 세로축에 서고, 대화·답변은 아래 양 구석에 떠 있다 */
 .interview {
+  position: relative;
   height: 100vh;
-  display: grid;
-  grid-template-columns: 5fr 4fr;
-  gap: var(--sp-4);
-  padding: var(--sp-4) var(--page-x);
-  box-sizing: border-box;
   overflow: hidden;
+}
+.stage-area {
+  position: absolute;
+  inset: 0;
+}
+/* 아래 양 구석 — 방 위에 떠 있게 반투명으로 깔고 가운데(지원자) 자리를 비운다 */
+.dock {
+  position: absolute;
+  bottom: var(--sp-5);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  height: clamp(180px, 29vh, 260px);
+  width: clamp(300px, 37vw, 530px);
+}
+.dock.left {
+  left: var(--sp-5);
+}
+.dock.right {
+  right: var(--sp-5);
 }
 .stage-area {
   position: relative;
@@ -203,16 +222,13 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   gap: var(--sp-3);
   justify-content: flex-end;
 }
-/* 대화는 남는 높이를 다 쓰고, 답변 칸은 제 높이를 지킨다 */
-.side {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: var(--sp-4);
-  min-height: 0;
-}
+
 .log-win,
 .input-win {
+  flex: 1;
   min-height: 0;
+  /* 방 위에 떠 있는 판 — 뒤 면접실이 살짝 비친다 */
+  background-color: var(--dock);
 }
 .note {
   margin: 0 0 var(--sp-2);

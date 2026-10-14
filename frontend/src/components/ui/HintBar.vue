@@ -147,17 +147,24 @@ button:focus-visible {
   text-decoration: underline;
 }
 
-/* 무대 바닥 띠 — 부모(무대)가 position:relative다. 조작부(오른쪽 열)를 가리지 않는다.
-   좁은 쪽지로 띄우면 가운데 앉은 지원자와 어중간하게 겹친다. 가로로 깔면 자막처럼 읽힌다 */
+/* 방 위쪽 띠 — 부모(무대)가 position:relative다. 머리말(HUD) 바로 아래에 깔린다.
+   아래쪽은 대화·답변 판이 차지하므로 거기 두면 판 뒤로 숨는다 */
 .bar.note {
   position: absolute;
-  left: var(--sp-4);
-  right: var(--sp-4);
-  bottom: var(--sp-4);
+  left: 0;
+  right: 0;
+  top: var(--hud-h, 52px);
+  bottom: auto;
   transform: none;
   width: auto;
-  z-index: 4;
-  padding: var(--sp-3) var(--sp-4);
+  z-index: 6;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-5);
+  background: var(--guide-veil);
+  border: 0;
+  border-top: 2px solid var(--raise);
+  border-bottom: 2px solid var(--raise);
+  box-shadow: none;
 }
 .bar.note .text {
   font-size: var(--fs-label);

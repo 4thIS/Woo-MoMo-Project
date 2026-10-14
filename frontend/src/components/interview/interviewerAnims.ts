@@ -41,6 +41,22 @@ export const SCALE = 3
 export const FRAME_PAD = 14
 /** 옆 사람과 이만큼 겹쳐야 책상 끝끼리 맞닿아 한 줄로 이어진다 */
 export const DESK_OVERLAP = FRAME_PAD * SCALE
+export const overlapFor = (scale: number): number => FRAME_PAD * scale
+
+/** 창 높이에 맞춘 배율. 낮은 창에서 ×4로 그리면 면접관이 아래 패널에 깔린다.
+ *  **정수만** 쓴다 — 반 칸으로 줄이면 픽셀이 뭉개진다 */
+/** 지원자(뒷모습) 배율. 가까운 쪽이라 면접관보다 크게 — 32px 프레임 기준 */
+export function candidateScaleFor(viewportHeight: number): number {
+  if (viewportHeight >= 900) return 8
+  if (viewportHeight >= 760) return 7
+  return 6
+}
+
+export function scaleFor(viewportHeight: number): number {
+  if (viewportHeight >= 900) return 4
+  if (viewportHeight >= 760) return 3
+  return 2
+}
 export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 커 보이게
 
 export type Trio = Record<Char, AnimName>
