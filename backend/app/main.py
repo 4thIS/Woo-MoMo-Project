@@ -15,16 +15,23 @@ from app.data import (
     load_question_sets,
 )
 from app.errors import install_error_handlers
+from app.llm.claude import AnthropicClaude, ClaudeClient
 from app.middleware import OriginGuard
 from app.routers import archive, auth, health, manifest, me, premium, questions, resumes
 from app.security import RateLimiter
 from app.startup import prepare_storage
 
 
+def _default_claude(cfg: Settings) -> ClaudeClient | None:
+    # 키가 없으면 벤을 끈다(시작에서 503 ben_unavailable, 티켓 차감 없음)
+    return AnthropicClaude(cfg.anthropic_api_key) if cfg.anthropic_api_key else None
+
+
 def create_app(
     data_dir: Path | None = None,
     settings: Settings | None = None,
     clock: Callable[[], float] = time.time,
+    claude: ClaudeClient | None = None,
 ) -> FastAPI:
     base = data_dir or DATA_DIR
     cfg = settings or Settings.from_env()
@@ -41,6 +48,7 @@ def create_app(
     app.state.settings = cfg
     app.state.clock = clock
     app.state.limiter = RateLimiter(clock)
+    app.state.claude = claude if claude is not None else _default_claude(cfg)
     install_error_handlers(app)
     # 마지막에 넣은 미들웨어가 가장 바깥: CORS(프리플라이트) → Origin 확인 → 라우터
     app.add_middleware(OriginGuard, allowed=cfg.cors_origins)

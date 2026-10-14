@@ -7,8 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.llm.claude import ClaudeClient
 from app.main import create_app
-from tests.fakes import FakeClock
+from tests.fakes import FakeClaude, FakeClock
 from tests.helpers import ADMIN_LOGIN, ADMIN_PASSWORD, ORIGIN
 
 REPO_DATA = Path(__file__).resolve().parents[1] / "data"
@@ -31,11 +32,17 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def make_client(clock: FakeClock) -> Iterator[Callable[[Settings], TestClient]]:
+def fake_claude() -> FakeClaude:
+    return FakeClaude()
+
+
+@pytest.fixture
+def make_client(clock: FakeClock, fake_claude: FakeClaude) -> Iterator[Callable[..., TestClient]]:
     with ExitStack() as stack:
 
-        def _make(s: Settings) -> TestClient:
-            app = create_app(settings=s, clock=clock)
+        def _make(s: Settings, claude: ClaudeClient | None = fake_claude) -> TestClient:
+            # claude=None이면 설정(ANTHROPIC_API_KEY)에 맡긴다 — 테스트 설정엔 키가 없어 None
+            app = create_app(settings=s, clock=clock, claude=claude)
             return stack.enter_context(TestClient(app, headers={"Origin": ORIGIN}))
 
         yield _make
