@@ -1,7 +1,10 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
 import sqlite3
-from collections.abc import Iterator
+import time
+from collections.abc import Generator, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -9,10 +12,11 @@ from fastapi.responses import StreamingResponse
 from app import db
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
+from app.llm import briefing as briefing_llm
 from app.llm import prompts
 from app.llm.claude import REPORT_MAX_TOKENS, TURN_MAX_TOKENS, ClaudeClient, ClaudeError
 from app.presenters import to_session
-from app.repos import premium, users
+from app.repos import briefings, premium, users
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import InterviewStart, InterviewStarted, Session, TurnBody
@@ -25,6 +29,9 @@ router = APIRouter()
 ANSWER_MAX = 2000
 # 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
 BEN_PER_MINUTE = 6
+# 회사 브리핑 조사: 15초마다 ping(Cloudflare 무응답 끊김 대비), 전체 90초 넘으면 실패로 친다
+PING_EVERY = 15.0
+RESEARCH_DEADLINE = 90.0
 
 
 @router.post("/premium/purchase", response_model=Session)
@@ -98,6 +105,63 @@ def _count_attempt(conn: sqlite3.Connection, interview: PremiumInterview) -> Non
         raise ApiError(409, "interview_over") from None
 
 
+def _research_with_pings(
+    claude: ClaudeClient, company: str, job: str
+) -> Generator[str, None, briefing_llm.Briefing | None]:
+    """조사를 다른 스레드에서 돌리며 ping을 흘린다. 기한을 넘기면 None(스레드는 알아서 끝난다)."""
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(briefing_llm.make_briefing, claude, company, job)
+    pool.shutdown(wait=False)
+    deadline = time.monotonic() + RESEARCH_DEADLINE
+    while True:
+        try:
+            return future.result(timeout=PING_EVERY)
+        except TimeoutError:
+            if time.monotonic() >= deadline:
+                return None
+            yield PING
+
+
+def _resolve_briefing(
+    claude: ClaudeClient, db_path: Path, interview: PremiumInterview, now: float
+) -> Generator[str, None, str | None]:
+    """첫 턴: 캐시 → 없으면 조사. status 이벤트를 흘리고 브리핑 본문(없으면 None)을 돌려준다."""
+    if interview.briefing_status != "pending":  # 첫 질문 실패 뒤 재시도 — 결과만 다시 알린다
+        yield sse("status", {"phase": "briefing", "ok": interview.briefing_status == "ok"})
+        return interview.briefing
+    company = interview.inputs["company"]
+    name, job = company["name"], company["job"]
+    key = briefings.cache_key(name, job)
+    with db.connection(db_path) as c:
+        cached = briefings.get_fresh(c, key=key, since=iso(now - briefings.FRESH_SECONDS))
+    text: str | None = cached.briefing if cached is not None else None
+    if cached is None:
+        yield sse("status", {"phase": "researching"})
+        try:
+            with db.connection(db_path) as c:
+                premium.count_attempt(c, interview_id=interview.id)
+        except premium.TooManyAttempts:
+            made = None
+        else:
+            made = yield from _research_with_pings(claude, name, job)
+        if made is not None:
+            text = made.text
+            with db.connection(db_path) as c:
+                briefings.put(
+                    c,
+                    key=key,
+                    company=name,
+                    job=job,
+                    briefing=made.text,
+                    sources=made.sources,
+                    created_at=iso(now),
+                )
+    with db.connection(db_path) as c:
+        premium.set_briefing(c, interview_id=interview.id, briefing=text)
+    yield sse("status", {"phase": "briefing", "ok": text is not None})
+    return text
+
+
 def _stream(events: Iterator[str]) -> StreamingResponse:
     """ping 주석을 먼저 보내고, 예상 못 한 예외는 server_error 이벤트로 끝낸다."""
 
@@ -140,11 +204,16 @@ def take_turn(
             raise ApiError(422, "answer_too_long", field="answer")
     claude = _claude(request)
     _count_attempt(conn, interview)
-    system = prompts.build_system(interview.track, interview.inputs)
     messages = prompts.turn_messages(interview.messages, answer)
     db_path = request.app.state.settings.db_path
+    now = request.app.state.clock()
+    first_with_briefing = interview.model_turns == 0 and interview.briefing_status != "none"
 
     def events() -> Iterator[str]:
+        brief = interview.briefing
+        if first_with_briefing:
+            brief = yield from _resolve_briefing(claude, db_path, interview, now)
+        system = prompts.build_system(interview.track, interview.inputs, brief)
         chunks: list[str] = []
         try:
             for text in claude.stream_text(
@@ -198,7 +267,7 @@ def make_report(
         raise ApiError(409, "interview_not_started")
     claude = _claude(request)
     _count_attempt(conn, interview)
-    system = prompts.build_system(interview.track, interview.inputs)
+    system = prompts.build_system(interview.track, interview.inputs, interview.briefing)
     messages = prompts.report_messages(interview.messages)
     db_path = request.app.state.settings.db_path
 
