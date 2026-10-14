@@ -68,6 +68,68 @@ curl -I -H "Range: bytes=0-1023" https://momo.ssenu.cloud/models/gemma4-e4b-it-w
 - GUI 앱의 `HOST_PORT` 자동 채움은 `WEB_BIND`가 주소:포트 한 변수라 동작하지 않는다. 실행/정지/상태/배포는 정상. 변수를 나누려면 compose 변경이라 공동 리뷰 후 별도 PR.
 - 모델 파일은 `.done` 표시만 믿지 말고 크기를 확인한다: E4B 2,969,059,328 / E2B 2,008,432,640 bytes.
 
+## 계정·보관함·벤 (2026-10-13~)
+
+계정 DB(sqlite)와 녹음 파일은 api 컨테이너의 `/data`에 쌓이고, 호스트 폴더를 볼륨으로 붙인다. 설계: `docs/specs/backend/2026-10-13-accounts-backend-design.md`.
+
+| 환경 | 클론 폴더 | 호스트 데이터 폴더 | `deploy/.env` |
+|---|---|---|---|
+| demomo(dev) | `/srv/apps/Woo-MoMo-Project-dev` | `/srv/momo-dev/data` | `COMPOSE_PROJECT_NAME=momo-dev`, `WEB_BIND=...`, `DATA_HOST_DIR=/srv/momo-dev/data` |
+| momo(운영) | `/srv/apps/Woo-MoMo-Project` | `/srv/momo/data` | `COMPOSE_PROJECT_NAME=deploy`, `WEB_BIND=127.0.0.1:8006` (`DATA_HOST_DIR`은 기본값이라 안 적는다) — **지시 전까지 반영하지 않는다** |
+
+폴더마다 `deploy/.env`에 `COMPOSE_PROJECT_NAME`과 `WEB_BIND`가 들어 있으므로, 어느 폴더에서든 `docker compose up --build -d`만 쳐도 서로의 컨테이너를 건드리지 않는다.
+
+### 데이터 폴더 (최초 1회, 첫 기동 전)
+api 컨테이너는 uid 10001로 돈다. 호스트 폴더를 먼저 만들고 그 uid 소유로 준다(안 하면 api가 `/data`에 쓰지 못한다).
+```
+sudo mkdir -p /srv/momo/data /srv/momo-dev/data && sudo chown -R 10001:10001 /srv/momo/data /srv/momo-dev/data
+```
+
+### `deploy/.env` 항목 (커밋 금지 — `.gitignore`가 막는다)
+
+| 키 | 예 | 설명 |
+|---|---|---|
+| `COMPOSE_PROJECT_NAME` | 운영 `deploy` / dev `momo-dev` | compose 프로젝트 이름. 폴더마다 다르게 둬 컨테이너·네트워크가 섞이지 않게 한다 |
+| `WEB_BIND` | `127.0.0.1:8006` | web 바인딩(주소:포트). 폴더마다 다른 포트 |
+| `DATA_HOST_DIR` | `/srv/momo-dev/data` | 호스트의 데이터 폴더(dev만 적는다). 없으면 `/srv/momo/data` |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | 벤(Claude) 키. 없으면 벤 시작이 `503 ben_unavailable` |
+| `ADMIN_LOGIN` | `admin` | 관리자 아이디. **이메일 모양이 아닌 아이디**로 둔다. 이메일 값이 기존 사용자와 같으면 그 사용자가 관리자로 바뀐다. 목업 결제는 이 계정만 |
+| `ADMIN_PASSWORD` | (긴 무작위 문자열) | **`.env`에만 둔다. 추측하기 쉬운 값 금지.** 공개 사이트라 약하면 누구나 티켓을 충전해 하루 `BEN_DAILY_LIMIT`번까지 Claude 비용을 쓸 수 있다. `$`는 쓰지 않는다(compose가 변수로 읽는다) |
+| `BEN_DAILY_LIMIT` | `30` | 서버 전체 하루(한국 날짜) 벤 면접 수 상한. 마지막 방어선 |
+| `CORS_ORIGINS` | `https://momo.ssenu.cloud,https://demomo.ssenu.cloud,http://localhost:5173` | 정확한 오리진만, 쉼표로. `*` 금지(기동 실패) |
+| `COOKIE_SECURE` | `1` | 세션 쿠키 `Secure`. HTTPS 뒤라 `1` 유지 |
+
+`ADMIN_LOGIN`·`ADMIN_PASSWORD` 중 하나라도 비우면 다음 기동 때 관리자 표시가 지워지고 목업 결제는 아무도 못 쓴다. 비밀번호를 바꾸려면 `.env`를 고치고 `docker compose up -d`로 api를 다시 띄운다(기동 때 맞춘다).
+
+### 반영(demomo)
+```
+cd /srv/apps/Woo-MoMo-Project-dev/deploy
+git pull
+docker compose config -q && docker compose config | grep -E "DATA_DIR|/data"   # 볼륨·환경변수 확인
+docker compose up -d --build
+docker compose exec web nginx -t                  # nginx 설정을 바꿨다면 문법 확인
+curl -s https://demomo.ssenu.cloud/api/health
+curl -s https://demomo.ssenu.cloud/api/me        # null
+ls -l /srv/momo-dev/data                          # momo.sqlite3, recordings/
+```
+수동 확인(spec 8절): 가입 → 이력서 저장 → 보관함 6번째 저장에 가장 오래된 기록 자동 삭제 → 관리자 로그인 → 목업 결제 → 벤 1회 완주(실제 Claude) → 리포트 → 보관함 저장 → 녹음 재생.
+
+### 백업 (수동 — 자동화는 다음 단계)
+DB는 실행 중에도 sqlite 백업 API로 안전하게 복사한다. 녹음은 파일 그대로 복사한다.
+```
+sudo install -d /srv/momo-dev/backup
+cd /srv/apps/Woo-MoMo-Project-dev/deploy
+docker compose exec api python -c "import sqlite3; s=sqlite3.connect('/data/momo.sqlite3'); d=sqlite3.connect('/data/backup.sqlite3'); s.backup(d); d.close(); s.close()"
+sudo mv /srv/momo-dev/data/backup.sqlite3 /srv/momo-dev/backup/momo-$(date +%F).sqlite3
+sudo rsync -a /srv/momo-dev/data/recordings/ /srv/momo-dev/backup/recordings/
+```
+호스트에 `sqlite3`가 있으면 `sqlite3 /srv/momo-dev/data/momo.sqlite3 ".backup '/srv/momo-dev/backup/momo-$(date +%F).sqlite3'"`도 된다.
+
+복원: `docker compose stop api` → 백업 파일을 `/srv/momo-dev/data/momo.sqlite3`로 복사(같은 폴더의 `momo.sqlite3-wal`·`momo.sqlite3-shm`은 지운다) → `sudo chown 10001:10001 /srv/momo-dev/data/momo.sqlite3` → `docker compose start api`. 기동 때 DB에 없는 녹음 파일은 자동으로 지워진다.
+
+### nginx
+`/api/recordings`만 요청 크기 6MB(`client_max_body_size 6m`), 나머지 `/api/`는 기본 1MB. 벤 스트림(SSE)은 앱이 `X-Accel-Buffering: no`로 버퍼링을 끄고, `/api/`의 `proxy_read_timeout`은 300초다. nginx 설정을 바꾼 뒤에는 `docker compose exec web nginx -t`로 문법을 확인한다(`--build`로 web을 다시 띄운 다음).
+
 ## 최초 1회 (일반 절차)
 ```
 sudo mkdir -p /srv/momo/models
