@@ -12,6 +12,8 @@ import {
   ANIMS,
   CANDIDATE_BACK,
   CANDIDATE_SCALE,
+  DESK_OVERLAP,
+  FRAME_PAD,
   LIFE,
   SCALE,
   baseAnims,
@@ -70,11 +72,24 @@ describe('interviewerAnims', () => {
     for (const [name, a] of Object.entries(ANIMS))
       expect(a.loop, name).toBe(name.endsWith('_idle') || name === 'center_question')
   })
-  it('면접관은 프레임 92 × 2 = 184px, 지원자 뒷모습은 32 × 6 = 192px 그대로', () => {
-    expect(SCALE).toBe(2)
-    expect(CENTER_FRAME_PX * SCALE).toBe(184)
+  it('면접관은 프레임 92 × 3 = 276px, 지원자 뒷모습은 32 × 6 = 192px 그대로', () => {
+    expect(SCALE).toBe(3)
+    expect(CENTER_FRAME_PX * SCALE).toBe(276)
     expect([CANDIDATE_BACK.w, CANDIDATE_BACK.h]).toEqual([32, 32])
     expect(CANDIDATE_BACK.w * CANDIDATE_SCALE).toBe(192)
+  })
+
+  it('배율은 정수다 — 픽셀 그림은 반 칸으로 늘리면 뭉개진다', () => {
+    expect(Number.isInteger(SCALE)).toBe(true)
+    expect(Number.isInteger(CANDIDATE_SCALE)).toBe(true)
+  })
+
+  it('프레임 양옆 빈 칸만큼 겹쳐야 세 책상이 맞붙는다', () => {
+    // 92px 프레임에서 그림은 x 14~78 — 양옆 14px이 비어 있다.
+    // 그대로 늘어놓으면 책상 사이가 그 두 배만큼 벌어진다
+    expect(FRAME_PAD).toBe(14)
+    expect(FRAME_PAD * 2 + 64).toBe(CENTER_FRAME_PX)
+    expect(DESK_OVERLAP).toBe(FRAME_PAD * SCALE)
   })
 })
 

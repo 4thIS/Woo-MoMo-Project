@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { LEGACY_CENTER, LEGACY_SIDE, interviewerById } from '@/interviewers'
+import { CENTER_FRAME_PX, LEGACY_CENTER, LEGACY_SIDE, interviewerById } from '@/interviewers'
+import { CANDIDATE_BACK, CANDIDATE_SCALE, DESK_OVERLAP, SCALE } from './interviewerAnims'
 import InterviewStage from './InterviewStage.vue'
 
 const base = {
@@ -31,17 +32,25 @@ describe('InterviewStage', () => {
     const w = mount(InterviewStage, { props: base })
     expect(w.findAll('.sprite').length).toBe(4)
   })
-  it('세 자리 모두 92 프레임 × 2 = 184px — 시트 전체를 늘려 그린다(지원자는 32 × 6 = 192px 그대로)', () => {
+  it('세 자리 모두 프레임 × 배율로 그린다 — 시트 전체를 늘린다', () => {
+    const px = CENTER_FRAME_PX * SCALE
     const w = mount(InterviewStage, { props: base })
     for (const c of ['left', 'center', 'right']) {
       const st = (w.find(`[data-char="${c}"]`).element as HTMLElement).style
-      expect([st.width, st.height], c).toEqual(['184px', '184px'])
+      expect([st.width, st.height], c).toEqual([`${px}px`, `${px}px`])
     }
-    // 배석자 left_idle 16프레임(manifest) → 시트 전체 92 × 16 × 2 = 2944px
+    // 배석자 left_idle 16프레임(manifest) → 시트 전체가 프레임 수만큼 길어진다
     const left = (w.find('[data-char="left"]').element as HTMLElement).style
-    expect(left.backgroundSize).toBe('2944px 184px')
+    expect(left.backgroundSize).toBe(`${px * 16}px ${px}px`)
     const cand = (w.find('.candidate .sprite').element as HTMLElement).style
-    expect([cand.width, cand.height]).toEqual(['192px', '192px'])
+    const cpx = CANDIDATE_BACK.w * CANDIDATE_SCALE
+    expect([cand.width, cand.height]).toEqual([`${cpx}px`, `${cpx}px`])
+  })
+
+  it('세 책상이 맞붙도록 겹침 폭을 무대에 내려 준다', () => {
+    const w = mount(InterviewStage, { props: base })
+    const stage = w.find('.stage').element as HTMLElement
+    expect(stage.style.getPropertyValue('--overlap')).toBe(`${DESK_OVERLAP}px`)
   })
   it('경과 시계를 mm:ss로 보여 준다 (질문 번호는 여전히 없다)', () => {
     const w = mount(InterviewStage, { props: { ...base, elapsedMs: 754_000 } })
