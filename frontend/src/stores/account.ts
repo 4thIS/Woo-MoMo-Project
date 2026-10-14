@@ -160,10 +160,5 @@ export const useAccountStore = defineStore('account', {
       const s = await this.run(() => api.purchasePremium())
       if (s) this.session = s
     },
-
-    async spendTicket() {
-      const s = await this.run(() => api.spendTicket())
-      if (s) this.session = s
-    },
   },
 })

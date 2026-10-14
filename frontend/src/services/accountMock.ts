@@ -66,6 +66,7 @@ function strip(u: User): Session {
     email: u.email,
     tier: u.tier,
     tickets: u.tickets,
+    isAdmin: u.isAdmin,
     profile: { ...u.profile },
     createdAt: u.createdAt,
   }
@@ -132,6 +133,7 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
         password,
         tier: 'member',
         tickets: 0,
+        isAdmin: true,
         profile: { name: trimmed, age: null },
         createdAt: now(),
       }
@@ -164,6 +166,7 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
           password: '',
           tier: 'member',
           tickets: 0,
+          isAdmin: true,
           profile: { name: null, age: null },
           createdAt: now(),
         }
@@ -294,16 +297,6 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       const u = current(db)
       u.tier = 'premium'
       u.tickets += PREMIUM_TICKETS
-      save(db)
-      return strip(u)
-    },
-
-    async spendTicket() {
-      await wait()
-      const db = load()
-      const u = current(db)
-      if (u.tickets <= 0) throw new AccountError('no_tickets', '남은 티켓이 없습니다')
-      u.tickets -= 1
       save(db)
       return strip(u)
     },
