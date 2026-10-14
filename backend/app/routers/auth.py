@@ -11,7 +11,7 @@ from app.errors import ApiError
 from app.presenters import to_session
 from app.repos import sessions, users
 from app.repos.users import User, normalize_login
-from app.schemas import LoginBody, Session, SignupBody
+from app.schemas import EmailTakenResponse, LoginBody, Session, SignupBody
 from app.security import (
     burn_password_check,
     client_ip,
@@ -30,6 +30,7 @@ PASSWORD_MIN = 8
 NAME_MAX = 100
 SIGNUP_PER_MINUTE = 10
 LOGIN_PER_MINUTE = 10
+EMAIL_TAKEN_PER_MINUTE = 20
 
 
 def rate_limit(request: Request, bucket: str, per_minute: int) -> None:
@@ -112,3 +113,10 @@ def logout(request: Request, conn: Db) -> Response:
     response = Response(status_code=204)
     response.delete_cookie(COOKIE_NAME, **_cookie_args(request))
     return response
+
+
+@router.get("/auth/email-taken", response_model=EmailTakenResponse)
+def email_taken(request: Request, conn: Db, email: str = "") -> EmailTakenResponse:
+    # 열거 공격에 열려 있다(데모 범위). 요청 수 제한으로만 막는다.
+    rate_limit(request, "email-taken", EMAIL_TAKEN_PER_MINUTE)
+    return EmailTakenResponse(taken=users.email_exists(conn, normalize_login(email)))

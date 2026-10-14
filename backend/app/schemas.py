@@ -165,3 +165,12 @@ class SignupBody(BaseModel):
 class LoginBody(BaseModel):
     email: str = ""
     password: str = ""
+
+
+class ProfileBody(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    age: int | None = Field(default=None, ge=1, le=120)
+
+
+class EmailTakenResponse(BaseModel):
+    taken: bool
