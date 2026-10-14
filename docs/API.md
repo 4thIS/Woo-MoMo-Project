@@ -90,6 +90,237 @@
 { "status": "ok" }
 ```
 
+## 계정·이력서·보관함·프리미엄 (2026-10-13 확정)
+
+> 설계: `docs/specs/backend/2026-10-13-accounts-backend-design.md`. 초안(`docs/specs/frontend/2026-10-13-accounts-api-contract.md`)에서 바뀐 것: `ArchiveEntry.score` 삭제, 가입 `consent` 필수, 보관함 프리미엄 검증(`premiumInterviewId`), `/api/premium/spend` 삭제 → 벤 면접 3단계, 목업 결제는 관리자만(`Session.isAdmin`), 녹음 형식·크기 규칙, 구글 로그인은 다음 단계, `429 rate_limited`.
+> 새 엔드포인트만 추가된다. 위 세 엔드포인트와 `backend/data/manifest.json`은 바뀌지 않는다.
+
+### 공통
+
+| 항목 | 값 |
+|---|---|
+| 형식 | JSON(UTF-8). 녹음 업로드만 `multipart/form-data`, 벤 대화·리포트는 SSE(`text/event-stream`) |
+| 인증 | 세션 쿠키 `momo_session` — `HttpOnly`, `SameSite=Lax`, `Path=/api`, 30일, 운영은 `Secure`. 프론트는 `fetch(..., { credentials: 'include' })` |
+| CORS | 정확한 오리진만(기본 `https://momo.ssenu.cloud`, `https://demomo.ssenu.cloud`, `http://localhost:5173`), `Access-Control-Allow-Credentials: true`. 와일드카드 없음 |
+| CSRF | 상태를 바꾸는 요청(`POST`·`PUT`·`DELETE`)은 `Origin` 헤더가 허용 목록에 있어야 한다. 없거나 다르면 `403 {"error":"bad_origin"}` |
+| 오류 | `{"error": "<code>"}`. 입력 오류는 `"field"`를 더한다. 그 밖의 추가 필드는 엔드포인트마다 적는다 |
+| 남의 리소스 | 이력서·보관함·녹음·벤 면접의 남의 id는 없는 id와 똑같이 `404 {"error":"not_found"}` |
+| 시각 | UTC ISO 8601 밀리초 `Z`(`Date.prototype.toISOString()`과 같은 모양) |
+| 요청 본문 | 모르는 키는 무시한다 |
+
+공통 오류
+
+| 상태 | `error` | 뜻 |
+|---|---|---|
+| 401 | `unauthorized` | 로그인이 필요하다 |
+| 403 | `premium_required` | 프리미엄 계정만 쓸 수 있다 |
+| 403 | `bad_origin` | 허용되지 않은 `Origin` |
+| 404 | `not_found` | 없거나 남의 것 |
+| 422 | `invalid` (+`field`) | 형식 검사 실패(길이·범위·타입). `field`는 문제된 필드 이름 |
+| 429 | `rate_limited` | 요청 수 초과 |
+
+### 공통 타입
+
+```jsonc
+// Session — 여러 엔드포인트가 돌려준다
+{
+  "userId": "u_01J9ZQ3V7K8M2N4P6R8T0W2Y4A",
+  "email": "a@b.com",            // 관리자는 ADMIN_LOGIN 값(이메일 형식이 아닐 수 있다)
+  "tier": "member",              // "member" | "premium"
+  "tickets": 0,                  // 벤 면접 남은 횟수
+  "isAdmin": false,              // true면 목업 결제 버튼을 켠다. 일반 계정은 "준비 중"
+  "profile": { "name": "이우진", "age": null },
+  "createdAt": "2026-10-13T04:00:00.000Z"
+}
+
+// Profile — 대입 면접에서 미리 채울 값
+{ "name": "홍길동", "age": 19 }   // 둘 다 null 가능, age 1~120
+
+// ResumeSlot
+{
+  "id": "r_01J9ZQ...",
+  "kind": "company",             // "company"(이력서) | "admission"(자기소개서)
+  "title": "백엔드 신입용",        // 1~40자
+  "text": "...",                 // 최대 20,000자
+  "updatedAt": "2026-10-13T04:00:00.000Z"
+}
+
+// ArchiveEntry — 목록용(가볍다). score는 없다
+{
+  "id": "a_01J9ZQ...",
+  "interviewerId": "m1",         // m1·f2·f3·m2(벤)
+  "premium": false,              // 벤으로 본 면접인가 — 5개 한도에서 빠진다
+  "track": "company",            // "company" | "admission"
+  "startedAt": "2026-10-13T04:00:00.000Z",
+  "endedAt": "2026-10-13T04:21:00.000Z",
+  "questionCount": 5,
+  "hasRecording": false,         // 서버가 계산한다(녹음이 하나라도 있으면 true)
+  "field": "it", "job": "백엔드 개발자",          // track이 company일 때만(아니면 키가 없다)
+  "name": "홍길동", "age": 19,                    // track이 admission일 때만
+  "university": "한국대학교", "department": "컴퓨터공학과"
+}
+
+// ArchiveDetail = ArchiveEntry + 아래
+{
+  "messages": [{ "role": "model", "text": "...", "at": 1760000000000 }],  // role: "user" | "model", at은 선택
+  "report": [{ "question": "...", "answerSummary": "...", "feedback": "..." }],
+  "reportRaw": "...",
+  "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ..." }]   // turn 오름차순
+}
+```
+
+### 인증
+
+#### POST /api/auth/signup
+
+```jsonc
+// 요청
+{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true }
+// 201 → Session (쿠키 설정)
+// 409 { "error": "email_taken" }
+// 422 { "error": "invalid_email", "field": "email" }        // 앞뒤 공백 제거·소문자 뒤 형식 검사
+// 422 { "error": "weak_password", "field": "password" }     // 8자 미만
+// 422 { "error": "missing_name", "field": "name" }          // 앞뒤 공백 제거 뒤 빈 값
+// 422 { "error": "invalid", "field": "name" }               // 100자 초과
+// 422 { "error": "consent_required", "field": "consent" }   // true가 아니거나 없음
+// 429 { "error": "rate_limited" }                           // IP당 분당 10회
+```
+
+이메일 인증은 하지 않는다. `name`은 `Session.profile.name`에 들어간다.
+
+#### GET /api/auth/email-taken?email=a@b.com
+
+`200 { "taken": true }` · `429 rate_limited`(IP당 분당 20회). 이메일은 앞뒤 공백 제거·소문자로 비교한다.
+
+#### POST /api/auth/login
+
+```jsonc
+{ "email": "a@b.com", "password": "..." }
+// 200 → Session (쿠키 설정)
+// 401 { "error": "bad_credentials" }   // 계정 없음·비밀번호 틀림·이메일 형식 아님 모두 같은 응답
+// 429 { "error": "rate_limited" }      // IP당 분당 10회
+```
+
+`email` 칸은 이메일 형식이어야 한다. 예외는 서버 `.env`의 `ADMIN_LOGIN`과 같은 값(관리자 아이디, 예: `admin`)뿐이다.
+
+#### POST /api/auth/logout → 204
+
+세션을 지우고 쿠키를 지운다. 로그인하지 않았어도 204.
+
+#### GET /api/me
+
+`200 → Session` · `200 → null`(비로그인·만료. 만료 세션은 이때 지운다).
+
+#### PUT /api/profile
+
+`{ "name": "홍길동" | null, "age": 19 | null }` → `200 Session`. `name`은 앞뒤 공백 제거(빈 값은 null, 100자 이하), `age` 1~120(`422 invalid`, `field: "age"`). `401 unauthorized`.
+
+#### 구글 로그인 — 다음 단계
+
+`/api/auth/google`, `/api/auth/google/callback`은 이번에 만들지 않는다. 프론트 구글 버튼은 "준비 중".
+
+### 내 이력서
+
+슬롯: **`company` 3개 + `admission` 3개.** 한도는 서버가 지킨다.
+
+| 메서드 | 경로 | 응답 |
+|---|---|---|
+| GET | `/api/resumes` | `ResumeSlot[]` — 두 종류 전부, 최근 수정 순 |
+| POST | `/api/resumes` | 본문 `{kind, title, text}` → `201 ResumeSlot` · 꽉 찼으면 `409 {"error":"slot_full","kind":"company"}` |
+| PUT | `/api/resumes/{id}` | 본문 `{title, text}` → `200 ResumeSlot`. `kind`는 바꿀 수 없다(보내도 무시) · `404` |
+| DELETE | `/api/resumes/{id}` | `204` · `404` |
+
+`title` 1~40자·`text` 20,000자 초과는 `422 invalid`(`field`).
+
+### 보관함
+
+| 메서드 | 경로 | 응답 |
+|---|---|---|
+| GET | `/api/archive` | `ArchiveEntry[]` — 최신순(`startedAt` 내림차순) |
+| GET | `/api/archive/{id}` | `ArchiveDetail` · `404` |
+| POST | `/api/archive` | `201 { "entry": ArchiveEntry, "evicted": ["a_..."] }` |
+| DELETE | `/api/archive/{id}` | `204`(녹음 파일도 같이 지운다) · `404` |
+
+POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecording`·`recordings`를 보내도 무시) + 선택 `"premiumInterviewId"`.
+
+- 트랙별 필수: `company` → `field`·`job`, `admission` → `name`·`age`·`university`·`department`. 빠지면 `422 {"error":"missing_field","field":"job"}`. 다른 트랙의 칸은 저장하지 않는다.
+- `premium:true`면 `premiumInterviewId`가 **본인의, 리포트까지 끝난(`done`), 아직 보관함에 저장되지 않은** 벤 면접이어야 한다. 아니면 저장하지 않고 `422 {"error":"invalid_premium_interview"}`.
+- **5개 한도는 서버가 집행한다.** 저장 뒤 무료 기록(`premium:false`)이 5개를 넘으면 `startedAt`이 오래된 것부터 지우고 그 id를 `evicted`로 돌려준다. 프리미엄 기록은 세지 않는다.
+
+### 프리미엄
+
+#### POST /api/premium/purchase — 목업 결제(관리자 전용)
+
+본문 없음 → `200 Session`(`tier: "premium"`, `tickets` +10). 관리자가 아니면 `403 {"error":"purchase_disabled"}`. `401 unauthorized`.
+
+#### 벤 면접 3단계
+
+대화 기록은 서버가 가진다. 클라이언트는 답변만 보낸다. 벤은 외부 AI(Claude)이므로 시작 전에 사용자에게 알린다.
+
+**1) 시작 — POST /api/premium/interviews**
+
+```jsonc
+// 요청 (track에 맞는 쪽 하나만)
+{ "track": "company", "resumeText": "...", "company": { "field": "it", "job": "백엔드 개발자" } }
+{ "track": "admission", "resumeText": "...(자기소개서)",
+  "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
+// 201 { "interviewId": "pi_01J9ZQ...", "session": Session }   // 티켓 1장 차감된 Session
+// 403 premium_required
+// 409 { "error": "no_tickets" }
+// 422 { "error": "missing_field", "field": "company" }       // track에 맞는 묶음이 없음
+// 422 invalid                                                // resumeText 1~20,000자, 각 칸 1~100자, age 1~120
+// 503 { "error": "daily_limit" }                             // 서버 전체 하루 상한(BEN_DAILY_LIMIT, 한국 날짜). 티켓 차감 없음
+// 503 { "error": "ben_unavailable" }                         // 서버에 Claude 키가 없음. 티켓 차감 없음
+```
+
+**2) 턴 — POST /api/premium/interviews/{id}/turns**
+
+본문 `{ "answer": "..." }`. 첫 요청은 `answer` 없이(또는 무시됨) 보내 첫 질문을 받는다. 이후에는 `answer`가 필요하다.
+
+스트림 전 오류(JSON): `404 not_found`, `403 premium_required`, `409 interview_over`(끝났거나 면접관 응답 15번을 다 씀), `422 missing_answer`(`field: "answer"`), `422 answer_too_long`(2,000자 초과, `field: "answer"`), `503 ben_unavailable`.
+
+응답은 SSE다.
+
+```
+event: delta
+data: {"text":"자기소개를 "}
+
+event: delta
+data: {"text":"해 주세요."}
+
+event: done
+data: {"ended":false}
+```
+
+- `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 15번). 다음 턴은 `409 interview_over`. 리포트를 부른다.
+- Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.
+
+**3) 리포트 — POST /api/premium/interviews/{id}/report**
+
+본문 없음. 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(이미 리포트를 받음), `409 interview_not_started`(턴이 하나도 없음), `503 ben_unavailable`.
+SSE로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 된다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
+프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.
+
+### 녹음(프리미엄)
+
+#### POST /api/recordings
+
+`multipart/form-data` — `archiveId`, `turn`(0 이상 정수, 몇 번째 답변인지), `clip`(오디오).
+
+```jsonc
+// 201 { "id": "rec_01J9ZQ...", "url": "/api/recordings/rec_01J9ZQ..." }
+// 403 premium_required
+// 404 not_found              // 본인의 프리미엄 기록이 아님
+// 413 { "error": "too_large" }          // 기록 하나의 녹음 합계 30MB 초과(같은 turn의 옛 파일은 빼고 센다)
+// 415 { "error": "unsupported_media" }  // clip이 audio/webm·audio/ogg가 아님(;codecs=... 허용)
+```
+
+같은 `turn`을 다시 올리면 교체된다. 받은 그대로(변환 없이) 저장한다. 요청 하나가 6MB를 넘으면 nginx가 먼저 `413`으로 막는다(이때 본문은 JSON이 아닐 수 있으니 상태 코드로 판단한다).
+
+#### GET /api/recordings/{id}
+
+본인만. 오디오 바이트(저장한 MIME 그대로), `Range` 지원(`206`). `404 not_found`.
+
 ## 참고
 
 `tts`는 additive로 추가됨(2026-09-17). 기존 필드 불변.
@@ -98,6 +329,9 @@
 
 2026-09-26: `tts.voices` additive 추가(면접관별 목소리). 기존 필드 불변. `docs/specs/backend/2026-09-26-tts-voices-design.md`
 
+2026-10-13: 계정·이력서·보관함·프리미엄·녹음 엔드포인트 additive 추가. 기존 엔드포인트·매니페스트 불변. `docs/specs/backend/2026-10-13-accounts-backend-design.md`
+
 ## 하지 않는 것
 
-- 이력서·대화·리포트를 받는 엔드포인트는 만들지 않는다. 사용자 데이터는 서버로 오지 않는다.
+- 비로그인 사용자의 이력서·대화·리포트를 받는 엔드포인트는 없다. 사용자 데이터는 로그인하고 가입 때 동의(`consent`)한 계정의 것만 저장한다.
+- 구글 로그인, 계정 삭제(데이터 일괄 삭제), 실제 결제, 녹음을 이용한 말투 분석은 다음 단계다.
