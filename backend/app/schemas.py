@@ -316,3 +316,11 @@ class InterviewStarted(BaseModel):
 
 class TurnBody(BaseModel):
     answer: str | None = None
+
+
+# ── 녹음 ──
+
+
+class RecordingCreated(BaseModel):
+    id: str
+    url: str
