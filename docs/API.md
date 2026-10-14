@@ -263,7 +263,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 
 ```jsonc
 // 요청 (track에 맞는 쪽 하나만)
-{ "track": "company", "resumeText": "...", "company": { "field": "it", "job": "백엔드 개발자" } }
+{ "track": "company", "resumeText": "...", "company": { "field": "it", "job": "백엔드 개발자", "name": "토스(비바리퍼블리카)" } }
 { "track": "admission", "resumeText": "...(자기소개서)",
   "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
 // 201 { "interviewId": "pi_01J9ZQ...", "session": Session }   // 티켓 1장 차감된 Session
@@ -274,6 +274,8 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 // 503 { "error": "daily_limit" }                             // 서버 전체 하루 상한(BEN_DAILY_LIMIT, 한국 날짜). 티켓 차감 없음
 // 503 { "error": "ben_unavailable" }                         // 서버에 Claude 키가 없음. 티켓 차감 없음
 ```
+
+- `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 벤이 **회사명·직무만으로** 웹을 검색해 최신 정보 브리핑을 만들고 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 
@@ -295,6 +297,16 @@ data: {"text":"해 주세요."}
 event: done
 data: {"ended":false}
 ```
+
+- **회사 브리핑 `status` 이벤트(2026-10-15, 회사명이 있는 면접의 첫 턴만):** `: ping` 다음, 첫 `delta` 앞에 온다.
+  ```
+  event: status
+  data: {"phase":"researching"}      ← 조사 시작(캐시가 있으면 생략). 20~40초 걸릴 수 있고 그동안 `: ping`이 15초마다 온다
+
+  event: status
+  data: {"phase":"briefing","ok":true}
+  ```
+  `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
 
 - `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 15번). 다음 턴은 `409 interview_over`. 리포트를 부른다.
 - Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.

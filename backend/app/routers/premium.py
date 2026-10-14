@@ -46,7 +46,8 @@ def start_interview(
     group = body.company if body.track == "company" else body.admission
     if group is None:
         raise ApiError(422, "missing_field", field=body.track)
-    inputs = {"resumeText": body.resumeText, body.track: group.model_dump()}
+    inputs = {"resumeText": body.resumeText, body.track: group.model_dump(exclude_none=True)}
+    has_company_name = body.track == "company" and body.company is not None and body.company.name
     now = request.app.state.clock()
     try:
         interview_id = premium.start_interview(
@@ -57,6 +58,7 @@ def start_interview(
             created_at=iso(now),
             day_start=kst_day_start(now),
             daily_limit=request.app.state.settings.ben_daily_limit,
+            briefing_status="pending" if has_company_name else "none",
         )
     except premium.DailyLimitReached:
         raise ApiError(503, "daily_limit") from None

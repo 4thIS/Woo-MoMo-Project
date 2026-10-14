@@ -286,11 +286,19 @@ class ArchiveSaved(BaseModel):
 # ── 벤 면접 ──
 
 NonBlank100 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+OptionalText100 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
 
 
 class CompanyInputs(BaseModel):
     field: NonBlank100
     job: NonBlank100
+    # 벤 회사 브리핑(spec 2026-10-15): 실제 지원 회사. 비면 없는 것으로 친다
+    name: OptionalText100 | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _blank_name_is_none(cls, v: str | None) -> str | None:
+        return v or None
 
 
 class AdmissionInputs(BaseModel):

@@ -88,3 +88,56 @@ def test_ben_unavailable_without_key(make_client, settings):
     assert res.status_code == 503
     assert res.json() == {"error": "ben_unavailable"}
     assert c.get("/api/me").json()["tickets"] == 10
+
+
+NAMED_START = {
+    **COMPANY_START,
+    "company": {**COMPANY_START["company"], "name": "  토스(비바리퍼블리카) "},
+}
+
+
+def _row(settings):
+    with open_db(settings) as conn:
+        return conn.execute(
+            "SELECT inputs_json, briefing_status FROM premium_interviews"
+        ).fetchone()
+
+
+def test_company_name_is_stored_and_marks_briefing_pending(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=NAMED_START).status_code == 201
+    row = _row(settings)
+    assert json.loads(row["inputs_json"])["company"] == {
+        **COMPANY_START["company"],
+        "name": "토스(비바리퍼블리카)",
+    }
+    assert row["briefing_status"] == "pending"
+
+
+def test_without_name_nothing_changes(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=COMPANY_START).status_code == 201
+    row = _row(settings)
+    assert json.loads(row["inputs_json"])["company"] == COMPANY_START["company"]
+    assert row["briefing_status"] == "none"
+
+
+def test_blank_name_is_dropped(client, settings):
+    _admin_with_tickets(client)
+    body = {**COMPANY_START, "company": {**COMPANY_START["company"], "name": "   "}}
+    assert client.post(URL, json=body).status_code == 201
+    row = _row(settings)
+    assert "name" not in json.loads(row["inputs_json"])["company"]
+    assert row["briefing_status"] == "none"
+
+
+def test_name_is_at_most_100_chars(client):
+    _admin_with_tickets(client)
+    body = {**COMPANY_START, "company": {**COMPANY_START["company"], "name": "가" * 101}}
+    assert client.post(URL, json=body).status_code == 422
+
+
+def test_admission_has_no_briefing(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=ADMISSION_START).status_code == 201
+    assert _row(settings)["briefing_status"] == "none"
