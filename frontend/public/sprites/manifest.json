@@ -1,10 +1,4 @@
 {
- "walk_underwear": {
-  "file": "walk_underwear.png",
-  "frames": 16,
-  "w": 44,
-  "h": 44
- },
  "walk_suit": {
   "file": "walk_suit.png",
   "frames": 16,
@@ -76,5 +70,17 @@
   "frames": 1,
   "w": 30,
   "h": 27
+ },
+ "walk_tee": {
+  "file": "walk_tee.png",
+  "frames": 16,
+  "w": 44,
+  "h": 44
+ },
+ "walk_watch_suit": {
+  "file": "walk_watch_suit.png",
+  "frames": 12,
+  "w": 44,
+  "h": 44
  }
 }
