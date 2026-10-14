@@ -21,6 +21,7 @@ import { useInterviewerStore } from '@/stores/interviewer'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
 import InterviewerPicker from './InterviewerPicker.vue'
+import { useInterviewStore } from '@/stores/interview'
 
 beforeEach(() => {
   localStorage.clear()
@@ -187,14 +188,32 @@ describe('InterviewerPicker', () => {
       expect(w.find('[data-test=track-pick]').exists()).toBe(true)
     })
 
-    it('트랙을 고르면 알린다 — 고르기 전에는 null이다', async () => {
+    it('트랙을 고르면 **스토어에 꽂는다** — 알리기만 하면 받는 쪽이 잊는다', async () => {
       await premium()
+      const interview = useInterviewStore()
       const w = mount(InterviewerPicker)
       await card(w, 'm2').trigger('click')
       await flushPromises()
-      expect(w.emitted('track-change')?.at(-1)).toEqual([null])
+      expect(interview.chosenTrack).toBeNull()
+      expect(interview.track).toBeNull()
       await w.find('[data-test=track-admission]').trigger('click')
-      expect(w.emitted('track-change')?.at(-1)).toEqual(['admission'])
+      expect(interview.chosenTrack).toBe('admission')
+      expect(interview.track).toBe('admission')
+    })
+
+    it('면접관을 바꾸면 고른 트랙도 비운다 — 앞 선택이 따라붙으면 안 된다', async () => {
+      await premium()
+      const interview = useInterviewStore()
+      const w = mount(InterviewerPicker)
+      await card(w, 'm2').trigger('click')
+      await flushPromises()
+      await w.find('[data-test=track-company]').trigger('click')
+      expect(interview.chosenTrack).toBe('company')
+      await card(w, 'f3').trigger('click')
+      await flushPromises()
+      expect(interview.chosenTrack).toBeNull()
+      // 올리비아는 대입 전용이라 고른 값과 무관하게 대입이다
+      expect(interview.track).toBe('admission')
     })
 
     it('다른 면접관을 고르면 트랙 선택이 사라진다', async () => {
