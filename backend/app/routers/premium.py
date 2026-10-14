@@ -10,7 +10,7 @@ from app import db
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import prompts
-from app.llm.claude import TURN_MAX_TOKENS, ClaudeClient, ClaudeError
+from app.llm.claude import REPORT_MAX_TOKENS, TURN_MAX_TOKENS, ClaudeClient, ClaudeError
 from app.presenters import to_session
 from app.repos import premium, users
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
@@ -135,5 +135,41 @@ def take_turn(
             yield sse("error", {"code": "turn_conflict"})
             return
         yield sse("done", {"ended": is_over(saved)})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+@router.post("/premium/interviews/{interview_id}/report")
+def make_report(
+    interview_id: str, user: PremiumUser, conn: Db, request: Request
+) -> StreamingResponse:
+    interview = _owned(conn, user, interview_id)
+    if interview.status == "done":
+        raise ApiError(409, "interview_over")
+    if interview.model_turns == 0:
+        raise ApiError(409, "interview_not_started")
+    claude = _claude(request)
+    system = prompts.build_system(interview.track, interview.inputs)
+    messages = prompts.report_messages(interview.messages)
+    db_path = request.app.state.settings.db_path
+
+    def events() -> Iterator[str]:
+        chunks: list[str] = []
+        try:
+            for text in claude.stream_text(
+                system=system, messages=messages, effort="medium", max_tokens=REPORT_MAX_TOKENS
+            ):
+                chunks.append(text)
+                yield sse("delta", {"text": text})
+        except ClaudeError as exc:
+            # 실패하면 done으로 바꾸지 않는다 — 같은 요청으로 다시 만들 수 있다
+            yield sse("error", {"code": exc.code})
+            return
+        if not "".join(chunks).strip():
+            yield sse("error", {"code": "claude_error"})
+            return
+        with db.connection(db_path) as c:
+            premium.mark_done(c, interview_id=interview.id)
+        yield sse("done", {})
 
     return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)
