@@ -10,6 +10,7 @@ import { formatClock } from '@/utils/timing'
 import {
   CANDIDATE_BACK,
   CANDIDATE_SCALE,
+  DESK_OVERLAP,
   FPS,
   LIFE,
   SCALE,
@@ -139,7 +140,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
 </script>
 
 <template>
-  <section class="stage" aria-label="면접실">
+  <section class="stage" :style="{ '--overlap': `${DESK_OVERLAP}px` }" aria-label="면접실">
     <div class="topbar">
       <div class="left">
         <PixelTag tone="muted"
@@ -176,23 +177,26 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
     </div>
     <p v-if="warning" class="mono warning" data-test="tts-warning">{{ warning }}</p>
 
-    <div class="row">
-      <!-- 동작이 바뀔 때마다 새로 그린다: 대체 세트에선 in·out이 같은 시트라 props만으론 다시 재생되지 않는다 -->
-      <SpriteFrame
-        v-for="c in CHARS"
-        :key="`${c}:${anims[c]}`"
-        :src="sheet(anims[c]).file"
-        :frame-w="CENTER_FRAME_PX"
-        :frame-h="CENTER_FRAME_PX"
-        :frames="sheet(anims[c]).frames"
-        :loop="sheet(anims[c]).loop"
-        :scale="SCALE"
-        :fps="FPS"
-        :data-char="c"
-        @done="onDone(c)"
-      />
+    <!-- 상판(스프라이트 책상)과 앞판을 한 덩어리로 묶는다 — 앞판이 상판보다 넓으면 딴 물건으로 보인다 -->
+    <div class="board">
+      <div class="row">
+        <!-- 동작이 바뀔 때마다 새로 그린다: 대체 세트에선 in·out이 같은 시트라 props만으론 다시 재생되지 않는다 -->
+        <SpriteFrame
+          v-for="c in CHARS"
+          :key="`${c}:${anims[c]}`"
+          :src="sheet(anims[c]).file"
+          :frame-w="CENTER_FRAME_PX"
+          :frame-h="CENTER_FRAME_PX"
+          :frames="sheet(anims[c]).frames"
+          :loop="sheet(anims[c]).loop"
+          :scale="SCALE"
+          :fps="FPS"
+          :data-char="c"
+          @done="onDone(c)"
+        />
+      </div>
+      <div class="desk" />
     </div>
-    <div class="desk" />
     <!-- Supertonic 3 OpenRAIL-M 사용 제한: 기계 생성 음성임을 명시 (#34). 음소거와 무관하게 상시 표시 -->
     <p v-if="voice" class="mono ai-voice" data-test="ai-voice">
       면접관 음성은 AI로 합성한 목소리입니다 (Supertonic 3)
@@ -303,23 +307,35 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   background: var(--bg);
   transform: translateX(-50%) rotate(45deg);
 }
-.row {
+.board {
   display: flex;
-  gap: var(--sp-8);
+  flex-direction: column;
   margin-top: var(--sp-5);
 }
+.row {
+  display: flex;
+  gap: 0;
+}
+/* 프레임 양옆 빈 칸만큼 서로 파고들게 해 세 책상이 한 줄로 이어진다.
+   몸통은 책상보다 좁아 겹쳐도 닿지 않는다 */
+.row > * {
+  margin-inline: calc(var(--overlap) * -1);
+}
+/* 책상의 앞판. 나무 상판 바로 아래에 붙어 한 덩어리로 보인다 —
+   프레임 아래쪽 빈 칸(= 겹침 폭과 같다)만큼 끌어올려 상판 끝에 맞춘다 */
 .desk {
-  width: 80%;
+  /* 상판과 같은 폭 — .board가 스프라이트 줄 너비로 줄어든다 */
+  width: 100%;
   height: 40px;
-  margin-top: -8px;
+  margin-top: calc(var(--overlap) * -1);
   background: var(--raise);
   border-bottom: 4px solid var(--bg);
 }
-/* 지원자(내 정수리)는 책상에서 한참 떨어진 아래에서 걸쳐 보인다 — 면접관과의 거리감 */
+/* 지원자(내 정수리)는 책상 앞판에 살짝 걸친 채 아래가 잘려 보인다 — 면접관과의 거리감.
+   무대 바닥이 아니라 **책상에** 매달아 둔다. 바닥 기준이면 창이 낮을 때 머리가 올라와
+   면접관을 덮는다 — 낮아지면 더 잘리기만 해야 한다 */
 .candidate {
-  position: absolute;
-  bottom: -80px;
-  left: 50%;
-  transform: translateX(-50%);
+  margin-top: calc(var(--sp-8) * -1);
+  flex-shrink: 0;
 }
 </style>

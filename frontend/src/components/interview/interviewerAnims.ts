@@ -34,8 +34,13 @@ export const ANIMS: Record<AnimName, { loop: boolean }> = {
 }
 export const CANDIDATE_BACK = { file: '/sprites/interviewers/candidate_back.png', w: 32, h: 32 }
 export const FPS = 8
-/** 면접관 배율: 프레임 92(CENTER_FRAME_PX) × 2 = 184px. 대체용 32×32 시트도 SpriteFrame이 시트 전체를 늘려 같은 184px로 그린다 */
-export const SCALE = 2
+/** 면접관 배율: 프레임 92(CENTER_FRAME_PX) × 3 = 276px. 대체용 32×32 시트도 SpriteFrame이 시트 전체를 늘려 같은 276px로 그린다.
+ *  정수만 쓴다 — 픽셀 그림을 반 칸으로 늘리면 칸마다 두께가 달라져 뭉개진다 */
+export const SCALE = 3
+/** 프레임 가장자리의 빈 칸(92px 프레임에서 그림은 x 14~78). 책상도 여기서 끝난다 */
+export const FRAME_PAD = 14
+/** 옆 사람과 이만큼 겹쳐야 책상 끝끼리 맞닿아 한 줄로 이어진다 */
+export const DESK_OVERLAP = FRAME_PAD * SCALE
 export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 커 보이게
 
 export type Trio = Record<Char, AnimName>
