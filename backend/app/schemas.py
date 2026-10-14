@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -132,3 +132,36 @@ class QuestionSet(BaseModel):
         if any(not q.strip() for q in v):
             raise ValueError("questions must not be blank")
         return v
+
+
+# ── 계정 (2026-10-13, docs/API.md "계정·이력서·보관함·프리미엄") ──
+
+Tier = Literal["member", "premium"]
+
+
+class Profile(BaseModel):
+    name: str | None
+    age: int | None
+
+
+class Session(BaseModel):
+    userId: str
+    email: str
+    tier: Tier
+    tickets: int
+    isAdmin: bool
+    profile: Profile
+    createdAt: str
+
+
+class SignupBody(BaseModel):
+    # 기본값을 둬서 빠진 칸도 라우터가 정해진 오류 코드로 답하게 한다
+    email: str = ""
+    password: str = ""
+    name: str = ""
+    consent: bool | None = None
+
+
+class LoginBody(BaseModel):
+    email: str = ""
+    password: str = ""
