@@ -212,6 +212,9 @@ a:hover {
 .snap-root {
   height: 100vh;
   overflow-y: auto;
+  /* 스크롤바 자리를 **양쪽에** 똑같이 둔다. 한쪽만 먹으면 내용 가운데가 그만큼 왼쪽으로 밀리는데,
+     화면 아래 가이드 바는 바깥에 fixed라 뷰포트 가운데에 서서 둘이 스크롤바 폭의 절반만큼 어긋난다 */
+  scrollbar-gutter: stable both-edges;
   scroll-snap-type: y mandatory;
 }
 .snap {
