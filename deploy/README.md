@@ -96,7 +96,7 @@ sudo mkdir -p /srv/momo/data /srv/momo-dev/data && sudo chown -R 10001:10001 /sr
 | `ADMIN_LOGIN` | `admin` | 관리자 아이디. **이메일 모양이 아닌 아이디**로 둔다. 이메일 값이 기존 사용자와 같으면 그 사용자가 관리자로 바뀐다. 목업 결제는 이 계정만 |
 | `ADMIN_PASSWORD` | (긴 무작위 문자열) | **`.env`에만 둔다. 추측하기 쉬운 값 금지.** 공개 사이트라 약하면 누구나 티켓을 충전해 하루 `BEN_DAILY_LIMIT`번까지 Claude 비용을 쓸 수 있다. `$`는 쓰지 않는다(compose가 변수로 읽는다) |
 | `BEN_DAILY_LIMIT` | `30` | 서버 전체 하루(한국 날짜) 벤 면접 수 상한. 마지막 방어선 |
-| `CORS_ORIGINS` | `https://momo.ssenu.cloud,https://demomo.ssenu.cloud,http://localhost:5173` | 정확한 오리진만, 쉼표로. `*` 금지(기동 실패) |
+| `CORS_ORIGINS` | 운영 `https://momo.ssenu.cloud` / dev `https://demomo.ssenu.cloud,http://localhost:5173` | **폴더마다 자기 오리진만 둔다.** 정확한 오리진만, 쉼표로. `*` 금지(기동 실패). 비우면 코드 기본값(셋 다)이 들어가니 꼭 적는다. 두 도메인이 같은 site(`ssenu.cloud`)라 `SameSite=Lax` 쿠키가 서로의 요청에도 실리므로, 한쪽 오리진을 다른 쪽 API에 열어 두면 dev 페이지가 로그인된 운영 계정으로 요청을 보낼 수 있다 |
 | `COOKIE_SECURE` | `1` | 세션 쿠키 `Secure`. HTTPS 뒤라 `1` 유지 |
 
 `ADMIN_LOGIN`·`ADMIN_PASSWORD` 중 하나라도 비우면 다음 기동 때 관리자 표시가 지워지고 목업 결제는 아무도 못 쓴다. 비밀번호를 바꾸려면 `.env`를 고치고 `docker compose up -d`로 api를 다시 띄운다(기동 때 맞춘다).
