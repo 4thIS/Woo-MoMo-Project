@@ -108,6 +108,12 @@ export interface ArchiveEntry {
   department?: string
 }
 
+/** 올린 녹음 한 건 */
+export interface RecordingRef {
+  id: string
+  url: string
+}
+
 /** 보관함 상세 — 목록에 더해 대화와 리포트까지 */
 export interface ArchiveDetail extends ArchiveEntry {
   messages: { role: 'user' | 'model'; text: string; at?: number }[]
@@ -143,6 +149,9 @@ export interface AccountApi {
   /** 한도는 서버가 집행한다. 밀려난 기록의 id를 함께 돌려준다 */
   saveArchive(draft: ArchiveDraft): Promise<{ entry: ArchiveEntry; evicted: string[] }>
   deleteArchive(id: string): Promise<void>
+
+  /** 프리미엄 기록에 답변 녹음을 올린다. 같은 turn을 다시 올리면 교체된다 */
+  uploadRecording(archiveId: string, turn: number, clip: Blob): Promise<RecordingRef>
 
   /** 목업 결제. 서버에서는 관리자만 — 일반 계정은 `purchase_disabled` */
   purchasePremium(): Promise<Session>

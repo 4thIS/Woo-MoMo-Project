@@ -166,3 +166,37 @@ describe('httpAccount — 오류', () => {
     expect(calls).toHaveLength(0)
   })
 })
+
+describe('httpAccount — 녹음', () => {
+  it('multipart로 올린다 — Content-Type을 직접 붙이면 경계가 깨진다', async () => {
+    answer({ status: 201, body: { id: 'rec1', url: '/api/recordings/rec1' } })
+    const clip = new Blob(['x'], { type: 'audio/webm' })
+    const r = await api().uploadRecording('a1', 2, clip)
+    expect(r.url).toBe('/api/recordings/rec1')
+    const init = calls[0].init
+    expect(calls[0].url).toBe('/api/recordings')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBeInstanceOf(FormData)
+    expect((init.headers as Record<string, string>) ?? {}).not.toHaveProperty('Content-Type')
+    const fd = init.body as FormData
+    expect(fd.get('archiveId')).toBe('a1')
+    expect(fd.get('turn')).toBe('2')
+    expect(fd.get('clip')).toBeInstanceOf(Blob)
+  })
+
+  it('너무 크면 too_large — nginx가 JSON이 아닌 본문으로 막아도 상태로 판단한다', async () => {
+    answer({ status: 413 })
+    const e = await api()
+      .uploadRecording('a1', 0, new Blob(['x']))
+      .catch((x) => x)
+    expect(e.code).toBe('too_large')
+  })
+
+  it('지원하지 않는 형식은 unsupported_media', async () => {
+    answer({ status: 415, body: { error: 'unsupported_media' } })
+    const e = await api()
+      .uploadRecording('a1', 0, new Blob(['x']))
+      .catch((x) => x)
+    expect(e.code).toBe('unsupported_media')
+  })
+})
