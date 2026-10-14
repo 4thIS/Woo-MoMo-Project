@@ -8,6 +8,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
 import ChatLog from '@/components/interview/ChatLog.vue'
 import AnswerInput from '@/components/interview/AnswerInput.vue'
+import HintBar from '@/components/ui/HintBar.vue'
 import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
@@ -81,6 +82,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />
+      <HintBar variant="note" />
       <div v-if="confirming" class="confirm" role="dialog">
         <div class="confirm-backdrop" />
         <PixelWindow padding="sm" class="confirm-win">
@@ -103,7 +105,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
       </div>
     </div>
 
-    <div class="panel">
+    <div class="side">
       <PixelWindow padding="sm" class="log-win">
         <ChatLog :messages="s.messages" />
       </PixelWindow>
@@ -148,12 +150,15 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   background: var(--danger);
   border-radius: 50%;
 }
+/* 시안 C — 무대를 왼쪽 한 덩어리로 세우고 대화·답변을 오른쪽에 쌓는다.
+   세로로 쌓으면 무대가 눌려 지원자와 책상이 화면 밖으로 밀린다.
+   안내(가이드)는 무대 안에 쪽지로 뜨므로 바깥에 자리를 비우지 않는다 */
 .interview {
   height: 100vh;
   display: grid;
-  grid-template-rows: 2fr 1fr;
+  grid-template-columns: 5fr 4fr;
   gap: var(--sp-4);
-  padding: var(--sp-4) var(--page-x) calc(var(--sp-4) + var(--hint-space, 0px));
+  padding: var(--sp-4) var(--page-x);
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -198,9 +203,10 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   gap: var(--sp-3);
   justify-content: flex-end;
 }
-.panel {
+/* 대화는 남는 높이를 다 쓰고, 답변 칸은 제 높이를 지킨다 */
+.side {
   display: grid;
-  grid-template-columns: 7fr 5fr;
+  grid-template-rows: 1fr auto;
   gap: var(--sp-4);
   min-height: 0;
 }

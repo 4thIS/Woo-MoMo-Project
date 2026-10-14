@@ -289,7 +289,8 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
 }
 .bubble {
   margin-top: 56px;
-  max-width: 720px;
+  /* 무대가 좁아도 좌우 숨통을 남긴다 */
+  max-width: min(720px, calc(100% - var(--sp-10)));
   min-height: 72px;
   /* 질문은 눌리지 않는다 — flex 부모가 줄이면 글자가 상자 밖으로 샌다 */
   flex-shrink: 0;

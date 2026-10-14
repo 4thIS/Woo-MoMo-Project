@@ -24,7 +24,8 @@ const view = computed(
   <Transition name="view" mode="out-in">
     <component :is="view" :key="interview.phase" />
   </Transition>
-  <HintBar />
+  <!-- 면접 화면은 무대 안에 쪽지로 띄운다(InterviewView) — 여기서 또 띄우면 둘이 된다 -->
+  <HintBar v-if="interview.phase !== 'interview'" />
 </template>
 
 <style>

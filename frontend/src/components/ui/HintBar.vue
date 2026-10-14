@@ -9,6 +9,10 @@ import { useHintsStore } from '@/stores/hints'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
 
+/** 'bar' = 화면 아래 떠 있는 띠(랜딩·준비·리포트) · 'note' = 무대 안에 붙는 쪽지(면접).
+ *  쪽지는 **자리를 비우지 않는다** — 면접 화면은 100vh라 자리를 빼면 무대가 눌린다 */
+const props = withDefaults(defineProps<{ variant?: 'bar' | 'note' }>(), { variant: 'bar' })
+
 const hints = useHintsStore()
 const interview = useInterviewStore()
 const iv = useInterviewerStore()
@@ -46,6 +50,7 @@ const el = ref<HTMLElement | null>(null)
 const GAP = 20 // --sp-5, 바와 화면 아래 사이
 let ro: ResizeObserver | null = null
 function space(px: number) {
+  if (props.variant === 'note') return
   document.documentElement.style.setProperty('--hint-space', `${px}px`)
 }
 watch(el, (node) => {
@@ -79,7 +84,7 @@ function dismiss(key: string) {
 
 <template>
   <Transition name="hint">
-    <aside v-if="hint" ref="el" class="bar" role="status" data-test="hint">
+    <aside v-if="hint" ref="el" class="bar" :class="variant" role="status" data-test="hint">
       <p class="text">{{ hint.text }}</p>
       <div class="acts">
         <button type="button" class="ok" data-test="hint-ok" @click="dismiss(hint.key)">
@@ -142,6 +147,25 @@ button:focus-visible {
   text-decoration: underline;
 }
 
+/* 무대 바닥 띠 — 부모(무대)가 position:relative다. 조작부(오른쪽 열)를 가리지 않는다.
+   좁은 쪽지로 띄우면 가운데 앉은 지원자와 어중간하게 겹친다. 가로로 깔면 자막처럼 읽힌다 */
+.bar.note {
+  position: absolute;
+  left: var(--sp-4);
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  transform: none;
+  width: auto;
+  z-index: 4;
+  padding: var(--sp-3) var(--sp-4);
+}
+.bar.note .text {
+  font-size: var(--fs-label);
+}
+.bar.note .acts {
+  justify-content: flex-end;
+}
+
 .hint-enter-active,
 .hint-leave-active {
   transition:
@@ -152,6 +176,10 @@ button:focus-visible {
 .hint-leave-to {
   opacity: 0;
   transform: translate(-50%, var(--sp-3));
+}
+.hint-enter-from.note,
+.hint-leave-to.note {
+  transform: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .hint-enter-active,
