@@ -52,13 +52,25 @@ class RateLimiter:
 
     def allow(self, key: str, limit: int, window: float = 60.0) -> bool:
         now = self._clock()
-        hits = self._hits.setdefault(key, deque())
+        hits = self._hits.get(key, deque())
         while hits and hits[0] <= now - window:
             hits.popleft()
-        if len(hits) >= limit:
-            return False
-        hits.append(now)
-        return True
+        allowed = len(hits) < limit
+        if allowed:
+            hits.append(now)
+        if hits:
+            self._hits[key] = hits
+        else:
+            self._hits.pop(key, None)
+        if len(self._hits) > 1024:
+            self._sweep(now, window)
+        return allowed
+
+    def _sweep(self, now: float, window: float) -> None:
+        """최근 요청이 창 밖으로 나간 키를 모두 지운다(드물게만 실행)."""
+        stale = [k for k, hits in self._hits.items() if hits[-1] <= now - window]
+        for k in stale:
+            del self._hits[k]
 
 
 def client_ip(request: Request) -> str:

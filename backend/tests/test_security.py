@@ -48,6 +48,27 @@ def test_rate_limiter_sliding_window():
     assert limiter.allow("login:1.1.1.1", 3)
 
 
+def test_rate_limiter_deletes_empty_key():
+    clock = FakeClock()
+    limiter = RateLimiter(clock)
+    assert limiter.allow("k", 1)
+    clock.advance(60)
+    assert not limiter.allow("k", 0)  # 창이 지나 비었고 차단돼도 키는 남기지 않는다
+    assert "k" not in limiter._hits
+
+
+def test_rate_limiter_sweeps_stale_keys_when_many():
+    clock = FakeClock()
+    limiter = RateLimiter(clock)
+    assert limiter.allow("k", 1)
+    for i in range(1024):
+        assert limiter.allow(f"ip{i}", 1)
+    clock.advance(60)
+    assert limiter.allow("other", 1)  # 키가 1024개를 넘으면 창 밖 키를 모두 지운다
+    assert "k" not in limiter._hits
+    assert set(limiter._hits) == {"other"}
+
+
 def _request(headers: dict[str, str], client: tuple[str, int] = ("9.9.9.9", 1234)) -> Request:
     raw = [(k.lower().encode(), v.encode()) for k, v in headers.items()]
     scope = {
