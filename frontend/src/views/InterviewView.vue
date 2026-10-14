@@ -8,6 +8,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import InterviewStage from '@/components/interview/InterviewStage.vue'
 import ChatLog from '@/components/interview/ChatLog.vue'
 import AnswerInput from '@/components/interview/AnswerInput.vue'
+import HintBar from '@/components/ui/HintBar.vue'
 import { answerLeftMs } from '@/utils/timing'
 
 const s = useInterviewStore()
@@ -81,6 +82,7 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
         @toggle-mute="s.toggleMuted()"
         @end="confirming = true"
       />
+      <HintBar variant="note" />
       <div v-if="confirming" class="confirm" role="dialog">
         <div class="confirm-backdrop" />
         <PixelWindow padding="sm" class="confirm-win">
@@ -103,10 +105,13 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
       </div>
     </div>
 
-    <div class="panel">
+    <div class="dock left">
       <PixelWindow padding="sm" class="log-win">
         <ChatLog :messages="s.messages" />
       </PixelWindow>
+    </div>
+
+    <div class="dock right">
       <PixelWindow padding="sm" class="input-win">
         <p v-if="s.overLimit" class="mono note">
           면접관이 마무리하려 합니다. 면접 종료를 눌러 리포트를 받으세요.
@@ -148,14 +153,33 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   background: var(--danger);
   border-radius: 50%;
 }
+/* 방이 곧 화면이다 — 창으로 감싸지 않고 브라우저 전체를 면접실로 쓴다.
+   면접관과 지원자가 가운데 세로축에 서고, 대화·답변은 아래 양 구석에 떠 있다 */
 .interview {
+  position: relative;
   height: 100vh;
-  display: grid;
-  grid-template-rows: 2fr 1fr;
-  gap: var(--sp-4);
-  padding: var(--sp-4) var(--page-x) calc(var(--sp-4) + var(--hint-space, 0px));
-  box-sizing: border-box;
   overflow: hidden;
+}
+.stage-area {
+  position: absolute;
+  inset: 0;
+}
+/* 아래 양 구석 — 방 위에 떠 있게 반투명으로 깔고 가운데(지원자) 자리를 비운다 */
+.dock {
+  position: absolute;
+  bottom: var(--sp-5);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  height: clamp(180px, 29vh, 260px);
+  width: clamp(300px, 37vw, 530px);
+}
+.dock.left {
+  left: var(--sp-5);
+}
+.dock.right {
+  right: var(--sp-5);
 }
 .stage-area {
   position: relative;
@@ -198,15 +222,13 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   gap: var(--sp-3);
   justify-content: flex-end;
 }
-.panel {
-  display: grid;
-  grid-template-columns: 7fr 5fr;
-  gap: var(--sp-4);
-  min-height: 0;
-}
+
 .log-win,
 .input-win {
+  flex: 1;
   min-height: 0;
+  /* 방 위에 떠 있는 판 — 뒤 면접실이 살짝 비친다 */
+  background-color: var(--dock);
 }
 .note {
   margin: 0 0 var(--sp-2);

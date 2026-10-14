@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { CENTER_FRAME_PX, LEGACY_CENTER, LEGACY_SIDE, interviewerById } from '@/interviewers'
-import { CANDIDATE_BACK, CANDIDATE_SCALE, DESK_OVERLAP, SCALE } from './interviewerAnims'
+import { CANDIDATE_BACK, candidateScaleFor, DESK_OVERLAP, SCALE } from './interviewerAnims'
 import InterviewStage from './InterviewStage.vue'
 import InterviewStageSource from './InterviewStage.vue?raw'
 
@@ -44,7 +44,7 @@ describe('InterviewStage', () => {
     const left = (w.find('[data-char="left"]').element as HTMLElement).style
     expect(left.backgroundSize).toBe(`${px * 16}px ${px}px`)
     const cand = (w.find('.candidate .sprite').element as HTMLElement).style
-    const cpx = CANDIDATE_BACK.w * CANDIDATE_SCALE
+    const cpx = CANDIDATE_BACK.w * candidateScaleFor(window.innerHeight)
     expect([cand.width, cand.height]).toEqual([`${cpx}px`, `${cpx}px`])
   })
 

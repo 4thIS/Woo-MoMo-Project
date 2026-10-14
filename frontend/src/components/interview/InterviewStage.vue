@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
@@ -9,11 +9,11 @@ import { CENTER_FRAME_PX, SIDE_SPRITES, type CenterSprites, type SideSprites } f
 import { formatClock } from '@/utils/timing'
 import {
   CANDIDATE_BACK,
-  CANDIDATE_SCALE,
-  DESK_OVERLAP,
+  candidateScaleFor,
   FPS,
   LIFE,
-  SCALE,
+  overlapFor,
+  scaleFor,
   SPEECH_CLIPS,
   baseAnims,
   sheetFor,
@@ -136,11 +136,22 @@ const anims = computed(() => {
     right: over.right ?? base.right,
   }
 })
+/** 창 높이에 맞춘 정수 배율. 낮은 창에서 크게 그리면 면접관이 아래 패널에 깔린다 */
+const vh = ref(typeof window === 'undefined' ? 768 : window.innerHeight)
+const scale = computed(() => scaleFor(vh.value))
+const meScale = computed(() => candidateScaleFor(vh.value))
+const overlap = computed(() => overlapFor(scale.value))
+function onResize() {
+  vh.value = window.innerHeight
+}
+onMounted(() => window.addEventListener('resize', onResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+
 const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.sideSprites)
 </script>
 
 <template>
-  <section class="stage" :style="{ '--overlap': `${DESK_OVERLAP}px` }" aria-label="면접실">
+  <section class="stage" :style="{ '--overlap': `${overlap}px` }" aria-label="면접실">
     <div class="topbar">
       <div class="left">
         <PixelTag tone="muted"
@@ -151,6 +162,11 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
           formatClock(elapsedMs ?? 0)
         }}</span>
       </div>
+      <!-- Supertonic 3 OpenRAIL-M 사용 제한: 기계 생성 음성임을 명시 (#34). 음소거와 무관하게 상시 표시.
+           머리말 가운데가 유일하게 늘 비어 있는 자리다 — 아래는 지원자와 판이 차지한다 -->
+      <p v-if="voice" class="mono ai-voice" data-test="ai-voice">
+        면접관 음성은 AI로 합성한 목소리입니다 (Supertonic 3)
+      </p>
       <div class="right">
         <button
           v-if="voice"
@@ -192,7 +208,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
           :frame-h="CENTER_FRAME_PX"
           :frames="sheet(anims[c]).frames"
           :loop="sheet(anims[c]).loop"
-          :scale="SCALE"
+          :scale="scale"
           :fps="FPS"
           :data-char="c"
           @done="onDone(c)"
@@ -200,33 +216,45 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
       </div>
       <div class="desk" />
     </div>
-    <!-- Supertonic 3 OpenRAIL-M 사용 제한: 기계 생성 음성임을 명시 (#34). 음소거와 무관하게 상시 표시 -->
-    <p v-if="voice" class="mono ai-voice" data-test="ai-voice">
-      면접관 음성은 AI로 합성한 목소리입니다 (Supertonic 3)
-    </p>
     <div class="candidate">
       <SpriteFrame
         :src="CANDIDATE_BACK.file"
         :frame-w="CANDIDATE_BACK.w"
         :frame-h="CANDIDATE_BACK.h"
         :frames="1"
-        :scale="CANDIDATE_SCALE"
+        :scale="meScale"
       />
     </div>
   </section>
 </template>
 
 <style scoped>
+/* 방이 곧 화면이다 — 감싸는 창을 두지 않는다.
+   가운데 위가 밝은 조명과 바닥선 하나로 깊이를 준다 */
 .stage {
+  /* 머리말(면접관·시계·종료) 높이. 안내 띠가 이 아래에 깔린다 */
+  --hud-h: 64px;
   position: relative;
-  background: var(--win);
-  border: var(--win-border);
-  box-shadow: var(--win-shadow);
   height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
+  background:
+    radial-gradient(130% 80% at 50% 22%, var(--room-lit) 0%, var(--bg) 62%),
+    repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
+}
+/* 바닥 — 책상 아래가 바닥으로 읽히게 */
+.stage::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36%;
+  background: linear-gradient(180deg, var(--floor-top) 0%, var(--floor-bottom) 100%);
+  border-top: 2px solid var(--floor-line);
+  pointer-events: none;
 }
 .stage::before {
   content: '';
@@ -237,7 +265,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
 }
 .topbar {
   position: absolute;
-  inset: var(--sp-4) var(--sp-4) auto var(--sp-4);
+  inset: var(--sp-4) var(--sp-5) auto var(--sp-5);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -274,9 +302,8 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   color: var(--text-3);
 }
 .ai-voice {
-  position: absolute;
-  left: var(--sp-4);
-  bottom: var(--sp-3);
+  margin: 0;
+  white-space: nowrap;
   margin: 0;
   font-size: var(--fs-meta);
   color: var(--text-3);
@@ -288,8 +315,10 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   color: var(--danger);
 }
 .bubble {
-  margin-top: 56px;
-  max-width: 720px;
+  /* 머리말과 안내 띠 아래에서 시작한다 — 띠가 떴다 사라져도 말풍선이 움직이지 않는다 */
+  margin-top: 108px;
+  /* 무대가 좁아도 좌우 숨통을 남긴다 */
+  max-width: min(720px, calc(100% - var(--sp-10)));
   min-height: 72px;
   /* 질문은 눌리지 않는다 — flex 부모가 줄이면 글자가 상자 밖으로 샌다 */
   flex-shrink: 0;

@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import HintBar from './HintBar.vue'
+import HintBarSource from './HintBar.vue?raw'
 import { useHintsStore } from '@/stores/hints'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
@@ -105,5 +106,29 @@ describe('자리 비움은 힌트가 드나들 때마다 출렁이지 않는다'
     await w.find('[data-test=hint-off]').trigger('click')
     await flushPromises()
     expect(document.documentElement.style.getPropertyValue('--hint-space')).toBe('0px')
+  })
+})
+
+describe('면접 화면 안내는 바닥 자막이다', () => {
+  const css = HintBarSource.split('<style')[1] ?? ''
+
+  it('가운데 아래에 자막처럼 앉는다', () => {
+    expect(css).toMatch(/\.bar\.note\s*\{[^}]*bottom:/)
+    expect(css).toMatch(/\.bar\.note\s*\{[^}]*left:\s*50%/)
+    expect(css).toMatch(/\.bar\.note\s*\{[^}]*text-align:\s*center/)
+  })
+
+  it('가운데 맞추기는 translate로 하고 transform은 비워 둔다 — 떠 있는 움직임이 써야 한다', () => {
+    expect(css).toMatch(/\.bar\.note\s*\{[^}]*translate:\s*-50%/)
+  })
+
+  it('천천히 위아래로 떠 있는다 — 눈에 걸려야 읽힌다', () => {
+    expect(css).toMatch(/\.bar\.note\s*\{[^}]*animation:\s*[\w-]*float/)
+    expect(css).toMatch(/@keyframes\s+[\w-]*float/)
+  })
+
+  it('움직임을 줄이려는 사람에게는 멈춘다', () => {
+    const reduced = css.split('prefers-reduced-motion')[1] ?? ''
+    expect(reduced).toMatch(/\.bar\.note[^}]*\{[^}]*animation:\s*none/)
   })
 })

@@ -15,6 +15,8 @@ vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmU
 import { RECORDING_FULL, useInterviewStore } from '@/stores/interview'
 import { useModelStore } from '@/stores/model'
 import InterviewView from './InterviewView.vue'
+import InterviewViewSource from './InterviewView.vue?raw'
+import InterviewStageSource from '@/components/interview/InterviewStage.vue?raw'
 
 beforeEach(() => {
   localStorage.clear()
@@ -203,5 +205,37 @@ describe('InterviewView — 녹음 표시', () => {
     s.$patch({ phase: 'interview', recordingOn: false, recordingWarning: RECORDING_FULL })
     const w = mount(InterviewView)
     expect(w.find('[data-test="rec-warn"]').text()).toContain('녹음')
+  })
+})
+
+describe('면접장 — 방이 곧 화면이다', () => {
+  const css = () => InterviewViewSource.split('<style')[1] ?? ''
+
+  it('방이 화면 전체를 쓴다 — 무대를 창으로 감싸지 않는다', () => {
+    expect(css()).toMatch(/\.interview\s*\{[^}]*height:\s*100vh/)
+    expect(css()).toMatch(/\.stage-area\s*\{[^}]*inset:\s*0/)
+    expect(css()).not.toMatch(/\.interview\s*\{[^}]*grid-template/)
+  })
+
+  it('힌트 자리를 더 이상 비우지 않는다 — 안내는 무대 안에 뜬다', () => {
+    expect(css()).not.toMatch(/\.interview\s*\{[^}]*--hint-space/)
+  })
+
+  it('대화·답변은 아래 양 구석에 뜬다 — 가운데는 지원자 자리다', () => {
+    expect(css()).toMatch(/\.dock\.left\s*\{[^}]*left:/)
+    expect(css()).toMatch(/\.dock\.right\s*\{[^}]*right:/)
+    const w = mount(InterviewView)
+    expect(w.find('.dock.left').exists()).toBe(true)
+    expect(w.find('.dock.right').exists()).toBe(true)
+  })
+
+  it('무대에 창 테두리를 두르지 않는다', () => {
+    const stageCss = InterviewStageSource.split('<style')[1] ?? ''
+    expect(stageCss).not.toMatch(/\.stage\s*\{[^}]*border:\s*var\(--win-border\)/)
+  })
+
+  it('안내는 무대 안에 쪽지로 뜬다 — 바깥 바가 아니다', () => {
+    const w = mount(InterviewView)
+    expect(w.findComponent({ name: 'HintBar' }).exists()).toBe(true)
   })
 })
