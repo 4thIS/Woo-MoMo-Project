@@ -1,16 +1,27 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
+import sqlite3
+from collections.abc import Iterator
+
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 
 from app import db
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
+from app.llm import prompts
+from app.llm.claude import TURN_MAX_TOKENS, ClaudeClient, ClaudeError
 from app.presenters import to_session
 from app.repos import premium, users
-from app.schemas import InterviewStart, InterviewStarted, Session
+from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
+from app.repos.users import User
+from app.schemas import InterviewStart, InterviewStarted, Session, TurnBody
+from app.sse import SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
 
 router = APIRouter()
+
+ANSWER_MAX = 2000
 
 
 @router.post("/premium/purchase", response_model=Session)
@@ -52,3 +63,65 @@ def start_interview(
     if fresh is None:
         raise ApiError(401, "unauthorized")
     return InterviewStarted(interviewId=interview_id, session=to_session(fresh))
+
+
+def _owned(conn: sqlite3.Connection, user: User, interview_id: str) -> PremiumInterview:
+    interview = premium.get_interview(conn, user_id=user.id, interview_id=interview_id)
+    if interview is None:
+        raise ApiError(404, "not_found")
+    return interview
+
+
+def _claude(request: Request) -> ClaudeClient:
+    claude = request.app.state.claude
+    if claude is None:
+        raise ApiError(503, "ben_unavailable")
+    return claude
+
+
+def is_over(interview: PremiumInterview) -> bool:
+    """리포트까지 받았거나, 면접관 응답 15번이거나, 마지막 응답이 종료 문장이면 끝."""
+    if interview.status == "done" or interview.model_turns >= MAX_MODEL_TURNS:
+        return True
+    last = interview.messages[-1] if interview.messages else None
+    return last is not None and last["role"] == "model" and prompts.has_end_phrase(last["text"])
+
+
+@router.post("/premium/interviews/{interview_id}/turns")
+def take_turn(
+    interview_id: str, body: TurnBody, user: PremiumUser, conn: Db, request: Request
+) -> StreamingResponse:
+    interview = _owned(conn, user, interview_id)
+    if is_over(interview):
+        raise ApiError(409, "interview_over")
+    answer: str | None = None
+    if interview.messages:  # 첫 턴은 첫 질문만 받는다(answer 무시)
+        answer = (body.answer or "").strip()
+        if not answer:
+            raise ApiError(422, "missing_answer", field="answer")
+        if len(answer) > ANSWER_MAX:
+            raise ApiError(422, "answer_too_long", field="answer")
+    claude = _claude(request)
+    system = prompts.build_system(interview.track, interview.inputs)
+    messages = prompts.turn_messages(interview.messages, answer)
+    db_path = request.app.state.settings.db_path
+
+    def events() -> Iterator[str]:
+        chunks: list[str] = []
+        try:
+            for text in claude.stream_text(
+                system=system, messages=messages, effort="low", max_tokens=TURN_MAX_TOKENS
+            ):
+                chunks.append(text)
+                yield sse("delta", {"text": text})
+        except ClaudeError as exc:
+            # 실패한 턴은 기록하지 않는다 — 같은 요청으로 다시 시도한다
+            yield sse("error", {"code": exc.code})
+            return
+        with db.connection(db_path) as c:
+            saved = premium.append_turn(
+                c, interview_id=interview.id, answer=answer, model_text="".join(chunks)
+            )
+        yield sse("done", {"ended": is_over(saved)})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)
