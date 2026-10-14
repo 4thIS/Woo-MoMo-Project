@@ -159,7 +159,7 @@ function printReport() {
 .report {
   max-width: var(--content-w);
   margin: 0 auto;
-  padding: var(--sp-8) var(--page-x) var(--sp-14);
+  padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
