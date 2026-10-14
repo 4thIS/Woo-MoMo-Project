@@ -99,13 +99,15 @@ def test_end_phrase_ends_the_interview(client, fake_claude):
     assert res.json() == {"error": "interview_over"}
 
 
-def test_at_most_15_interviewer_turns(client):
+def test_at_most_15_interviewer_turns(client, clock):
     iid = start_ben(client)
     last = None
     for i in range(15):
+        clock.advance(11)  # 벤 요청 제한(분당 6회) 안에서
         res = _turn(client, iid, answer=None if i == 0 else f"답변 {i}")
         last = sse_events(res.text)[-1]
     assert last == ("done", {"ended": True})
+    clock.advance(11)
     assert _turn(client, iid, answer="16번째").json() == {"error": "interview_over"}
 
 
@@ -158,3 +160,63 @@ def test_empty_reply_is_a_failure_and_not_recorded(client, fake_claude, settings
     assert events[-1] == ("error", {"code": "claude_error"})
     row = _row(settings, iid)
     assert (row["model_turns"], row["messages_json"]) == (0, "[]")
+
+
+def test_stream_starts_with_a_ping_comment(client):
+    iid = start_ben(client)
+    res = _turn(client, iid)
+    assert res.text.startswith(": ping\n\n")
+
+
+def test_first_turn_may_have_no_body(client):
+    iid = start_ben(client)
+    res = client.post(f"/api/premium/interviews/{iid}/turns")
+    assert res.status_code == 200
+    assert sse_events(res.text)[-1] == ("done", {"ended": False})
+
+
+def test_unexpected_error_ends_the_stream_with_server_error(client, fake_claude, settings):
+    iid = start_ben(client)
+    fake_claude.replies = [["부분", RuntimeError("boom")]]
+    events = sse_events(_turn(client, iid).text)
+    assert events == [("delta", {"text": "부분"}), ("error", {"code": "server_error"})]
+    assert _row(settings, iid)["model_turns"] == 0
+
+
+def test_ben_requests_are_limited_to_6_per_minute(client, clock):
+    iid = start_ben(client)
+    for i in range(6):
+        res = _turn(client, iid, answer=None if i == 0 else f"답변 {i}")
+        assert res.status_code == 200
+    res = _turn(client, iid, answer="7번째")
+    assert res.status_code == 429
+    assert res.json() == {"error": "rate_limited"}
+    assert client.post(f"/api/premium/interviews/{iid}/report").status_code == 429
+    clock.advance(61)
+    assert _turn(client, iid, answer="다시").status_code == 200
+
+
+def test_each_claude_call_counts_an_attempt(client, fake_claude, settings):
+    iid = start_ben(client)
+    fake_claude.replies = [[ClaudeError("claude_error")]]
+    _turn(client, iid)
+    _turn(client, iid)
+    with open_db(settings) as conn:
+        row = conn.execute(
+            "SELECT attempts FROM premium_interviews WHERE id = ?", (iid,)
+        ).fetchone()
+    assert row[0] == 2
+
+
+def test_too_many_attempts_is_interview_over(client, fake_claude, settings):
+    assert premium.MAX_ATTEMPTS == 2 * premium.MAX_MODEL_TURNS + 3
+    iid = start_ben(client)
+    with open_db(settings) as conn:
+        conn.execute(
+            "UPDATE premium_interviews SET attempts = ? WHERE id = ?", (premium.MAX_ATTEMPTS, iid)
+        )
+    calls = len(fake_claude.calls)
+    res = _turn(client, iid)
+    assert res.status_code == 409
+    assert res.json() == {"error": "interview_over"}
+    assert len(fake_claude.calls) == calls

@@ -2,6 +2,7 @@
 
 import hashlib
 import secrets
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -49,8 +50,14 @@ class RateLimiter:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self._hits: dict[str, deque[float]] = {}
+        # 동기 라우트가 스레드풀에서 돌아 동시에 불릴 수 있다
+        self._lock = threading.Lock()
 
     def allow(self, key: str, limit: int, window: float = 60.0) -> bool:
+        with self._lock:
+            return self._allow(key, limit, window)
+
+    def _allow(self, key: str, limit: int, window: float) -> bool:
         now = self._clock()
         hits = self._hits.get(key, deque())
         while hits and hits[0] <= now - window:

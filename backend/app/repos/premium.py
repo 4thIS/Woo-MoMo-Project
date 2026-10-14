@@ -9,6 +9,8 @@ from app.db import transaction
 from app.ids import new_id
 
 MAX_MODEL_TURNS = 15
+# 면접 하나의 Claude 호출 시도(턴·리포트, 실패 포함) 상한 — 재시도 반복으로 비용이 불지 않게
+MAX_ATTEMPTS = 2 * MAX_MODEL_TURNS + 3
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,8 @@ class PremiumInterview:
     model_turns: int
     status: str
     created_at: str
+    attempts: int = 0
+    report_raw: str | None = None
 
 
 class NoTickets(Exception):
@@ -45,6 +49,8 @@ def _interview(row: sqlite3.Row) -> PremiumInterview:
         model_turns=row["model_turns"],
         status=row["status"],
         created_at=row["created_at"],
+        attempts=row["attempts"],
+        report_raw=row["report_raw"],
     )
 
 
@@ -127,5 +133,25 @@ def append_turn(
     return _interview(updated)
 
 
-def mark_done(conn: sqlite3.Connection, *, interview_id: str) -> None:
-    conn.execute("UPDATE premium_interviews SET status = 'done' WHERE id = ?", (interview_id,))
+class TooManyAttempts(Exception):
+    """이 면접의 Claude 호출 시도가 MAX_ATTEMPTS를 넘었다."""
+
+
+def count_attempt(conn: sqlite3.Connection, *, interview_id: str) -> int:
+    """Claude를 부르기 직전에 원자적으로 +1. 상한을 넘으면 TooManyAttempts."""
+    row = conn.execute(
+        "UPDATE premium_interviews SET attempts = attempts + 1 WHERE id = ? RETURNING attempts",
+        (interview_id,),
+    ).fetchone()
+    attempts = row[0] if row is not None else MAX_ATTEMPTS + 1
+    if attempts > MAX_ATTEMPTS:
+        raise TooManyAttempts
+    return attempts
+
+
+def mark_done(conn: sqlite3.Connection, *, interview_id: str, report_raw: str) -> None:
+    """리포트 성공: done으로 바꾸고 원문을 보관한다(재요청 때 그대로 다시 보낸다)."""
+    conn.execute(
+        "UPDATE premium_interviews SET status = 'done', report_raw = ? WHERE id = ?",
+        (report_raw, interview_id),
+    )

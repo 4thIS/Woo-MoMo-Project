@@ -1,5 +1,6 @@
 from app.llm import prompts
 from app.llm.claude import REPORT_MAX_TOKENS, ClaudeError
+from app.repos import premium
 from tests.helpers import archive_body, open_db, sse_events, start_ben
 
 REPORT_RAW = (
@@ -33,7 +34,6 @@ def test_report_streams_and_finishes(client, fake_claude, settings):
     assert call["max_tokens"] == REPORT_MAX_TOKENS
     assert call["messages"][-1] == {"role": "user", "content": prompts.report_instruction()}
     assert _status(settings, iid) == "done"
-    assert _report(client, iid).json() == {"error": "interview_over"}
     turn = client.post(f"/api/premium/interviews/{iid}/turns", json={"answer": "더"})
     assert turn.json() == {"error": "interview_over"}
 
@@ -80,3 +80,43 @@ def test_finished_interview_can_be_archived_once(client):
     assert res.status_code == 201
     assert res.json()["entry"]["premium"] is True
     assert client.post("/api/archive", json=body).json() == {"error": "invalid_premium_interview"}
+
+
+def test_repeated_report_replays_the_stored_raw_without_claude(client, fake_claude, settings):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    fake_claude.replies = [[REPORT_RAW[:20], REPORT_RAW[20:]]]
+    _report(client, iid)
+    with open_db(settings) as conn:
+        row = conn.execute(
+            "SELECT report_raw FROM premium_interviews WHERE id = ?", (iid,)
+        ).fetchone()
+    assert row[0] == REPORT_RAW
+    calls = len(fake_claude.calls)
+    res = _report(client, iid)
+    assert res.status_code == 200
+    assert res.text.startswith(": ping\n\n")
+    assert sse_events(res.text) == [("delta", {"text": REPORT_RAW}), ("done", {})]
+    assert len(fake_claude.calls) == calls
+
+
+def test_unexpected_report_error_is_server_error(client, fake_claude, settings):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    fake_claude.replies = [[RuntimeError("boom")]]
+    assert sse_events(_report(client, iid).text) == [("error", {"code": "server_error"})]
+    assert _status(settings, iid) == "active"
+
+
+def test_report_counts_an_attempt_and_respects_the_cap(client, fake_claude, settings):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    with open_db(settings) as conn:
+        conn.execute(
+            "UPDATE premium_interviews SET attempts = ? WHERE id = ?", (premium.MAX_ATTEMPTS, iid)
+        )
+    calls = len(fake_claude.calls)
+    res = _report(client, iid)
+    assert res.status_code == 409
+    assert res.json() == {"error": "interview_over"}
+    assert len(fake_claude.calls) == calls

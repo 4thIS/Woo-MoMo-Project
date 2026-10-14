@@ -16,12 +16,15 @@ from app.repos import premium, users
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import InterviewStart, InterviewStarted, Session, TurnBody
-from app.sse import SSE_HEADERS, sse
+from app.security import RateLimiter
+from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
 
 router = APIRouter()
 
 ANSWER_MAX = 2000
+# 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
+BEN_PER_MINUTE = 6
 
 
 @router.post("/premium/purchase", response_model=Session)
@@ -79,6 +82,33 @@ def _claude(request: Request) -> ClaudeClient:
     return claude
 
 
+def _ben_rate_limit(request: Request, user: User) -> None:
+    limiter: RateLimiter = request.app.state.limiter
+    if not limiter.allow(f"ben:{user.id}", BEN_PER_MINUTE):
+        raise ApiError(429, "rate_limited")
+
+
+def _count_attempt(conn: sqlite3.Connection, interview: PremiumInterview) -> None:
+    """Claude를 부르기 직전에 시도 수를 센다. 상한(MAX_ATTEMPTS)을 넘으면 409."""
+    try:
+        premium.count_attempt(conn, interview_id=interview.id)
+    except premium.TooManyAttempts:
+        raise ApiError(409, "interview_over") from None
+
+
+def _stream(events: Iterator[str]) -> StreamingResponse:
+    """ping 주석을 먼저 보내고, 예상 못 한 예외는 server_error 이벤트로 끝낸다."""
+
+    def guarded() -> Iterator[str]:
+        yield PING
+        try:
+            yield from events
+        except Exception:
+            yield sse("error", {"code": "server_error"})
+
+    return StreamingResponse(guarded(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
 def is_over(interview: PremiumInterview) -> bool:
     """리포트까지 받았거나, 면접관 응답 15번이거나, 마지막 응답이 종료 문장이면 끝."""
     if interview.status == "done" or interview.model_turns >= MAX_MODEL_TURNS:
@@ -89,19 +119,25 @@ def is_over(interview: PremiumInterview) -> bool:
 
 @router.post("/premium/interviews/{interview_id}/turns")
 def take_turn(
-    interview_id: str, body: TurnBody, user: PremiumUser, conn: Db, request: Request
+    interview_id: str,
+    user: PremiumUser,
+    conn: Db,
+    request: Request,
+    body: TurnBody | None = None,
 ) -> StreamingResponse:
+    _ben_rate_limit(request, user)
     interview = _owned(conn, user, interview_id)
     if is_over(interview):
         raise ApiError(409, "interview_over")
     answer: str | None = None
-    if interview.messages:  # 첫 턴은 첫 질문만 받는다(answer 무시)
-        answer = (body.answer or "").strip()
+    if interview.messages:  # 첫 턴은 첫 질문만 받는다(answer 무시, 본문 없어도 된다)
+        answer = ((body.answer if body else None) or "").strip()
         if not answer:
             raise ApiError(422, "missing_answer", field="answer")
         if len(answer) > ANSWER_MAX:
             raise ApiError(422, "answer_too_long", field="answer")
     claude = _claude(request)
+    _count_attempt(conn, interview)
     system = prompts.build_system(interview.track, interview.inputs)
     messages = prompts.turn_messages(interview.messages, answer)
     db_path = request.app.state.settings.db_path
@@ -136,19 +172,30 @@ def take_turn(
             return
         yield sse("done", {"ended": is_over(saved)})
 
-    return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)
+    return _stream(events())
 
 
 @router.post("/premium/interviews/{interview_id}/report")
 def make_report(
     interview_id: str, user: PremiumUser, conn: Db, request: Request
 ) -> StreamingResponse:
+    _ben_rate_limit(request, user)
     interview = _owned(conn, user, interview_id)
     if interview.status == "done":
-        raise ApiError(409, "interview_over")
+        stored = interview.report_raw
+        if stored is None:  # 원문 보관(003) 전에 끝난 면접
+            raise ApiError(409, "interview_over")
+
+        def replay() -> Iterator[str]:
+            # 이미 받은 리포트를 다시 보낸다 — Claude를 부르지 않는다
+            yield sse("delta", {"text": stored})
+            yield sse("done", {})
+
+        return _stream(replay())
     if interview.model_turns == 0:
         raise ApiError(409, "interview_not_started")
     claude = _claude(request)
+    _count_attempt(conn, interview)
     system = prompts.build_system(interview.track, interview.inputs)
     messages = prompts.report_messages(interview.messages)
     db_path = request.app.state.settings.db_path
@@ -165,11 +212,12 @@ def make_report(
             # 실패하면 done으로 바꾸지 않는다 — 같은 요청으로 다시 만들 수 있다
             yield sse("error", {"code": exc.code})
             return
-        if not "".join(chunks).strip():
+        raw = "".join(chunks)
+        if not raw.strip():
             yield sse("error", {"code": "claude_error"})
             return
         with db.connection(db_path) as c:
-            premium.mark_done(c, interview_id=interview.id)
+            premium.mark_done(c, interview_id=interview.id, report_raw=raw)
         yield sse("done", {})
 
-    return StreamingResponse(events(), media_type="text/event-stream", headers=SSE_HEADERS)
+    return _stream(events())

@@ -122,8 +122,9 @@ def test_append_turn_and_mark_done(path):
         )
         assert [m["role"] for m in iv.messages] == ["model", "user", "model"]
         assert iv.model_turns == 2
-        premium.mark_done(conn, interview_id=iid)
-        assert premium.get_interview(conn, user_id=uid, interview_id=iid).status == "done"
+        premium.mark_done(conn, interview_id=iid, report_raw="[]")
+        done = premium.get_interview(conn, user_id=uid, interview_id=iid)
+        assert (done.status, done.report_raw) == ("done", "[]")
 
 
 def test_get_is_scoped_to_owner(path):
@@ -159,7 +160,7 @@ def test_append_turn_with_stale_expected_turns_conflicts(path):
 def test_append_turn_on_done_interview_conflicts(path):
     with db.connection(path) as conn:
         iid = _start(conn, _premium_user(conn))
-        premium.mark_done(conn, interview_id=iid)
+        premium.mark_done(conn, interview_id=iid, report_raw="[]")
         before = _snapshot(conn, iid)
         with pytest.raises(premium.TurnConflict):
             premium.append_turn(
@@ -189,3 +190,12 @@ def test_append_turn_at_max_turns_conflicts(path):
                 expected_model_turns=premium.MAX_MODEL_TURNS,
             )
         assert _snapshot(conn, iid) == before
+
+
+def test_count_attempt_is_capped(path):
+    with db.connection(path) as conn:
+        iid = _start(conn, _premium_user(conn))
+        for n in range(1, premium.MAX_ATTEMPTS + 1):
+            assert premium.count_attempt(conn, interview_id=iid) == n
+        with pytest.raises(premium.TooManyAttempts):
+            premium.count_attempt(conn, interview_id=iid)

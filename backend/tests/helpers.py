@@ -129,6 +129,9 @@ def insert_recording(
 def sse_events(body: str) -> list[tuple[str, dict[str, Any]]]:
     events = []
     for block in body.strip().split("\n\n"):
-        fields = dict(line.split(": ", 1) for line in block.splitlines())
+        lines = [line for line in block.splitlines() if not line.startswith(":")]
+        if not lines:  # 주석(": ping")만 있는 블록
+            continue
+        fields = dict(line.split(": ", 1) for line in lines)
         events.append((fields["event"], json.loads(fields["data"])))
     return events

@@ -85,3 +85,26 @@ def _request(headers: dict[str, str], client: tuple[str, int] = ("9.9.9.9", 1234
 def test_client_ip_prefers_cloudflare_header():
     assert client_ip(_request({"CF-Connecting-IP": "1.2.3.4"})) == "1.2.3.4"
     assert client_ip(_request({})) == "9.9.9.9"
+
+
+def test_rate_limiter_is_thread_safe():
+    # 동기 라우트는 스레드풀에서 돈다 — 동시에 불러도 정확히 limit번만 허용한다
+    import threading
+
+    limiter = RateLimiter(FakeClock())
+    assert hasattr(limiter, "_lock")
+    allowed: list[bool] = []
+    record = threading.Lock()
+
+    def hammer() -> None:
+        for _ in range(200):
+            ok = limiter.allow("k", 500)
+            with record:
+                allowed.append(ok)
+
+    threads = [threading.Thread(target=hammer) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert allowed.count(True) == 500
