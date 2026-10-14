@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, UploadFile
+from fastapi.responses import FileResponse
 
-from app.deps import Db, PremiumUser
+from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.files import remove_files
 from app.ids import new_id
@@ -20,7 +21,10 @@ CHUNK_BYTES = 64 * 1024
 
 
 def _receive(clip: UploadFile, target: Path, budget: int) -> int:
-    """조각마다 크기를 세며 .part에 쓴다. 남은 한도를 넘는 순간 멈추고 413."""
+    """스풀된 본문을 조각마다 세며 .part에 쓰고 남은 한도를 넘으면 413.
+
+    본문은 FastAPI가 이미 받은 뒤라 네트워크 상한은 nginx `client_max_body_size 6m`이 맡는다.
+    """
     part = target.with_name(target.name + ".part")
     size = 0
     try:
@@ -85,3 +89,17 @@ def upload_recording(
     if old is not None:
         remove_files(storage, [old])
     return RecordingCreated(id=recording_id, url=recording_url(recording_id))
+
+
+@router.get("/recordings/{recording_id}")
+def get_recording(
+    recording_id: str, user: LoggedInUser, conn: Db, request: Request
+) -> FileResponse:
+    rec = recordings.get_recording(conn, user_id=user.id, recording_id=recording_id)
+    if rec is None:
+        raise ApiError(404, "not_found")
+    path = request.app.state.settings.storage_dir / rec.path
+    if not path.is_file():
+        raise ApiError(404, "not_found")
+    # FileResponse가 Range(206)·Accept-Ranges를 처리한다
+    return FileResponse(path, media_type=rec.mime)

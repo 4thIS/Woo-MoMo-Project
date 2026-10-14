@@ -98,3 +98,37 @@ def test_free_or_foreign_archive_is_404(client, settings):
     other = signup(client, email="b@b.com")
     make_premium(settings, other["userId"])
     assert _upload(client, premium_aid, 1, b"x").json() == {"error": "not_found"}
+
+
+def test_get_supports_range(client, settings):
+    _, aid = _premium_archive(client, settings)
+    url = _upload(client, aid, 1, b"0123456789").json()["url"]
+    full = client.get(url)
+    assert full.status_code == 200
+    assert full.content == b"0123456789"
+    assert full.headers["content-type"] == "audio/webm"
+    assert full.headers["accept-ranges"] == "bytes"
+    part = client.get(url, headers={"Range": "bytes=2-5"})
+    assert part.status_code == 206
+    assert part.content == b"2345"
+    assert part.headers["content-range"] == "bytes 2-5/10"
+
+
+def test_get_is_owner_only(client, settings):
+    _, aid = _premium_archive(client, settings)
+    url = _upload(client, aid, 1, b"x").json()["url"]
+    logout(client)
+    assert client.get(url).status_code == 401
+    signup(client, email="b@b.com")
+    res = client.get(url)
+    assert res.status_code == 404
+    assert res.json() == {"error": "not_found"}
+
+
+def test_deleting_the_archive_deletes_recordings(client, settings):
+    _, aid = _premium_archive(client, settings)
+    url = _upload(client, aid, 1, b"x").json()["url"]
+    assert len(_files(settings)) == 1
+    assert client.delete(f"/api/archive/{aid}").status_code == 204
+    assert _files(settings) == []
+    assert client.get(url).status_code == 404
