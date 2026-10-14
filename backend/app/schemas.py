@@ -1,6 +1,13 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 MODELS_PREFIX = "/models/"
 HF_PREFIX = "https://huggingface.co/"
@@ -174,3 +181,30 @@ class ProfileBody(BaseModel):
 
 class EmailTakenResponse(BaseModel):
     taken: bool
+
+
+# ── 내 이력서 ──
+
+ResumeKind = Literal["company", "admission"]
+ResumeTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+ResumeText = Annotated[str, Field(max_length=20_000)]
+
+
+class ResumeSlot(BaseModel):
+    id: str
+    kind: ResumeKind
+    title: str
+    text: str
+    updatedAt: str
+
+
+class ResumeCreate(BaseModel):
+    kind: ResumeKind
+    title: ResumeTitle
+    text: ResumeText
+
+
+class ResumeUpdate(BaseModel):
+    # kind는 바꿀 수 없다. 프론트 ResumeDraft가 kind를 실어 보내도 무시된다.
+    title: ResumeTitle
+    text: ResumeText

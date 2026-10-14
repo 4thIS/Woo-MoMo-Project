@@ -16,7 +16,7 @@ from app.data import (
 )
 from app.errors import install_error_handlers
 from app.middleware import OriginGuard
-from app.routers import auth, health, manifest, me, questions
+from app.routers import auth, health, manifest, me, questions, resumes
 from app.security import RateLimiter
 from app.startup import prepare_storage
 
@@ -56,6 +56,7 @@ def create_app(
     app.include_router(questions.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(me.router, prefix="/api")
+    app.include_router(resumes.router, prefix="/api")
     return app
 
 
