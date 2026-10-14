@@ -23,6 +23,12 @@ import { useAccountStore } from './account'
 import { parseReport, type ReportItem } from '@/utils/reportParser'
 import { synthesize } from '@/services/tts'
 import { startRecording, type Recorder } from '@/services/recorder'
+import {
+  reportStream,
+  startInterview,
+  turnStream,
+  type StartRequest,
+} from '@/services/benInterview'
 import { playClip, setMuted } from '@/services/audio'
 
 export type Phase = 'landing' | 'prepare' | 'interview' | 'report'
@@ -64,6 +70,8 @@ export interface ChatMessage {
 // 엔진 컨텍스트 상한 − maxOutputTokens(리포트/응답 최대 생성량) − 여유
 export const TOKEN_LIMIT = MAX_NUM_TOKENS - 1024 - 512
 
+/** 벤 면접 id. 있으면 이 면접은 **서버가** 대화를 가진다 */
+let benId: string | null = null
 let recorder: Recorder | null = null
 let recordedBytes = 0
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
@@ -218,7 +226,22 @@ export const useInterviewStore = defineStore('interview', {
         })
         if (session) await session.dispose().catch(() => undefined)
         systemPrompt = prompt
-        session = await startSession(prompt)
+        benId = null
+        if (chosen.premium) {
+          // 벤은 서버가 Claude를 부른다. 티켓은 여기서 빠진다 — 실패하면 면접을 열지 않는다
+          const account = useAccountStore()
+          try {
+            const started = await startInterview(this.benRequest())
+            benId = started.interviewId
+            account.session = started.session
+          } catch (e) {
+            this.genError = e instanceof Error ? e.message : String(e)
+            return
+          }
+          session = null
+        } else {
+          session = await startSession(prompt)
+        }
         this.messages = []
         this.ended = false
         this.genError = null
@@ -251,10 +274,10 @@ export const useInterviewStore = defineStore('interview', {
 
     /** 내부: user 턴을 보내고 응답을 스트리밍해 messages에 확정한다 */
     async generate(userText: string) {
-      if (!session) return
+      if (!session && !benId) return
       lastSent = userText
       const run = async () => {
-        if (!session) return
+        if (!session && !benId) return
         this.generating = true
         this.genError = null
         this.ttsWarning = null
@@ -265,15 +288,24 @@ export const useInterviewStore = defineStore('interview', {
         const filter = new ThoughtFilter()
         let text = ''
         let aborted = false // 중단된 생성의 부분 텍스트는 읽지 않는다(spec 4절: 기존대로 텍스트만)
+        let serverEnded = false
         try {
-          await session.send(
-            userText,
-            (delta) => {
-              const shown = filter.push(delta)
-              if (shown) this.streaming += shown
-            },
-            abortCtl.signal,
-          )
+          const onDelta = (delta: string) => {
+            const shown = filter.push(delta)
+            if (shown) this.streaming += shown
+          }
+          if (benId) {
+            // 첫 턴은 답변 없이 — 서버가 첫 질문을 만든다
+            const r = await turnStream(
+              benId,
+              userText === KICKOFF ? undefined : userText,
+              onDelta,
+              abortCtl.signal,
+            )
+            serverEnded = r.ended
+          } else if (session) {
+            await session.send(userText, onDelta, abortCtl.signal)
+          }
           aborted = abortCtl.signal.aborted
           this.streaming += filter.flush()
           // 태그 쌍이 통째로 버퍼링되어 필터를 통과했을 수 있는 잔여 thought를 최종 텍스트에서 제거
@@ -281,7 +313,8 @@ export const useInterviewStore = defineStore('interview', {
           // 공백만 남은 턴(thought만 오고 끝난 경우 등)은 기록하지 않는다 — 빈 말풍선 방지
           text = this.streaming.trim()
           if (text) this.messages.push({ role: 'model', text: this.streaming, at: Date.now() })
-          if (hasEndPhrase(text)) {
+          // 벤은 서버가 끝을 안다. 무료 면접관만 종료 문장을 찾는다
+          if (serverEnded || hasEndPhrase(text)) {
             this.ended = true
             if (this.endedAt === null) this.endedAt = Date.now()
           }
@@ -424,7 +457,7 @@ export const useInterviewStore = defineStore('interview', {
     },
 
     async finish() {
-      if (!session || this.reportStatus === 'writing') return
+      if ((!session && !benId) || this.reportStatus === 'writing') return
       // 가드를 await 이전에 동기로 선점 — finish()가 겹쳐 불려도 리포트 요청은 한 번만 나간다
       this.reportStatus = 'writing'
       if (this.endedAt === null) this.endedAt = Date.now()
@@ -439,12 +472,16 @@ export const useInterviewStore = defineStore('interview', {
       // 프롬프트 override(파인튜닝 모델)가 있으면 페르소나 미적용 — 리포트 말투도 뺀다(spec 5.1·7절)
       const override = useModelStore().manifest?.systemPromptOverride
       try {
-        const raw = await session.send(
-          buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
-          (d) => (this.reportRaw += d),
-        )
-        this.reportRaw = raw
-        this.report = parseReport(raw)
+        if (benId) {
+          // 서버가 쓴다. 이미 받은 면접에 다시 불러도 보관한 원문을 그대로 준다
+          await reportStream(benId, (d) => (this.reportRaw += d))
+        } else if (session) {
+          this.reportRaw = await session.send(
+            buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
+            (d) => (this.reportRaw += d),
+          )
+        }
+        this.report = parseReport(this.reportRaw)
         this.reportStatus = 'done'
         await this.archiveNow()
       } catch (e) {
@@ -486,6 +523,27 @@ export const useInterviewStore = defineStore('interview', {
       this.archiveEvicted = r?.evicted ?? []
     },
 
+    /** 서버에 넘길 면접 조건. 트랙이 보는 묶음 하나만 담는다 */
+    benRequest(): StartRequest {
+      const p = this.profile
+      if (this.track === 'admission')
+        return {
+          track: 'admission',
+          resumeText: this.resumeText,
+          admission: {
+            name: p.name,
+            age: p.age ?? 0,
+            university: p.university,
+            department: p.department,
+          },
+        }
+      return {
+        track: 'company',
+        resumeText: this.resumeText,
+        company: { field: p.field ?? '', job: p.job },
+      }
+    },
+
     /** 스토어가 이미 가진 값으로 보관할 한 건을 만든다. 트랙이 보는 칸만 담는다 */
     archiveDraft(): ArchiveDraft {
       const iv = this.sessionInterviewer
@@ -511,6 +569,8 @@ export const useInterviewStore = defineStore('interview', {
         report: this.report ?? [],
         reportRaw: this.reportRaw,
         recordings: [...this.recordings],
+        // 프리미엄 기록은 어느 벤 면접인지 서버에 증명해야 한다
+        ...(benId ? { premiumInterviewId: benId } : {}),
       }
     },
 
@@ -518,6 +578,7 @@ export const useInterviewStore = defineStore('interview', {
       await this.abort() // 재생·생성을 멈추고 generate의 꼬리까지 끝낸 뒤 비운다 — 안 그러면 꼬리가 stage를 waiting으로 되돌린다
       if (session) await session.dispose().catch(() => undefined)
       session = null
+      benId = null
       lastSent = ''
       systemPrompt = ''
       this.messages = []
