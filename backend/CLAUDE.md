@@ -14,17 +14,22 @@
 
 ```
 backend/
-├── app/          # FastAPI 앱: main.py, routers/, schemas.py(pydantic 응답 모델)
+├── app/          # FastAPI 앱: main.py, routers/, schemas.py(pydantic 요청·응답 모델)
+│   ├── db.py, migrations/   # sqlite3 연결·트랜잭션, 번호 붙은 .sql(schema_version)
+│   ├── repos/    # SQL 전담(users, sessions, resumes, archive, premium, recordings)
+│   └── llm/      # 벤: Claude 호출(claude.py), 프롬프트(prompts.py, 계층 규율 경로)
 ├── data/         # 정적 계약 데이터: manifest.json, questions/{field}.json (계층 규율 경로)
 └── tests/        # pytest
-```
 
 ## 계층 책임
 
 - `app/schemas.py`가 `/api` 응답 형태의 단일 정의다. `docs/API.md`는 이 스키마를 사람이 읽는 버전이며 둘은 항상 일치해야 한다.
 - `data/`는 코드가 아니라 계약 데이터다. 코드 배포 없이 파일 교체만으로 모델·질문을 바꿀 수 있어야 한다.
-- 데이터베이스·인증·세션 저장 없음. 이력서·대화·리포트를 받는 엔드포인트를 만들지 않는다.
-- RAG 확장 시에도 사용자 개인 데이터는 서버에 저장하지 않는다. 공개 지식(직무·기업 정보)만 색인한다.
+- 사용자 데이터는 **로그인하고 동의한 사용자의 것만** 저장한다(sqlite3, 위치는 환경변수 `DATA_DIR`, 2026-10-13 개정). 비로그인 사용자의 이력서·대화·리포트를 받는 엔드포인트는 만들지 않는다.
+- 라우터는 HTTP, `app/repos/`는 SQL, `app/llm/`은 외부 호출·프롬프트만 맡는다. ORM·인증 라이브러리를 들이지 않는다.
+- 비밀번호·이력서·대화 본문을 로그에 남기지 않는다.
+- `app/llm/prompts.py`(벤 프롬프트)는 계층 규율 경로다. 바꾸면 demomo에서 벤 1회 완주 + 리포트 JSON 파싱을 확인하고, 변경 제안 본문에 전후 비교를 붙인다. 종료 문장·리포트 지시문은 프론트와 같아야 한다(`tests/test_prompt_parity.py`).
+- RAG 확장 시 색인은 공개 지식(직무·기업 정보)만. 사용자 데이터를 색인하지 않는다.
 - 공통 인프라 계층은 도메인을 import하지 않는다(의존 방향 단방향 유지).
 
 ## 커밋 scope
