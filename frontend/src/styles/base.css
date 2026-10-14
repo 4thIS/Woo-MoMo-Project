@@ -27,11 +27,13 @@ body {
   margin: 0;
   min-height: 100%;
 }
+/* 스크롤바는 **실제로 스크롤하는 쪽** 하나만. 화면이 자기 스크롤러(.snap-root·면접 화면)를
+   가지는데 body까지 길어지면 바깥에 하나가 더 생겨 둘이 겹친다.
+   힌트 바가 비울 자리도 body가 아니라 **바닥까지 내용이 닿는 화면**(면접·리포트)이 각자 비운다.
+   랜딩·준비는 가운데 정렬이라 바가 떠 있어도 가릴 것이 없다 */
 body {
   background: var(--bg);
   color: var(--text);
-  /* 힌트 바가 떠 있는 동안 그만큼 아래를 비운다 — HintBar가 실제 높이를 넣는다 */
-  padding-bottom: var(--hint-space, 0px);
   font-family: var(--font-body);
   font-size: var(--fs-body);
   line-height: 1.7;
@@ -180,10 +182,39 @@ a:hover {
   animation: rise var(--dur-3) var(--ease) both;
 }
 
+/* 스크롤바 — 어디서 스크롤하든 같은 모양. 둥근 기본 막대는 각진 픽셀 창과 따로 논다.
+   표준 속성을 아는 브라우저(요즘 크롬·파이어폭스)는 이쪽이 이기고, 모르는 쪽은 아래
+   ::-webkit-scrollbar로 간다. 표준 쪽은 테두리를 못 그리니 **밝은 색**으로 같은 무게를 낸다 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--raise);
+  border: 2px solid var(--line);
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: var(--line);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* 한 화면 = 한 섹션. 스크롤하면 다음 섹션 시작점에 자동으로 맞춰진다 */
 .snap-root {
   height: 100vh;
   overflow-y: auto;
+  /* 스크롤바 자리를 **양쪽에** 똑같이 둔다. 한쪽만 먹으면 내용 가운데가 그만큼 왼쪽으로 밀리는데,
+     화면 아래 가이드 바는 바깥에 fixed라 뷰포트 가운데에 서서 둘이 스크롤바 폭의 절반만큼 어긋난다 */
+  scrollbar-gutter: stable both-edges;
   scroll-snap-type: y mandatory;
 }
 .snap {
