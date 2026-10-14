@@ -14,3 +14,7 @@ def to_session(user: User) -> Session:
         profile=Profile(name=user.name, age=user.age),
         createdAt=user.created_at,
     )
+
+
+def recording_url(recording_id: str) -> str:
+    return f"/api/recordings/{recording_id}"

@@ -1,6 +1,7 @@
 from typing import Annotated, Literal
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -208,3 +209,75 @@ class ResumeUpdate(BaseModel):
     # kind는 바꿀 수 없다. 프론트 ResumeDraft가 kind를 실어 보내도 무시된다.
     title: ResumeTitle
     text: ResumeText
+
+
+# ── 보관함 ──
+
+Track = Literal["company", "admission"]
+ShortText = Annotated[str, Field(max_length=100)]
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "model"]
+    text: str
+    at: int | None = None
+
+
+class ReportItem(BaseModel):
+    question: str
+    answerSummary: str
+    feedback: str
+
+
+class RecordingRef(BaseModel):
+    turn: int
+    url: str
+
+
+class ArchiveEntry(BaseModel):
+    id: str
+    interviewerId: str
+    premium: bool
+    track: Track
+    startedAt: str
+    endedAt: str
+    questionCount: int
+    hasRecording: bool
+    field: str | None = None
+    job: str | None = None
+    name: str | None = None
+    age: int | None = None
+    university: str | None = None
+    department: str | None = None
+
+
+class ArchiveDetail(ArchiveEntry):
+    messages: list[ChatMessage]
+    report: list[ReportItem]
+    reportRaw: str
+    recordings: list[RecordingRef]
+
+
+class ArchiveCreate(BaseModel):
+    # 프론트 ArchiveDraft의 hasRecording·recordings는 서버가 정하므로 무시된다
+    interviewerId: str = Field(min_length=1, max_length=20)
+    premium: bool
+    track: Track
+    startedAt: AwareDatetime
+    endedAt: AwareDatetime
+    questionCount: int = Field(default=0, ge=0)
+    field: ShortText | None = None
+    job: ShortText | None = None
+    name: ShortText | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
+    university: ShortText | None = None
+    department: ShortText | None = None
+    messages: list[ChatMessage]
+    report: list[ReportItem]
+    reportRaw: str
+    premiumInterviewId: str | None = None
+
+
+class ArchiveSaved(BaseModel):
+    entry: ArchiveEntry
+    evicted: list[str]
