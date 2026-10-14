@@ -74,7 +74,7 @@ curl -I -H "Range: bytes=0-1023" https://momo.ssenu.cloud/models/gemma4-e4b-it-w
 
 | 환경 | 클론 폴더 | 호스트 데이터 폴더 | `deploy/.env` |
 |---|---|---|---|
-| demomo(dev) | `/srv/apps/Woo-MoMo-Project-dev` | `/srv/momo-dev/data` | `COMPOSE_PROJECT_NAME=momo-dev`, `WEB_BIND=...`, `DATA_HOST_DIR=/srv/momo-dev/data` |
+| demomo(dev) | `/srv/apps/Woo-MoMo-Project-dev` | `/srv/momo-dev/data` | `COMPOSE_PROJECT_NAME=momo-dev`, `WEB_BIND=127.0.0.1:8081`, `DATA_HOST_DIR=/srv/momo-dev/data` |
 | momo(운영) | `/srv/apps/Woo-MoMo-Project` | `/srv/momo/data` | `COMPOSE_PROJECT_NAME=deploy`, `WEB_BIND=127.0.0.1:8006` (`DATA_HOST_DIR`은 기본값이라 안 적는다) — **지시 전까지 반영하지 않는다** |
 
 폴더마다 `deploy/.env`에 `COMPOSE_PROJECT_NAME`과 `WEB_BIND`가 들어 있으므로, 어느 폴더에서든 `docker compose up --build -d`만 쳐도 서로의 컨테이너를 건드리지 않는다.
