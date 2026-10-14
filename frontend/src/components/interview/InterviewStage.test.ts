@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { CENTER_FRAME_PX, LEGACY_CENTER, LEGACY_SIDE, interviewerById } from '@/interviewers'
 import { CANDIDATE_BACK, CANDIDATE_SCALE, DESK_OVERLAP, SCALE } from './interviewerAnims'
 import InterviewStage from './InterviewStage.vue'
+import InterviewStageSource from './InterviewStage.vue?raw'
 
 const base = {
   stage: 'waiting' as const,
@@ -214,5 +215,29 @@ describe('InterviewStage — 면접관', () => {
   it('면접관 이름을 상단 태그에 붙인다', () => {
     const w = mount(InterviewStage, { props: { ...base, interviewerName: '압박 면접관(여)' } })
     expect(w.text()).toContain('IT · 백엔드 · 면접관: 압박 면접관(여)')
+  })
+})
+
+describe('말풍선은 글자를 가두어야 한다', () => {
+  const css = InterviewStageSource.split('<style')[1] ?? ''
+
+  it('눌리지 않는다 — flex 부모가 줄이면 글자가 상자 밖으로 샌다', () => {
+    expect(css).toMatch(/\.bubble\s*\{[^}]*flex-shrink:\s*0/)
+  })
+
+  it('아주 길면 상자 안에서 스크롤한다 — 밖으로 흘리지 않는다', () => {
+    expect(css).toMatch(/\.says\s*\{[^}]*overflow-y:\s*auto/)
+    expect(css).toMatch(/\.says\s*\{[^}]*max-height:/)
+  })
+
+  it('말꼬리는 상자 바깥에 그려지므로 스크롤은 안쪽에 둔다', () => {
+    // .bubble에 overflow를 걸면 ::after 꼬리가 잘린다
+    expect(css).not.toMatch(/\.bubble\s*\{[^}]*overflow/)
+  })
+
+  it('긴 질문도 한 덩어리로 그린다', () => {
+    const long = '가'.repeat(400)
+    const w = mount(InterviewStage, { props: { ...base, bubble: long } })
+    expect(w.find('.says').text()).toContain(long)
   })
 })

@@ -113,14 +113,14 @@ watch(
 const step = ref<1 | 2>(1)
 const navigatedBack = ref(false)
 function tryAdvance() {
-  if (step.value === 1 && interview.profileDone && !navigatedBack.value) step.value = 2
+  if (step.value === 1 && infoDone.value && !navigatedBack.value) step.value = 2
 }
 function goBack() {
   step.value = 1
   navigatedBack.value = true
 }
 function goNext() {
-  if (interview.profileDone) step.value = 2
+  if (infoDone.value) step.value = 2
 }
 async function onField(field: Field) {
   await interview.setField(field)
@@ -174,7 +174,7 @@ function usePasted() {
 /* 막힌 이유(#41): 간단 이력서를 열어 두고 '이력서 완성'을 안 누른 상태가 가장 흔한 "다 채웠는데 안 열림" */
 const startLabel = computed(() => {
   if (interview.canStart) return '면접 시작'
-  if (formOpen.value && !interview.resumeDone && interview.profileDone)
+  if (formOpen.value && !interview.resumeDone && infoDone.value)
     return "면접 시작 — 간단 이력서의 '이력서 완성'을 눌러 주세요"
   return `면접 시작 — ${interview.startBlockReason}`
 })
@@ -216,7 +216,7 @@ const voicelessOffer = computed(
     model.status === 'ready' &&
     model.ttsEnabled &&
     (model.ttsStatus === 'error' || ttsStuck.value) &&
-    interview.profileDone &&
+    infoDone.value &&
     interview.resumeDone,
 )
 function startVoiceless() {
@@ -298,7 +298,7 @@ async function clearAndRetry() {
         <PixelWindow :title="step === 1 ? '어디에 지원하시나요?' : '이력서'">
           <template #tag>
             <div class="stepnav">
-              <PixelTag v-if="step === 1 && interview.profileDone" tone="ok">입력 완료</PixelTag>
+              <PixelTag v-if="step === 1 && infoDone" tone="ok">입력 완료</PixelTag>
               <PixelTag v-if="step === 2 && interview.resumeDone" tone="ok">
                 {{ interview.resumeText.length.toLocaleString() }}자 추출
               </PixelTag>
@@ -318,7 +318,7 @@ async function clearAndRetry() {
                 class="arrow press"
                 data-test="step-next"
                 aria-label="다음: 이력서"
-                :disabled="step === 2 || !interview.profileDone"
+                :disabled="step === 2 || !infoDone"
                 @click="goNext"
               >
                 <CursorIcon />
