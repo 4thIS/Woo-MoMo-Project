@@ -120,6 +120,8 @@ export const useModelStore = defineStore('model', {
     active: null as ModelRef | null,
     received: 0,
     total: 0,
+    /** 벤이라 엔진을 아예 안 올린 상태인가. 무료 면접관으로 바꾸면 그때 받아야 한다 */
+    engineMissing: false,
     error: null as string | null,
     manifestError: null as string | null,
     initFailed: false,
@@ -171,8 +173,13 @@ export const useModelStore = defineStore('model', {
       return this.ttsEnabled ? this.ttsSelectionSize : 0
     },
     /** 동의·저장 공간 판정 기준: 현재 모델 + TTS */
+    /** 벤(프리미엄)은 서버가 답한다 — 브라우저 모델 3GB를 받을 이유가 없다.
+     *  목소리는 이 브라우저가 내므로 TTS는 그대로 받는다 */
+    llmSkipped(): boolean {
+      return useInterviewerStore().current?.premium === true
+    },
     downloadSize(): number {
-      return (this.active?.size ?? 0) + this.ttsSize
+      return (this.llmSkipped ? 0 : (this.active?.size ?? 0)) + this.ttsSize
     },
     /* 준비 화면 진행 바·장면 기준(#26): 모델 + TTS 합산 바이트. 목소리 단계에서 0으로 되돌아가지 않는다 */
     overallTotal(): number {
@@ -185,7 +192,7 @@ export const useModelStore = defineStore('model', {
     overallProgress(): number {
       return (
         overallFraction({
-          modelSize: this.total,
+          modelSize: this.llmSkipped ? 0 : this.total,
           modelReceived: this.received,
           ttsSize: this.ttsSize,
           ttsReceived: this.ttsReceived,
@@ -199,6 +206,8 @@ export const useModelStore = defineStore('model', {
     ready(): boolean {
       return (
         this.status === 'ready' &&
+        // 벤으로 건너뛴 상태에서 무료 면접관으로 바꾸면 엔진이 없다 — 열어 주면 시작에서 터진다
+        (this.llmSkipped || !this.engineMissing) &&
         (!this.ttsEnabled || (this.ttsStatus === 'ready' && !this.voiceSwitching))
       )
     },
@@ -243,6 +252,14 @@ export const useModelStore = defineStore('model', {
       const { id, url, size } = this.active
       this.error = null
       this.initFailed = false
+      if (this.llmSkipped) {
+        // 벤은 서버가 답한다. 모델도 엔진도 건너뛰고 목소리만 준비한다
+        this.engineMissing = true
+        this.received = 0
+        this.status = 'ready'
+        await this.loadTts()
+        return
+      }
       // 캐시 조회 동안에도 준비 화면이 look_up(초기화) 장면을 보이도록 먼저 initializing으로 둔다.
       // 캐시 미스면 downloading으로 내려간다 (spec 4.2: 캐시 히트면 downloading을 건너뛴다)
       this.status = 'initializing'
@@ -287,6 +304,7 @@ export const useModelStore = defineStore('model', {
           INIT_TIMEOUT_MS,
           '면접관',
         )
+        this.engineMissing = false
         this.status = 'ready'
         await this.loadTts()
       } catch (e) {

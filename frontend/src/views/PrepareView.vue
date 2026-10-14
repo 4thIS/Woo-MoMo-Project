@@ -185,6 +185,15 @@ const blockedByError = computed(
 function scrollToProgress() {
   root.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
+/* 벤으로 왔다가 무료 면접관으로 바꾸면 그제야 브라우저 모델이 필요해진다.
+   벤일 때는 아예 받지 않으므로(model.llmSkipped) 여기서 받기 시작한다 */
+watch(
+  () => model.llmSkipped,
+  (skipped) => {
+    if (!skipped && model.engineMissing && model.active) void model.download()
+  },
+)
+
 /* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중(목소리 교체 중 포함)이면 텍스트 전용으로 바로 시작할 길을 연다 */
 const ttsStuck = ref(false)
 let stuckTimer: ReturnType<typeof setTimeout> | null = null
