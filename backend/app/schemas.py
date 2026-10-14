@@ -281,3 +281,38 @@ class ArchiveCreate(BaseModel):
 class ArchiveSaved(BaseModel):
     entry: ArchiveEntry
     evicted: list[str]
+
+
+# ── 벤 면접 ──
+
+NonBlank100 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
+class CompanyInputs(BaseModel):
+    field: NonBlank100
+    job: NonBlank100
+
+
+class AdmissionInputs(BaseModel):
+    name: NonBlank100
+    age: int = Field(ge=1, le=120)
+    university: NonBlank100
+    department: NonBlank100
+
+
+class InterviewStart(BaseModel):
+    track: Track
+    resumeText: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20_000)
+    ]
+    company: CompanyInputs | None = None
+    admission: AdmissionInputs | None = None
+
+
+class InterviewStarted(BaseModel):
+    interviewId: str
+    session: Session
+
+
+class TurnBody(BaseModel):
+    answer: str | None = None
