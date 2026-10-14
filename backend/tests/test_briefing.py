@@ -43,3 +43,9 @@ def test_text_and_sources_are_capped():
     assert got is not None
     assert len(got.text) == briefing.BRIEFING_MAX
     assert got.sources == many[: briefing.MAX_SOURCES]
+
+
+def test_no_sources_is_none():
+    fake = FakeClaude()
+    fake.research_results = [ResearchResult(text=DEFAULT_BRIEFING, sources=[])]
+    assert briefing.make_briefing(fake, "토스", "백엔드") is None

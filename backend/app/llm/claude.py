@@ -90,7 +90,8 @@ class AnthropicClaude:
         seen: set[str] = set()
         try:
             for _ in range(MAX_CONTINUATIONS + 1):
-                resp = self._sdk.messages.create(
+                # 재시도 끝: 90초 기한 안에서 조사가 여러 번 도는 것을 막는다
+                resp = self._sdk.with_options(max_retries=0).messages.create(
                     model=MODEL,
                     max_tokens=max_tokens,
                     system=system,
@@ -104,6 +105,8 @@ class AnthropicClaude:
                 if resp.stop_reason == "refusal":
                     raise ClaudeError("refused")
                 for block in resp.content:
+                    if block.type in ("server_tool_use", "web_search_tool_result"):
+                        texts.clear()  # 검색 전의 서술("검색해 보겠습니다")은 브리핑이 아니다
                     if block.type == "text":
                         texts.append(block.text)
                     elif block.type == "web_search_tool_result" and isinstance(block.content, list):

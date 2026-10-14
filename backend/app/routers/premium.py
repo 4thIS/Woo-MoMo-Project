@@ -54,7 +54,12 @@ def start_interview(
     if group is None:
         raise ApiError(422, "missing_field", field=body.track)
     inputs = {"resumeText": body.resumeText, body.track: group.model_dump(exclude_none=True)}
-    has_company_name = body.track == "company" and body.company is not None and body.company.name
+    has_company_name = bool(
+        body.track == "company"
+        and body.company is not None
+        and body.company.name
+        and prompts._one_line(body.company.name)
+    )
     now = request.app.state.clock()
     try:
         interview_id = premium.start_interview(
@@ -105,12 +110,53 @@ def _count_attempt(conn: sqlite3.Connection, interview: PremiumInterview) -> Non
         raise ApiError(409, "interview_over") from None
 
 
+def _research_and_store(
+    claude: ClaudeClient,
+    db_path: Path,
+    interview_id: str,
+    key: str,
+    name: str,
+    job: str,
+    created_at: str,
+) -> briefing_llm.Briefing | None:
+    """워커 스레드: 조사하고 성공하면 바로 저장한다(캐시 + 면접).
+
+    스트림이 포기했거나 클라이언트가 끊겨도 결과는 버려지지 않는다.
+    예상 못 한 예외는 실패(None)로 접는다 — 본문은 로그에 남기지 않는다."""
+    try:
+        made = briefing_llm.make_briefing(claude, name, job)
+        if made is None:
+            return None
+        with db.connection(db_path) as c:
+            briefings.put(
+                c,
+                key=key,
+                company=name,
+                job=job,
+                briefing=made.text,
+                sources=made.sources,
+                created_at=created_at,
+            )
+            premium.set_briefing(c, interview_id=interview_id, briefing=made.text)
+        return made
+    except Exception:
+        return None
+
+
 def _research_with_pings(
-    claude: ClaudeClient, company: str, job: str
+    claude: ClaudeClient,
+    db_path: Path,
+    interview_id: str,
+    key: str,
+    name: str,
+    job: str,
+    created_at: str,
 ) -> Generator[str, None, briefing_llm.Briefing | None]:
     """조사를 다른 스레드에서 돌리며 ping을 흘린다. 기한을 넘기면 None(스레드는 알아서 끝난다)."""
-    pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(briefing_llm.make_briefing, claude, company, job)
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="briefing")
+    future = pool.submit(
+        _research_and_store, claude, db_path, interview_id, key, name, job, created_at
+    )
     pool.shutdown(wait=False)
     deadline = time.monotonic() + RESEARCH_DEADLINE
     while True:
@@ -141,23 +187,16 @@ def _resolve_briefing(
             with db.connection(db_path) as c:
                 premium.count_attempt(c, interview_id=interview.id)
         except premium.TooManyAttempts:
-            made = None
+            pass
         else:
-            made = yield from _research_with_pings(claude, name, job)
-        if made is not None:
-            text = made.text
-            with db.connection(db_path) as c:
-                briefings.put(
-                    c,
-                    key=key,
-                    company=name,
-                    job=job,
-                    briefing=made.text,
-                    sources=made.sources,
-                    created_at=iso(now),
-                )
+            yield from _research_with_pings(claude, db_path, interview.id, key, name, job, iso(now))
     with db.connection(db_path) as c:
         premium.set_briefing(c, interview_id=interview.id, briefing=text)
+        # 먼저 끝난 쪽이 이긴다 — 워커가 방금 저장했다면 그 결과를 쓴다
+        row = c.execute(
+            "SELECT briefing FROM premium_interviews WHERE id = ?", (interview.id,)
+        ).fetchone()
+    text = row["briefing"] if row is not None else text
     yield sse("status", {"phase": "briefing", "ok": text is not None})
     return text
 
@@ -267,7 +306,7 @@ def make_report(
         raise ApiError(409, "interview_not_started")
     claude = _claude(request)
     _count_attempt(conn, interview)
-    system = prompts.build_system(interview.track, interview.inputs, interview.briefing)
+    system = prompts.build_system(interview.track, interview.inputs)
     messages = prompts.report_messages(interview.messages)
     db_path = request.app.state.settings.db_path
 

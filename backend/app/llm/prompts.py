@@ -87,8 +87,8 @@ def _rules(focus: str) -> str:
 def _company_intro(company: dict[str, Any]) -> str:
     label = _one_line(FIELD_LABELS.get(company["field"], company["field"]))
     job = _one_line(company["job"])
-    name = company.get("name")
-    where = f"{_one_line(name)}({label} 분야)" if name else f"{label} 분야 기업"
+    name = _one_line(company.get("name") or "")
+    where = f"{name}({label} 분야)" if name else f"{label} 분야 기업"
     return (
         f'당신은 {where}의 채용 면접관입니다. 지원 직무는 "{job}"입니다.\n'
         "지금부터 지원자와 1:1 모의 면접을 진행합니다.\n"

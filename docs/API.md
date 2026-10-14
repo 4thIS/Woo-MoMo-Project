@@ -270,7 +270,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 // 403 premium_required
 // 409 { "error": "no_tickets" }
 // 422 { "error": "missing_field", "field": "company" }       // track에 맞는 묶음이 없음
-// 422 invalid                                                // resumeText 1~20,000자, 각 칸 1~100자, age 1~120
+// 422 invalid                                                // resumeText 1~20,000자, 각 칸 1~100자, age 1~120, company.name 0~100자(비면 없음)
 // 503 { "error": "daily_limit" }                             // 서버 전체 하루 상한(BEN_DAILY_LIMIT, 한국 날짜). 티켓 차감 없음
 // 503 { "error": "ben_unavailable" }                         // 서버에 Claude 키가 없음. 티켓 차감 없음
 ```
@@ -306,7 +306,7 @@ data: {"ended":false}
   event: status
   data: {"phase":"briefing","ok":true}
   ```
-  `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
+  `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 조사는 약 90초 안에 끝나지 않으면 포기하고 `ok: false`로 알린다(늦게 끝난 결과는 7일 캐시에만 들어간다). 브리핑은 면접 질문에만 쓰이고 리포트에는 쓰이지 않는다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
 
 - `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 15번). 다음 턴은 `409 interview_over`. 리포트를 부른다.
 - Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.

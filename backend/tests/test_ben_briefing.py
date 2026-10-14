@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 from app.llm import prompts
@@ -16,6 +17,12 @@ QUESTION = [
 RESEARCHING = ("status", {"phase": "researching"})
 OK = ("status", {"phase": "briefing", "ok": True})
 FAILED = ("status", {"phase": "briefing", "ok": False})
+
+
+def _join_workers():
+    for t in threading.enumerate():
+        if t.name.startswith("briefing"):
+            t.join(timeout=5)
 
 
 def _turn(client, iid, answer=None):
@@ -113,11 +120,13 @@ def test_without_a_name_nothing_changes(client, fake_claude):
     assert len(fake_claude.calls[0]["system"]) == 2
 
 
-def test_report_uses_the_briefing(client, fake_claude):
+def test_report_does_not_see_the_briefing(client, fake_claude):
     iid = start_ben(client, NAMED)
     _turn(client, iid)
     client.post(f"/api/premium/interviews/{iid}/report")
-    assert fake_claude.calls[-1]["system"][1]["text"].endswith(DEFAULT_BRIEFING)
+    system = fake_claude.calls[-1]["system"]
+    assert len(system) == 2
+    assert DEFAULT_BRIEFING not in json.dumps(system, ensure_ascii=False)
 
 
 def test_pings_while_researching(client, fake_claude, monkeypatch):
@@ -147,3 +156,49 @@ def test_research_over_the_deadline_is_a_failure(client, fake_claude, monkeypatc
     fake_claude.research = stuck
     iid = start_ben(client, NAMED)
     assert sse_events(_turn(client, iid).text)[:2] == [RESEARCHING, FAILED]
+    _join_workers()
+
+
+def test_late_research_still_fills_the_cache(client, fake_claude, settings, monkeypatch):
+    monkeypatch.setattr(premium_router, "PING_EVERY", 0.05)
+    monkeypatch.setattr(premium_router, "RESEARCH_DEADLINE", 0.1)
+    original = fake_claude.research
+
+    def late(**kwargs):
+        time.sleep(0.4)
+        return original(**kwargs)
+
+    fake_claude.research = late
+    iid = start_ben(client, NAMED)
+    assert sse_events(_turn(client, iid).text)[:2] == [RESEARCHING, FAILED]
+    _join_workers()
+    assert _row(settings, iid)["briefing_status"] == "failed"
+    fake_claude.research = original
+    events = sse_events(_turn(client, _start_again(client)).text)
+    assert events == [OK, *QUESTION]
+    assert len(fake_claude.research_calls) == 1
+
+
+def test_unexpected_research_exception_is_a_failure(client, fake_claude, settings):
+    def boom(**kwargs):
+        raise RuntimeError("boom")
+
+    fake_claude.research = boom
+    iid = start_ben(client, NAMED)
+    assert sse_events(_turn(client, iid).text) == [RESEARCHING, FAILED, *QUESTION]
+    assert _row(settings, iid)["briefing_status"] == "failed"
+    _join_workers()
+
+
+def test_retry_after_failed_research_does_not_research_again(client, fake_claude):
+    fake_claude.research_results = [ClaudeError("claude_error")]
+    fake_claude.replies = [[ClaudeError("claude_error")]]
+    iid = start_ben(client, NAMED)
+    assert sse_events(_turn(client, iid).text) == [
+        RESEARCHING,
+        FAILED,
+        ("error", {"code": "claude_error"}),
+    ]
+    assert sse_events(_turn(client, iid).text) == [FAILED, *QUESTION]
+    assert len(fake_claude.research_calls) == 1
+    assert len(fake_claude.calls[1]["system"]) == 2

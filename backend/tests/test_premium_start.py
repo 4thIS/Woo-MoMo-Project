@@ -131,6 +131,13 @@ def test_blank_name_is_dropped(client, settings):
     assert row["briefing_status"] == "none"
 
 
+def test_bracket_only_name_is_not_a_name(client, settings):
+    _admin_with_tickets(client)
+    body = {**COMPANY_START, "company": {**COMPANY_START["company"], "name": "[ ]"}}
+    assert client.post(URL, json=body).status_code == 201
+    assert _row(settings)["briefing_status"] == "none"
+
+
 def test_name_is_at_most_100_chars(client):
     _admin_with_tickets(client)
     body = {**COMPANY_START, "company": {**COMPANY_START["company"], "name": "가" * 101}}

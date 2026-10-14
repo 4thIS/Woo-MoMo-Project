@@ -57,6 +57,6 @@ def make_briefing(claude: ClaudeClient, company: str, job: str) -> Briefing | No
     except ClaudeError:
         return None
     text = result.text.strip()
-    if len(text) < BRIEFING_MIN:
+    if len(text) < BRIEFING_MIN or not result.sources:  # 검색 근거가 없으면 지어낸 글로 본다
         return None
     return Briefing(text=text[:BRIEFING_MAX], sources=result.sources[:MAX_SOURCES])
