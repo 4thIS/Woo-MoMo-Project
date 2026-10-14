@@ -199,7 +199,7 @@ def test_research_resumes_pause_turn_with_the_paused_content():
     second = _resp([_results(("a", "https://a.com"), ("b", "https://b.com")), _text("뒤")])
     create = _Create([first, second])
     got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
-    assert got.text == "뒤"  # 마지막 검색 뒤의 본문만
+    assert got.text == "앞뒤"  # 검색 직전 서술이 없으면 pause 전후 본문 모두 유지
     assert [s["url"] for s in got.sources] == ["https://a.com", "https://b.com"]  # 중복 제거
     assert create.calls[1]["messages"] == [
         *R_MESSAGES,
@@ -240,12 +240,27 @@ def test_research_drops_narration_before_a_search():
         [
             _resp(
                 [
-                    _text("먼저 검색해 보겠습니다."),
+                    _text("토스에 대해 검색해 보겠습니다."),
                     SimpleNamespace(type="server_tool_use", name="web_search"),
                     _results(("토스", "https://toss.im")),
-                    _text("사업: 간편송금"),
+                    _text("본문"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert got.text == "본문"
+
+
+def test_research_keeps_body_written_between_searches():
+    create = _Create(
+        [
+            _resp(
+                [
                     SimpleNamespace(type="server_tool_use", name="web_search"),
-                    _text("추가로 찾아보겠습니다."),
+                    _results(("토스", "https://toss.im")),
+                    _text("사업: 간편송금 "),
+                    SimpleNamespace(type="server_tool_use", name="web_search"),
                     _results(("토스2", "https://toss.tech")),
                     _text("최근 소식: 증권"),
                 ]
@@ -253,4 +268,4 @@ def test_research_drops_narration_before_a_search():
         ]
     )
     got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
-    assert got.text == "최근 소식: 증권"
+    assert got.text == "사업: 간편송금 최근 소식: 증권"
