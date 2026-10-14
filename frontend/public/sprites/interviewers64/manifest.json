@@ -2,43 +2,43 @@
  "f2": {
   "center_armscross": {
    "file": "center_armscross.png",
-   "frames": 28,
+   "frames": 40,
    "w": 92,
    "h": 92
   },
   "center_idle": {
    "file": "center_idle.png",
-   "frames": 16,
+   "frames": 24,
    "w": 92,
    "h": 92
   },
   "center_lookside": {
    "file": "center_lookside.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question": {
    "file": "center_question.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question_in": {
    "file": "center_question_in.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_question_out": {
    "file": "center_question_out.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_watch": {
    "file": "center_watch.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   }
@@ -46,43 +46,43 @@
  "f3": {
   "center_armscross": {
    "file": "center_armscross.png",
-   "frames": 28,
+   "frames": 40,
    "w": 92,
    "h": 92
   },
   "center_idle": {
    "file": "center_idle.png",
-   "frames": 16,
+   "frames": 24,
    "w": 92,
    "h": 92
   },
   "center_lookside": {
    "file": "center_lookside.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question": {
    "file": "center_question.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question_in": {
    "file": "center_question_in.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_question_out": {
    "file": "center_question_out.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_watch": {
    "file": "center_watch.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   }
@@ -90,43 +90,43 @@
  "m1": {
   "center_armscross": {
    "file": "center_armscross.png",
-   "frames": 28,
+   "frames": 40,
    "w": 92,
    "h": 92
   },
   "center_idle": {
    "file": "center_idle.png",
-   "frames": 16,
+   "frames": 24,
    "w": 92,
    "h": 92
   },
   "center_lookside": {
    "file": "center_lookside.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question": {
    "file": "center_question.png",
-   "frames": 8,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question_in": {
    "file": "center_question_in.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_question_out": {
    "file": "center_question_out.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_watch": {
    "file": "center_watch.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   }
@@ -134,43 +134,43 @@
  "m2": {
   "center_armscross": {
    "file": "center_armscross.png",
-   "frames": 28,
+   "frames": 40,
    "w": 92,
    "h": 92
   },
   "center_idle": {
    "file": "center_idle.png",
-   "frames": 16,
+   "frames": 24,
    "w": 92,
    "h": 92
   },
   "center_lookside": {
    "file": "center_lookside.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question": {
    "file": "center_question.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "center_question_in": {
    "file": "center_question_in.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_question_out": {
    "file": "center_question_out.png",
-   "frames": 8,
+   "frames": 12,
    "w": 92,
    "h": 92
   },
   "center_watch": {
    "file": "center_watch.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   }
@@ -192,19 +192,19 @@
  "sr": {
   "right_idle": {
    "file": "right_idle.png",
-   "frames": 16,
+   "frames": 24,
    "w": 92,
    "h": 92
   },
   "right_pentap": {
    "file": "right_pentap.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   },
   "right_writing": {
    "file": "right_writing.png",
-   "frames": 12,
+   "frames": 20,
    "w": 92,
    "h": 92
   }

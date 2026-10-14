@@ -1,19 +1,19 @@
 {
  "right_idle": {
   "file": "right_idle.png",
-  "frames": 16,
+  "frames": 24,
   "w": 92,
   "h": 92
  },
  "right_pentap": {
   "file": "right_pentap.png",
-  "frames": 12,
+  "frames": 20,
   "w": 92,
   "h": 92
  },
  "right_writing": {
   "file": "right_writing.png",
-  "frames": 12,
+  "frames": 20,
   "w": 92,
   "h": 92
  }

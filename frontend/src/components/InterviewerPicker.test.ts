@@ -17,6 +17,7 @@ vi.mock('@/services/tts', () => ({
 }))
 
 import { playPreview } from '@/services/preview'
+import { interviewerById } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
@@ -53,7 +54,9 @@ describe('InterviewerPicker', () => {
     for (const id of ['m1', 'f3', 'm2', 'f2']) {
       const st = (card(w, id).find('.sprite').element as HTMLElement).style
       expect([st.width, st.height], id).toEqual(['184px', '184px'])
-      expect(st.backgroundSize, id).toBe('2944px 184px') // idle 16f × 92 × 2
+      // 하드코딩하지 않는다 — 시트 길이는 manifest 프레임 수를 따른다
+      const frames = interviewerById(id)!.sprites.idle.frames
+      expect(st.backgroundSize, id).toBe(`${92 * 2 * frames}px 184px`)
       expect(st.backgroundImage, id).toContain(`/sprites/interviewers64/${id}/center_idle.png`)
     }
   })
