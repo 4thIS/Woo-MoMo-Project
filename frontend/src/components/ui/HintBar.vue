@@ -147,24 +147,46 @@ button:focus-visible {
   text-decoration: underline;
 }
 
-/* 방 위쪽 띠 — 부모(무대)가 position:relative다. 머리말(HUD) 바로 아래에 깔린다.
-   아래쪽은 대화·답변 판이 차지하므로 거기 두면 판 뒤로 숨는다 */
+/* 바닥 자막 — 부모(무대)가 position:relative다. 영화 자막 자리라 "내가 듣는 말"로 읽힌다.
+   좌우 판 사이 빈 폭에 들어가야 하므로 너비를 묶는다.
+   가운데 맞추기는 **translate**로 한다 — transform은 떠 있는 움직임이 쓴다 */
 .bar.note {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--hud-h, 52px);
-  bottom: auto;
+  left: 50%;
+  translate: -50% 0;
+  right: auto;
+  top: auto;
+  /* 판보다 조금 더 아래 — 자막답게 앉고, 내 머리를 덜 가린다 */
+  bottom: var(--sp-2);
   transform: none;
-  width: auto;
-  z-index: 6;
-  gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-5);
-  background: var(--guide-veil);
+  width: clamp(220px, 22vw, 330px);
+  z-index: 5;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--caption-veil);
   border: 0;
-  border-top: 2px solid var(--raise);
-  border-bottom: 2px solid var(--raise);
+  border-top: 2px solid var(--accent);
   box-shadow: none;
+  animation: caption-float 3.6s ease-in-out infinite;
+}
+.bar.note .text {
+  font-size: var(--fs-label);
+}
+.bar.note .acts {
+  justify-content: center;
+}
+/* 눈에 걸려야 읽힌다 — 아주 느리게, 아주 조금만 */
+@keyframes caption-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
 }
 .bar.note .text {
   font-size: var(--fs-label);
@@ -187,6 +209,11 @@ button:focus-visible {
 .hint-enter-from.note,
 .hint-leave-to.note {
   transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar.note {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .hint-enter-active,
