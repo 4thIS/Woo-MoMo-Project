@@ -51,7 +51,9 @@ function space(px: number) {
 watch(el, (node) => {
   ro?.disconnect()
   ro = null
-  if (!node) return space(0)
+  // 힌트가 사라져도 **켜져 있는 동안은 자리를 비워 둔다.** 면접 화면은 100vh라
+  // 이 값이 오르내리면 그때마다 무대와 대화창이 늘었다 줄었다 한다(출렁임)
+  if (!node) return hints.enabled ? undefined : space(0)
   if (typeof ResizeObserver === 'undefined') return space(node.offsetHeight + GAP * 2)
   ro = new ResizeObserver(() => space(node.offsetHeight + GAP * 2))
   ro.observe(node)
@@ -60,6 +62,14 @@ onBeforeUnmount(() => {
   ro?.disconnect()
   space(0)
 })
+
+/** 그만 보기를 누르면 비워 둔 자리를 돌려준다 */
+watch(
+  () => hints.enabled,
+  (on) => {
+    if (!on) space(0)
+  },
+)
 
 function dismiss(key: string) {
   hints.markSeen(key)

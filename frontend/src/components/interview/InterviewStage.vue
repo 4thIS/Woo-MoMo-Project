@@ -172,8 +172,11 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
     </div>
 
     <div class="bubble mono" :class="{ streaming }" aria-live="polite">
-      <span>{{ bubble || '…' }}</span
-      ><span v-if="streaming" class="blink">▌</span>
+      <!-- 스크롤은 **안쪽**에 둔다 — .bubble에 걸면 말꼬리(::after)가 잘린다 -->
+      <div class="says">
+        <span>{{ bubble || '…' }}</span
+        ><span v-if="streaming" class="blink">▌</span>
+      </div>
     </div>
     <p v-if="warning" class="mono warning" data-test="tts-warning">{{ warning }}</p>
 
@@ -288,6 +291,8 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   margin-top: 56px;
   max-width: 720px;
   min-height: 72px;
+  /* 질문은 눌리지 않는다 — flex 부모가 줄이면 글자가 상자 밖으로 샌다 */
+  flex-shrink: 0;
   padding: var(--sp-4) var(--sp-5);
   background: var(--bg);
   color: var(--text);
@@ -296,6 +301,11 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   line-height: 1.6;
   white-space: pre-wrap;
   position: relative;
+}
+/* 아주 긴 질문은 상자 안에서 스크롤한다. 전문은 아래 대화창에도 남는다 */
+.says {
+  max-height: clamp(72px, 26vh, 220px);
+  overflow-y: auto;
 }
 .bubble::after {
   content: '';

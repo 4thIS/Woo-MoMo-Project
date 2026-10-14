@@ -582,6 +582,36 @@ describe('PrepareView — 트랙별 입력', () => {
     expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('대입은 네 칸을 채우면 자기소개서 단계로 넘어가는 화살표가 열린다', async () => {
+    pick('f3')
+    const w = mountView()
+    const next = () => w.find('[data-test=step-next]').element as HTMLButtonElement
+    expect(next().disabled).toBe(true)
+    for (const [k, v] of [
+      ['ad-name', '홍길동'],
+      ['ad-age', '19'],
+      ['ad-university', '한국대학교'],
+      ['ad-department', '컴퓨터공학과'],
+    ])
+      await w.find(`[data-test=${k}]`).setValue(v)
+    await flushPromises()
+    expect(next().disabled).toBe(false)
+  })
+
+  it('대입에서 네 칸을 채우면 입력 완료 표시가 뜬다', async () => {
+    pick('f3')
+    const w = mountView()
+    for (const [k, v] of [
+      ['ad-name', '홍길동'],
+      ['ad-age', '19'],
+      ['ad-university', '한국대학교'],
+      ['ad-department', '컴퓨터공학과'],
+    ])
+      await w.find(`[data-test=${k}]`).setValue(v)
+    await flushPromises()
+    expect(w.text()).toContain('입력 완료')
+  })
+
   it('면접관을 회사→대입으로 바꾸면 앞 입력으로는 시작할 수 없다', async () => {
     pick('m1')
     const m = useModelStore()

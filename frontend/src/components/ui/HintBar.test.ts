@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import HintBar from './HintBar.vue'
@@ -74,5 +75,35 @@ describe('HintBar', () => {
     s.stage = 'waiting'
     await w.vm.$nextTick()
     expect(w.get('[data-test="hint"]').text()).toContain('말하기')
+  })
+})
+
+describe('자리 비움은 힌트가 드나들 때마다 출렁이지 않는다', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    document.documentElement.style.removeProperty('--hint-space')
+  })
+
+  it('힌트가 사라져도 켜져 있는 동안은 자리를 유지한다', async () => {
+    const hints = useHintsStore()
+    const w = bar()
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--hint-space')).not.toBe('0px')
+    const kept = document.documentElement.style.getPropertyValue('--hint-space')
+    // 확인을 눌러 힌트를 닫는다 — 면접 화면이 그때마다 늘었다 줄면 안 된다
+    await w.find('[data-test=hint-ok]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test=hint]').exists()).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--hint-space')).toBe(kept)
+    expect(hints.enabled).toBe(true)
+  })
+
+  it('그만 보기를 누르면 자리를 돌려준다', async () => {
+    const w = bar()
+    await flushPromises()
+    await w.find('[data-test=hint-off]').trigger('click')
+    await flushPromises()
+    expect(document.documentElement.style.getPropertyValue('--hint-space')).toBe('0px')
   })
 })
