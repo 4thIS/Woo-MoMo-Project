@@ -219,7 +219,7 @@ ShortText = Annotated[str, Field(max_length=100)]
 
 class ChatMessage(BaseModel):
     role: Literal["user", "model"]
-    text: str
+    text: str = Field(max_length=20_000)
     at: int | None = None
 
 
@@ -272,9 +272,9 @@ class ArchiveCreate(BaseModel):
     age: int | None = Field(default=None, ge=1, le=120)
     university: ShortText | None = None
     department: ShortText | None = None
-    messages: list[ChatMessage]
-    report: list[ReportItem]
-    reportRaw: str
+    messages: list[ChatMessage] = Field(max_length=200)
+    report: list[ReportItem] = Field(max_length=50)
+    reportRaw: str = Field(max_length=100_000)
     premiumInterviewId: str | None = None
 
 

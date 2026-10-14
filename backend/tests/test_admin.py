@@ -66,3 +66,24 @@ def test_signup_still_requires_email(client):
 
 def test_regular_user_is_not_admin(client):
     assert signup(client)["isAdmin"] is False
+
+
+def _admin_sessions(settings) -> int:
+    with open_db(settings) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM sessions JOIN users ON users.id = sessions.user_id"
+            " WHERE users.email = 'admin'"
+        ).fetchone()[0]
+
+
+def test_admin_sessions_survive_restart_but_not_password_change_or_removal(make_client, settings):
+    login_admin(make_client(settings))
+    make_client(settings)  # 같은 비밀번호로 재기동 — 세션 유지
+    assert _admin_sessions(settings) == 1
+    make_client(replace(settings, admin_password="new-pass-5678"))  # 비밀번호 변경
+    assert _admin_sessions(settings) == 0
+    c = make_client(replace(settings, admin_password="new-pass-5678"))
+    assert c.post(LOGIN, json={"email": "admin", "password": "new-pass-5678"}).status_code == 200
+    assert _admin_sessions(settings) == 1
+    make_client(replace(settings, admin_password=None))  # 관리자 해제
+    assert _admin_sessions(settings) == 0

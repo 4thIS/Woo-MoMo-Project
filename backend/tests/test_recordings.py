@@ -132,3 +132,27 @@ def test_deleting_the_archive_deletes_recordings(client, settings):
     assert client.delete(f"/api/archive/{aid}").status_code == 204
     assert _files(settings) == []
     assert client.get(url).status_code == 404
+
+
+def test_empty_clip_is_422(client, settings):
+    _, archive_id = _premium_archive(client, settings)
+    res = _upload(client, archive_id, 0, b"")
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "clip"}
+    assert _files(settings) == []
+
+
+def test_archive_deleted_during_upload_is_404(client, settings, monkeypatch):
+    _, archive_id = _premium_archive(client, settings)
+    real = recordings.used_bytes
+
+    def deleted_meanwhile(conn, **kwargs):
+        # 소유 확인은 통과했지만 저장 전에 다른 요청이 기록을 지운 상황
+        conn.execute("DELETE FROM archive WHERE id = ?", (archive_id,))
+        return real(conn, **kwargs)
+
+    monkeypatch.setattr(recordings, "used_bytes", deleted_meanwhile)
+    res = _upload(client, archive_id, 0, b"audio")
+    assert res.status_code == 404
+    assert res.json() == {"error": "not_found"}
+    assert _files(settings) == []

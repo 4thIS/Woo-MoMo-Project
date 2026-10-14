@@ -1,5 +1,6 @@
 """녹음 업로드·재생 (spec 4.3). 받은 그대로(webm/opus·ogg) 저장한다."""
 
+import sqlite3
 from pathlib import Path
 from typing import Annotated
 
@@ -34,6 +35,8 @@ def _receive(clip: UploadFile, target: Path, budget: int) -> int:
                 if size > budget:
                     raise ApiError(413, "too_large")
                 out.write(chunk)
+        if size == 0:
+            raise ApiError(422, "invalid", field="clip")
         part.replace(target)
     except BaseException:
         part.unlink(missing_ok=True)
@@ -83,6 +86,10 @@ def upload_recording(
     except recordings.TooLarge:
         target.unlink(missing_ok=True)
         raise ApiError(413, "too_large") from None
+    except sqlite3.IntegrityError:
+        # 소유 확인 뒤 저장 전에 기록이 지워졌다(FK 실패)
+        target.unlink(missing_ok=True)
+        raise ApiError(404, "not_found") from None
     except BaseException:
         target.unlink(missing_ok=True)
         raise

@@ -33,7 +33,8 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     try:
         yield conn
     except BaseException:
-        conn.execute("ROLLBACK")
+        if conn.in_transaction:  # sqlite가 이미 롤백했으면 ROLLBACK이 원래 예외를 가린다
+            conn.execute("ROLLBACK")
         raise
     conn.execute("COMMIT")
 

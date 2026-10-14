@@ -165,3 +165,29 @@ def test_other_users_entry_is_404(client):
     assert client.get(URL).json() == []
     assert client.get(f"{URL}/{aid}").json() == {"error": "not_found"}
     assert client.delete(f"{URL}/{aid}").status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("over", "field"),
+    [
+        ({"messages": [{"role": "user", "text": "a"}] * 201}, "messages"),
+        ({"messages": [{"role": "user", "text": "가" * 20_001}]}, "text"),
+        ({"report": [{"question": "q", "answerSummary": "a", "feedback": "f"}] * 51}, "report"),
+        ({"reportRaw": "x" * 100_001}, "reportRaw"),
+    ],
+)
+def test_archive_body_size_limits(client, over, field):
+    signup(client)
+    res = client.post(URL, json=archive_body(**over))
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": field}
+
+
+def test_archive_body_at_the_limits_is_accepted(client):
+    signup(client)
+    body = archive_body(
+        messages=[{"role": "user", "text": "가" * 20_000}] + [{"role": "user", "text": "a"}] * 199,
+        report=[{"question": "q", "answerSummary": "a", "feedback": "f"}] * 50,
+        reportRaw="x" * 100_000,
+    )
+    assert client.post(URL, json=body).status_code == 201

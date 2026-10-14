@@ -70,3 +70,13 @@ def test_foreign_keys_are_enforced(tmp_path):
         conn.execute(
             "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('h', 'u_none', 0)"
         )
+
+
+def test_transaction_does_not_mask_errors_when_sqlite_already_rolled_back(tmp_path):
+    # sqlite가 스스로 롤백한 뒤(트랜잭션 없음)에도 원래 예외가 그대로 올라와야 한다
+    with db.connection(tmp_path / "t.sqlite3") as conn:
+        with pytest.raises(RuntimeError, match="boom"):
+            with db.transaction(conn):
+                conn.execute("ROLLBACK")
+                raise RuntimeError("boom")
+        assert not conn.in_transaction
