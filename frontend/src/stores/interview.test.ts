@@ -6,6 +6,12 @@ vi.mock('@/services/llm', () => ({ startSession: vi.fn() }))
 vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
 vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
 vi.mock('@/services/recorder', () => ({ startRecording: vi.fn() }))
+vi.mock('@/services/benInterview', async (orig) => ({
+  ...(await orig<typeof import('@/services/benInterview')>()),
+  startInterview: vi.fn(),
+  turnStream: vi.fn(),
+  reportStream: vi.fn(),
+}))
 import { getQuestions } from '@/services/api'
 import { startSession } from '@/services/llm'
 import type { LlmSession } from '@/services/llm'
@@ -13,6 +19,7 @@ import { useModelStore } from './model'
 import { synthesize } from '@/services/tts'
 import { playClip, setMuted } from '@/services/audio'
 import { startRecording } from '@/services/recorder'
+import { BenError, reportStream, startInterview, turnStream } from '@/services/benInterview'
 import {
   PLAY_GRACE_MS,
   RECORDING_FULL,
@@ -57,6 +64,9 @@ function fakeSession(replies: string[], tokens = 100): LlmSession & { sent: stri
     async dispose() {},
   }
 }
+
+/** 리포트 JSON을 모델이 내놓는 코드펜스로 감싼다 */
+const fenced = (json: string) => ['```json', json, '```'].join('\n')
 
 async function readyStore() {
   const model = useModelStore()
@@ -744,16 +754,16 @@ import { buildReportInstruction } from '@/prompts/report'
 
 describe('interview store — 면접관 페르소나', () => {
   it('시작할 때 고른 면접관을 고정하고 그 면접관의 페르소나로 프롬프트를 만든다(이후 선택을 바꿔도 그대로)', async () => {
-    useInterviewerStore().select('m2')
+    // 벤(m2)은 서버가 프롬프트를 가지므로 여기서는 브라우저 모델을 쓰는 면접관으로 본다
+    useInterviewerStore().select('f2')
     vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
     const s = await readyStore()
-    s.setTrack('company') // 벤은 둘 다 봐서 트랙을 골라야 시작한다
     await s.start()
-    expect(s.interviewerId).toBe('m2')
-    expect(s.sessionInterviewer.name).toBe('압박 면접관(남)')
+    expect(s.interviewerId).toBe('f2')
+    expect(s.sessionInterviewer.displayName).toBe('쥴리')
     expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
     useInterviewerStore().select('m1')
-    expect(s.sessionInterviewer.id).toBe('m2')
+    expect(s.sessionInterviewer.id).toBe('f2')
   })
   it('면접관 id가 아니라 persona로 페르소나를 찾는다: 압박 면접관(여) f2도 sharp', async () => {
     useInterviewerStore().select('f2')
@@ -803,12 +813,12 @@ describe('interview store — 면접관 페르소나', () => {
     expect(sess.sent.at(-1)).toBe(buildReportInstruction(PERSONAS.standard))
   })
   it('매니페스트에 systemPromptOverride가 있으면 리포트도 말투 없이 기본 지시문 그대로(spec 5.1·7절)', async () => {
-    useInterviewerStore().select('m2')
+    // 리포트 지시문은 브라우저 모델 쪽 이야기다 — 벤은 서버가 리포트를 쓴다
+    useInterviewerStore().select('f2')
     const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
     const sess = fakeSession(['q', json])
     vi.mocked(startSession).mockResolvedValue(sess)
     const s = await readyStore()
-    s.setTrack('company')
     useModelStore().manifest!.systemPromptOverride = '파인튜닝 모델 전용 프롬프트'
     await s.start()
     await s.finish()
@@ -1037,6 +1047,26 @@ describe('프리미엄 면접 녹음', () => {
   beforeEach(() => {
     setAccountApi(makeMockAccount({ delayMs: 0 }))
     vi.mocked(startRecording).mockReset()
+    // 벤은 서버 면접이다 — 녹음은 엔진과 무관하지만 면접이 열려야 볼 수 있다
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_rec',
+      session: {
+        userId: 'u1',
+        email: 'a@b.com',
+        tier: 'premium',
+        tickets: 9,
+        isAdmin: false,
+        profile: { name: null, age: null },
+        createdAt: '2026-10-13T00:00:00.000Z',
+      },
+    })
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta) => {
+      onDelta('질문입니다.')
+      return { ended: false }
+    })
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta) => {
+      onDelta(fenced(REPORT))
+    })
   })
 
   async function premiumStore() {
@@ -1138,5 +1168,138 @@ describe('프리미엄 면접 녹음', () => {
     await s.reset()
     expect(s.recordings).toEqual([])
     expect(s.recordingWarning).toBeNull()
+  })
+})
+
+describe('벤 면접 — 서버가 대화를 가진다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(startInterview).mockReset()
+    vi.mocked(turnStream).mockReset()
+    vi.mocked(reportStream).mockReset()
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: {
+        userId: 'u1',
+        email: 'a@b.com',
+        tier: 'premium',
+        tickets: 9,
+        isAdmin: false,
+        profile: { name: null, age: null },
+        createdAt: '2026-10-13T00:00:00.000Z',
+      },
+    })
+    vi.mocked(turnStream).mockImplementation(async (_id, _answer, onDelta) => {
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta) => {
+      onDelta('```json\n' + REPORT + '\n```')
+    })
+  })
+
+  async function benStore() {
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    return s
+  }
+
+  it('벤이면 서버 면접을 시작하고 브라우저 모델은 부르지 않는다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(startInterview).toHaveBeenCalledOnce()
+    expect(startSession).not.toHaveBeenCalled()
+    expect(s.phase).toBe('interview')
+  })
+
+  it('트랙에 맞는 묶음을 보낸다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      track: 'company',
+      company: { field: 'it', job: '백엔드' },
+    })
+  })
+
+  it('첫 질문은 답변 없이 받아 와 대화에 남는다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(vi.mocked(turnStream).mock.calls[0][1]).toBeUndefined()
+    expect(s.messages.at(-1)).toMatchObject({ role: 'model', text: '자기소개를 해 주세요.' })
+  })
+
+  it('답변은 서버로 간다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.send('안녕하세요')
+    expect(vi.mocked(turnStream).mock.calls[1][1]).toBe('안녕하세요')
+    expect(s.messages.filter((m) => m.role === 'user')).toHaveLength(1)
+  })
+
+  it('서버가 끝났다고 하면 끝난다 — 종료 문장을 프론트가 다시 찾지 않는다', async () => {
+    const s = await benStore()
+    await s.start()
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta) => {
+      onDelta('수고하셨습니다.')
+      return { ended: true }
+    })
+    await s.send('네')
+    expect(s.ended).toBe(true)
+  })
+
+  it('티켓이 없으면 면접이 시작되지 않고 이유를 남긴다', async () => {
+    vi.mocked(startInterview).mockRejectedValue(new BenError('no_tickets'))
+    const s = await benStore()
+    await s.start()
+    expect(s.phase).not.toBe('interview')
+    expect(s.genError).toContain('티켓')
+  })
+
+  it('턴이 실패해도 면접은 살아 있다 — 같은 답변을 다시 보낼 수 있다', async () => {
+    const s = await benStore()
+    await s.start()
+    vi.mocked(turnStream).mockRejectedValueOnce(new BenError('claude_error'))
+    await s.send('안녕하세요')
+    expect(s.genError).toMatch(/\S/)
+    expect(s.ended).toBe(false)
+    await s.retryLast()
+    expect(s.genError).toBeNull()
+  })
+
+  it('리포트는 서버가 쓴다 — 원문을 파서에 넣는다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(reportStream).toHaveBeenCalledOnce()
+    expect(s.reportStatus).toBe('done')
+    expect(s.report).toEqual([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+  })
+
+  it('보관함에 어느 벤 면접인지 함께 남긴다 — 없으면 서버가 거절한다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(s.archiveDraft()).toMatchObject({ premium: true, premiumInterviewId: 'pi_1' })
+  })
+
+  it('무료 면접관은 서버를 부르지 않는다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(startInterview).not.toHaveBeenCalled()
+  })
+
+  it('reset은 서버 면접 id를 지운다 — 다음 면접이 남의 id로 가면 안 된다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.reset()
+    await s.finish()
+    // 지운 뒤에는 부를 면접이 없다 — 남은 id로 남의 리포트를 받아 오면 안 된다
+    expect(reportStream).not.toHaveBeenCalled()
   })
 })
