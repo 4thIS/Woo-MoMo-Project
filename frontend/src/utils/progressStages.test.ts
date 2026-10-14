@@ -4,6 +4,7 @@ import {
   advance,
   IDLE_GAP,
   MAX_AHEAD,
+  PROP_SPACING,
   PROP_GAP,
   PROP_KEYS,
   nextIdleAt,
@@ -169,10 +170,49 @@ describe('stepScene — 진행률이 장면을 끈다', () => {
       ),
     ).toBe(STAGES.length - 1)
   })
-  it('물건은 화면 밖 MAX_AHEAD 너머에 생기지 않는다', () => {
+  it('가장 가까운 물건은 화면 밖 MAX_AHEAD 너머에 생기지 않는다', () => {
     const r = stepScene({ stage: 0, queue: [] }, fresh(), 0, 0.08, 1 / 60, CHAR_X)
-    for (const pr of r.props) {
-      if (pr.x !== null) expect(pr.x).toBeLessThanOrEqual(CHAR_X + pr.gap + MAX_AHEAD)
+    const first = r.props[0]
+    expect(first.x).not.toBeNull()
+    expect(first.x!).toBeLessThanOrEqual(CHAR_X + first.gap + MAX_AHEAD)
+  })
+
+  it('아직 먼 물건은 걸어 들어오지 않는다 — 제 구간보다 먼저 주워지면 안 된다', () => {
+    // 상한에 걸린 동안에는 화면 밖에서 기다려야 한다. 끌려 들어오면 10%에서 양복을 줍는다
+    let state: StageState = { stage: 0, queue: [] }
+    let props = fresh()
+    const dt = 1 / 60
+    for (let i = 0; i < 60 * 180; i++) {
+      const r = stepScene(state, props, 10, 0.02, dt, CHAR_X)
+      state = r.state
+      props = r.props
+    }
+    expect(state.stage).toBe(0)
+    expect(props.every((pr) => !pr.done)).toBe(true)
+  })
+
+  it('느린 다운로드에서 물건이 한 자리에 뭉치지 않는다', () => {
+    // 실제 서버에서 10% 언저리면 분당 몇 %밖에 안 오른다. 예상 거리가 수천 px이라
+    // 셋 다 상한(MAX_AHEAD)에 걸려 **같은 자리**에 서서 양복·가방·건물이 겹쳐 보였다
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 10, 0.02, 1 / 60, CHAR_X)
+    const xs = r.props.map((pr) => pr.x)
+    expect(xs.every((x) => x !== null)).toBe(true)
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(PROP_SPACING)
+    }
+  })
+
+  it('순서는 at 오름차순 그대로다 — 가방이 양복보다 먼저 오면 안 된다', () => {
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 10, 0.02, 1 / 60, CHAR_X)
+    const byAt = [...r.props].sort((a, b) => a.at - b.at)
+    expect(byAt.map((pr) => pr.x)).toEqual([...byAt.map((pr) => pr.x)].sort((a, b) => a! - b!))
+  })
+
+  it('빠르게 받아 거리가 가까울 때도 최소 간격은 지킨다', () => {
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 29, 5, 1 / 60, CHAR_X)
+    const xs = r.props.map((pr) => pr.x!)
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(PROP_SPACING)
     }
   })
   it('빠른 다운로드에서는 줍기 전환이 순서대로 큐에 쌓인다', () => {

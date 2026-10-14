@@ -131,6 +131,10 @@ export function overallFraction(p: DownloadParts): number {
  * 다운로드가 느리면 도착 예정 거리가 수천 px이 되는데, 화면 밖은 어차피 안 보이면서
  * 되돌아와 닿기까지 수십 초가 걸려 구간이 진행률을 못 따라간다. */
 export const MAX_AHEAD = 640
+/** 물건끼리 최소한 이만큼은 떨어뜨린다.
+ * 상한만 두면 느린 다운로드에서 양복·가방·건물의 예상 거리가 **전부** 상한에 걸려
+ * 한 자리에 겹쳐 선다(실제 서버 10% 언저리에서 본 뭉침). 뒤엣것을 차례로 밀어 둔다. */
+export const PROP_SPACING = 140
 
 export interface SceneProp {
   stage: number
@@ -161,12 +165,35 @@ export function stepScene(
 ): SceneStep {
   let next = state
   const out = props.map((pr) => ({ ...pr }))
+  // 아직 안 주운 것들을 가까운 순(at 오름차순)으로 보며 앞엣것 뒤에 줄 세운다.
+  // 개별로 상한만 걸면 멀리 있는 것들이 모두 같은 자리에 선다
+  const queue = out.filter((pr) => !pr.done).sort((a, b) => a.at - b.at)
+  const targets = new Map<SceneProp, number | null>()
+  /** 아직 제 거리에 못 온 물건 — 바닥과 함께 흐르지 않고 제자리에 둔다 */
+  const parked = new Set<SceneProp>()
+  let floor = 0
+  for (const pr of queue) {
+    const dist = distanceAhead(pr.at, progress, rate, speed)
+    if (dist === null) {
+      targets.set(pr, null)
+      continue
+    }
+    const ahead = Math.max(Math.min(dist, MAX_AHEAD), floor)
+    floor = ahead + PROP_SPACING
+    targets.set(pr, charX + pr.gap + ahead)
+    // 보여 주는 자리가 예상 거리와 다르면(상한에 걸렸거나 앞엣것에 막혔으면) **화면 밖에서 기다린다**.
+    // 안 붙들면 바닥 속도로 끌려 들어와 10%에서 양복·가방을 다 주워 버린다
+    if (ahead !== dist) parked.add(pr)
+  }
   for (const pr of out) {
     if (pr.done) continue
-    const dist = distanceAhead(pr.at, progress, rate, speed)
-    const target = dist === null ? null : charX + pr.gap + Math.min(dist, MAX_AHEAD)
+    const target = targets.get(pr) ?? null
     if (pr.x === null) {
       if (target !== null) pr.x = target
+      continue
+    }
+    if (parked.has(pr) && target !== null) {
+      pr.x = target
       continue
     }
     pr.x = approach(pr.x, target, dt, speed)
@@ -215,14 +242,8 @@ export function pickIdle(stage: Stage, rnd: () => number): IdleAnim | null {
 /* ---------- 지나가는 소품 ----------
  * 바닥과 같은 속도로 흘러 길이 이어져 보이게 한다. */
 
-export const PROP_KEYS: readonly string[] = [
-  'cat',
-  'lamp',
-  'vending',
-  'planter',
-  'pigeon',
-  'signal',
-]
+/** 지나가는 소품. 고양이·비둘기·자판기는 뺐다 — 길가에 서 있는 것만 둔다 */
+export const PROP_KEYS: readonly string[] = ['lamp', 'planter', 'signal']
 export const PROP_GAP: readonly [number, number] = [3_000, 7_000]
 /** 한 프레임에 소품이 움직일 수 있는 최대 거리(화면 폭). 탭 복귀로 dt가 커져도 순간이동하지 않게 */
 const MAX_PROP_STEP_RATIO = 1
