@@ -249,10 +249,11 @@ describe('잔동작 — 구간이 길 때 끼어든다', () => {
 })
 
 describe('지나가는 소품', () => {
-  it('오른쪽 화면 밖에서 생긴다', () => {
+  it('띄울 소품이 있으면 오른쪽 화면 밖에서 생긴다', () => {
     const p = spawnProp(320, () => 0)
-    expect(p.x).toBeGreaterThanOrEqual(320)
-    expect(PROP_KEYS).toContain(p.key)
+    if (!PROP_KEYS.length) return expect(p).toBeNull()
+    expect(p!.x).toBeGreaterThanOrEqual(320)
+    expect(PROP_KEYS).toContain(p!.key)
   })
   it('바닥과 같은 속도로 왼쪽으로 흐른다', () => {
     expect(stepProps([{ key: 'cat', x: 200 }], 0.5, 40, 320)[0].x).toBe(180)
@@ -266,5 +267,44 @@ describe('지나가는 소품', () => {
   })
   it('간격은 3~7초다', () => {
     expect(PROP_GAP).toEqual([3000, 7000])
+  })
+})
+
+describe('구간마다 옷이 맞는 잔동작을 쓴다', () => {
+  it('양복만 입은 구간에서는 가방 든 시계 보기를 쓰지 않는다', () => {
+    // 40%에서 시계를 보면 없던 가방이 손에 생겼다 — 시트가 가방 든 판 하나뿐이었다
+    const suit = STAGES[1]
+    expect(suit.walk).toBe('walk_suit')
+    expect(suit.idles).toEqual(['walk_watch_suit'])
+  })
+
+  it('가방까지 든 구간에서만 가방 든 판을 쓴다', () => {
+    const bag = STAGES[2]
+    expect(bag.walk).toBe('walk_suit_bag')
+    expect(bag.idles).toEqual(['walk_watch'])
+  })
+
+  it('잔동작은 그 구간의 옷과 같은 차림이어야 한다 — 시트 이름으로 묶어 둔다', () => {
+    for (const st of STAGES) {
+      for (const idle of st.idles ?? []) {
+        // walk_suit → walk_watch_suit, walk_suit_bag → walk_watch
+        const want = st.walk === 'walk_suit_bag' ? 'walk_watch' : 'walk_watch_suit'
+        expect(idle, st.caption).toBe(want)
+      }
+    }
+  })
+
+  it('첫 구간은 속옷이 아니라 반팔티 차림이다', () => {
+    expect(STAGES[0].walk).toBe('walk_tee')
+  })
+})
+
+describe('지나가는 소품', () => {
+  it('목록에 없는 키를 만들지 않는다 — 그릴 그림이 없으면 아예 안 띄운다', () => {
+    if (PROP_KEYS.length === 0) {
+      expect(spawnProp(320, () => 0)).toBeNull()
+    } else {
+      expect(PROP_KEYS).toContain(spawnProp(320, () => 0)!.key)
+    }
   })
 })

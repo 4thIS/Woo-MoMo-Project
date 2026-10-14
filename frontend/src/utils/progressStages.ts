@@ -1,7 +1,8 @@
-export type WalkAnim = 'walk_underwear' | 'walk_suit' | 'walk_suit_bag'
+export type WalkAnim = 'walk_tee' | 'walk_suit' | 'walk_suit_bag'
 export type OnceAnim = 'pickup_suit' | 'pickup_bag' | 'look_up'
-/** 구간이 길 때 끼어드는 잔동작. 1회 재생하고 걷기로 돌아간다 */
-export type IdleAnim = 'walk_watch'
+/** 구간이 길 때 끼어드는 잔동작. 1회 재생하고 걷기로 돌아간다.
+ *  **차림마다 시트가 따로다** — 양복만 입은 구간에 가방 든 판을 쓰면 없던 가방이 생긴다 */
+export type IdleAnim = 'walk_watch' | 'walk_watch_suit'
 export type ItemSprite = 'suit_ground' | 'bag_ground'
 
 export interface Stage {
@@ -15,13 +16,13 @@ export interface Stage {
 }
 
 export const STAGES: readonly Stage[] = [
-  { at: 0, walk: 'walk_underwear', caption: '출근 준비 중…' },
+  { at: 0, walk: 'walk_tee', caption: '출근 준비 중…' },
   {
     at: 30,
     walk: 'walk_suit',
     once: 'pickup_suit',
     item: 'suit_ground',
-    idles: ['walk_watch'],
+    idles: ['walk_watch_suit'],
     caption: '양복은 챙겼습니다. 가방을 찾는 중…',
   },
   {
@@ -242,8 +243,9 @@ export function pickIdle(stage: Stage, rnd: () => number): IdleAnim | null {
 /* ---------- 지나가는 소품 ----------
  * 바닥과 같은 속도로 흘러 길이 이어져 보이게 한다. */
 
-/** 지나가는 소품. 고양이·비둘기·자판기는 뺐다 — 길가에 서 있는 것만 둔다 */
-export const PROP_KEYS: readonly string[] = ['lamp', 'planter', 'signal']
+/** 지나가는 소품. 고양이·비둘기·자판기를 뺐고 남은 그림이 없어 지금은 비어 있다.
+ *  새 소품 그림을 넣으면 키만 여기 더하면 된다(없는 키를 적으면 조용히 안 그려진다) */
+export const PROP_KEYS: readonly string[] = []
 export const PROP_GAP: readonly [number, number] = [3_000, 7_000]
 /** 한 프레임에 소품이 움직일 수 있는 최대 거리(화면 폭). 탭 복귀로 dt가 커져도 순간이동하지 않게 */
 const MAX_PROP_STEP_RATIO = 1
@@ -253,7 +255,9 @@ export interface ScenicProp {
   x: number
 }
 
-export function spawnProp(width: number, rnd: () => number): ScenicProp {
+/** 띄울 소품이 없으면 null — 그릴 그림이 없는 키를 만들어 두지 않는다 */
+export function spawnProp(width: number, rnd: () => number): ScenicProp | null {
+  if (!PROP_KEYS.length) return null
   const key = PROP_KEYS[Math.min(PROP_KEYS.length - 1, Math.floor(rnd() * PROP_KEYS.length))]
   return { key, x: width + Math.round(rnd() * 40) }
 }

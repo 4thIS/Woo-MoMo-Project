@@ -166,7 +166,8 @@ function frame(now: number) {
   scenic = stepProps(scenic, step, SCROLL, W)
   if (!propAt) propAt = now + PROP_GAP[0]
   if (walking && now >= propAt) {
-    scenic.push(spawnProp(W, Math.random))
+    const sp = spawnProp(W, Math.random)
+    if (sp) scenic.push(sp)
     const [a, b] = PROP_GAP
     propAt = now + a + Math.random() * (b - a)
   }
