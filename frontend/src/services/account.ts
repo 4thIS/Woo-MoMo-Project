@@ -23,6 +23,8 @@ export interface Session {
   tier: Tier
   /** 프리미엄 면접 남은 횟수. member는 항상 0 */
   tickets: number
+  /** 목업 결제를 쓸 수 있는 계정인가. 일반 계정은 false */
+  isAdmin: boolean
   profile: Profile
   createdAt: string
 }
@@ -44,15 +46,33 @@ export interface ResumeDraft {
   text: string
 }
 
+/** 서버가 주는 코드(`docs/API.md` 공통 오류 표)와 프론트가 만드는 둘(`network`·`unavailable`).
+ *  모르는 코드는 지어내지 않고 `unknown`으로 둔다 — 서버가 코드를 늘려도 화면은 버틴다 */
 export type AccountErrorCode =
   | 'email_taken'
   | 'weak_password'
   | 'missing_name'
+  | 'invalid_email'
+  | 'consent_required'
   | 'bad_credentials'
   | 'unauthorized'
+  | 'not_found'
   | 'no_tickets'
   | 'slot_full'
+  | 'invalid'
+  | 'missing_field'
+  | 'rate_limited'
+  | 'bad_origin'
+  | 'premium_required'
+  | 'purchase_disabled'
+  | 'invalid_premium_interview'
+  | 'too_large'
+  | 'unsupported_media'
+  /** 연결 자체가 안 됨 */
   | 'network'
+  /** 아직 없는 기능(구글 로그인) */
+  | 'unavailable'
+  | 'unknown'
 
 /** 화면은 code로 분기하고 message를 그대로 보여 준다 */
 export class AccountError extends Error {
@@ -97,7 +117,10 @@ export interface ArchiveDetail extends ArchiveEntry {
   recordings: { turn: number; url: string }[]
 }
 
-export type ArchiveDraft = Omit<ArchiveDetail, 'id'>
+export type ArchiveDraft = Omit<ArchiveDetail, 'id'> & {
+  /** premium이면 필수 — 본인의, 리포트까지 끝난, 아직 저장 안 된 벤 면접 id */
+  premiumInterviewId?: string
+}
 
 export interface AccountApi {
   /** 비로그인은 오류가 아니라 null이다 */
@@ -121,8 +144,8 @@ export interface AccountApi {
   saveArchive(draft: ArchiveDraft): Promise<{ entry: ArchiveEntry; evicted: string[] }>
   deleteArchive(id: string): Promise<void>
 
+  /** 목업 결제. 서버에서는 관리자만 — 일반 계정은 `purchase_disabled` */
   purchasePremium(): Promise<Session>
-  spendTicket(): Promise<Session>
 }
 
 export const PASSWORD_MIN = 8

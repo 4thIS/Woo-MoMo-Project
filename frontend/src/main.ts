@@ -1,8 +1,14 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
+import { setAccountApi } from './stores/account'
+import { httpAccount } from './services/httpAccount'
 import './styles/tokens.css'
 import './styles/base.css'
+
+/* 앱은 진짜 서버를 본다. 스토어의 기본값은 목업이라 테스트는 서버 없이 돈다 —
+   바꾸는 자리를 여기 하나로 둔다 */
+setAccountApi(httpAccount)
 
 createApp(App).use(createPinia()).mount('#app')
 

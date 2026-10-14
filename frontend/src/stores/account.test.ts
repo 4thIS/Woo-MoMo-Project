@@ -131,23 +131,6 @@ describe('account 스토어 — 프리미엄', () => {
     expect(a.tickets).toBe(10)
   })
 
-  it('티켓을 쓰면 하나 준다', async () => {
-    const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456', '이우진')
-    await a.purchasePremium()
-    await a.spendTicket()
-    expect(a.tickets).toBe(9)
-  })
-
-  it('티켓이 없으면 no_tickets를 담고 등급은 그대로다', async () => {
-    const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456', '이우진')
-    await a.spendTicket()
-    expect(a.error?.code).toBe('no_tickets')
-    expect(a.tickets).toBe(0)
-    expect(a.tier).toBe('member')
-  })
-
   it('비로그인은 티켓이 0이다', () => {
     expect(useAccountStore().tickets).toBe(0)
   })
