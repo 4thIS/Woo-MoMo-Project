@@ -23,6 +23,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/
 backend/.ruff_cache/
+backend/var/
 
 # finetune (노트북 출력·체크포인트)
 finetune/outputs/
