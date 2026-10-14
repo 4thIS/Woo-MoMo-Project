@@ -20,6 +20,7 @@ backend/
 │   └── llm/      # 벤: Claude 호출(claude.py), 프롬프트(prompts.py, 계층 규율 경로)
 ├── data/         # 정적 계약 데이터: manifest.json, questions/{field}.json (계층 규율 경로)
 └── tests/        # pytest
+```
 
 ## 계층 책임
 

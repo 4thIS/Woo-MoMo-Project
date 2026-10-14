@@ -125,7 +125,7 @@ finetune: ...           # 파인튜닝 트랙
 | 문서 | 내용 |
 |------|------|
 | `docs/superpowers/specs/2026-09-15-mock-interview-design.md` | 전체 설계서 (아키텍처·화면·LLM·배포·일정) |
-| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크 응답 형식 (백엔드 담당이 소유) |
+| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크·계정·이력서·보관함·프리미엄(벤)·녹음 (백엔드 담당이 소유) |
 | `docs/specs/{area}/`·`docs/plans/{area}/` | 영역별 설계서·작업지시서 (템플릿: `docs/specs/spec.template.md`, `docs/plans/plan.template.md`) |
 | `docs/demo-checklist.md` | 데모 리허설 수동 시나리오 |
 | `frontend/CLAUDE.md` | frontend 영역 규칙 |

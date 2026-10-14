@@ -102,7 +102,7 @@
 | 형식 | JSON(UTF-8). 녹음 업로드만 `multipart/form-data`, 벤 대화·리포트는 SSE(`text/event-stream`) |
 | 인증 | 세션 쿠키 `momo_session` — `HttpOnly`, `SameSite=Lax`, `Path=/api`, 30일, 운영은 `Secure`. 프론트는 `fetch(..., { credentials: 'include' })` |
 | CORS | 정확한 오리진만(기본 `https://momo.ssenu.cloud`, `https://demomo.ssenu.cloud`, `http://localhost:5173`), `Access-Control-Allow-Credentials: true`. 와일드카드 없음 |
-| CSRF | 상태를 바꾸는 요청(`POST`·`PUT`·`DELETE`)은 `Origin` 헤더가 허용 목록에 있어야 한다. 없거나 다르면 `403 {"error":"bad_origin"}` |
+| CSRF | 상태를 바꾸는 요청(`POST`·`PUT`·`PATCH`·`DELETE`)은 `Origin` 헤더가 허용 목록에 있어야 한다. 없거나 다르면 `403 {"error":"bad_origin"}` |
 | 오류 | `{"error": "<code>"}`. 입력 오류는 `"field"`를 더한다. 그 밖의 추가 필드는 엔드포인트마다 적는다 |
 | 남의 리소스 | 이력서·보관함·녹음·벤 면접의 남의 id는 없는 id와 똑같이 `404 {"error":"not_found"}` |
 | 시각 | UTC ISO 8601 밀리초 `Z`(`Date.prototype.toISOString()`과 같은 모양) |
