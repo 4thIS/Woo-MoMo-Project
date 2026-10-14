@@ -23,6 +23,7 @@ import { downloadModel, getModelBlob, hasModel, pruneModels } from '@/services/m
 import { initEngine } from '@/services/llm'
 import { disposeTts, initTts, setTtsVoice, synthesize } from '@/services/tts'
 import { INIT_TIMEOUT_MS, TTS_WARMUP_TEXT, VOICE_SWITCH_TIMEOUT_MS, useModelStore } from './model'
+import { useInterviewerStore } from './interviewer'
 
 const manifest = {
   id: 'e4b',
@@ -539,7 +540,6 @@ describe('model store — 초기화 상한 (#41)', () => {
 })
 
 import { DEFAULT_INTERVIEWER, interviewerById, type InterviewerId } from '@/interviewers'
-import { useInterviewerStore } from './interviewer'
 
 const VOICE_IDS = ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5']
 /** 엔진 90 + 목소리(10 + 순번). F3 = 12, M2 = 16 */
@@ -1047,5 +1047,52 @@ describe('model store — 목소리 목록 경고 (spec 7절)', () => {
     vi.mocked(getManifest).mockResolvedValue(manifest)
     await useModelStore().loadManifest()
     expect(warn).not.toHaveBeenCalled()
+  })
+})
+
+describe('벤(서버 면접관)을 고르면 브라우저 모델을 받지 않는다', () => {
+  it('모델 다운로드도 엔진 초기화도 하지 않는다 — 벤은 서버가 답한다', async () => {
+    useInterviewerStore().select('m2')
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(downloadModel).not.toHaveBeenCalled()
+    expect(initEngine).not.toHaveBeenCalled()
+  })
+
+  it('목소리는 받는다 — 벤도 이 브라우저가 말한다', async () => {
+    useInterviewerStore().select('m2')
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.ready).toBe(true)
+  })
+
+  it('진행 바 총량에서 모델 몫을 뺀다 — 안 받는 3GB를 세면 영영 안 찬다', async () => {
+    const s = useModelStore()
+    await s.loadManifest()
+    const withLlm = s.downloadSize
+    useInterviewerStore().select('m2')
+    expect(s.downloadSize).toBe(withLlm - 100)
+  })
+
+  it('무료 면접관이면 그대로 받는다', async () => {
+    useInterviewerStore().select('m1')
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(downloadModel).toHaveBeenCalled()
+    expect(initEngine).toHaveBeenCalled()
+  })
+
+  it('벤으로 받지 않은 뒤 무료 면접관으로 바꾸면 아직 준비되지 않은 상태다', async () => {
+    useInterviewerStore().select('m2')
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.ready).toBe(true)
+    useInterviewerStore().select('m1')
+    // 엔진이 없으므로 면접을 열면 안 된다
+    expect(s.ready).toBe(false)
   })
 })

@@ -90,17 +90,6 @@ describe('mockAccount — 프리미엄', () => {
     expect((await api.purchasePremium()).tickets).toBe(20)
   })
 
-  it('티켓을 쓰면 하나 준다', async () => {
-    await api.signUp('a@b.com', 'pw123456', '이우진')
-    await api.purchasePremium()
-    expect((await api.spendTicket()).tickets).toBe(9)
-  })
-
-  it('티켓이 없으면 no_tickets', async () => {
-    await api.signUp('a@b.com', 'pw123456', '이우진')
-    await expect(api.spendTicket()).rejects.toMatchObject({ code: 'no_tickets' })
-  })
-
   it('비로그인은 unauthorized', async () => {
     await expect(api.purchasePremium()).rejects.toMatchObject({ code: 'unauthorized' })
   })

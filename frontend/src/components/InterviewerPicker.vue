@@ -6,6 +6,7 @@ import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewer
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
 import { useAccountStore } from '@/stores/account'
+import { useInterviewStore } from '@/stores/interview'
 import type { Track } from '@/services/account'
 
 const TRACK_LABEL = { company: '회사', admission: '대입', both: '대입·회사' } as const
@@ -20,10 +21,11 @@ const PICKER_SCALE = 2
 const iv = useInterviewerStore()
 const model = useModelStore()
 const account = useAccountStore()
-const emit = defineEmits<{ 'need-premium': []; 'track-change': [Track | null] }>()
+/** 고른 트랙은 **면접 스토어가** 가진다. 여기서 복사본을 들고 알리기만 하면
+ *  받아 쓰는 화면이 하나라도 잊는 순간 트랙이 비어 시작 버튼이 안 열린다 */
+const interview = useInterviewStore()
+const emit = defineEmits<{ 'need-premium': [] }>()
 const cards = ref<HTMLButtonElement[]>([])
-/** 벤만 쓴다 — 둘 다 보기 때문에 고를 때 정한다 */
-const chosenTrack = ref<Track | null>(null)
 onMounted(() => void iv.probeSprites())
 
 /** 티켓이 있어야 쓸 수 있다. **등급이 아니라 티켓 수**다 — 10장을 다 쓰면 다시 사야 한다 */
@@ -33,15 +35,14 @@ function pick(id: InterviewerId) {
   const who = INTERVIEWERS.find((p) => p.id === id)
   // 막는 게 아니라 길을 여는 버튼이다 — 흐리게 하지 않고, 누르면 요금제로 보낸다
   if (who?.premium && !canUsePremium.value) return emit('need-premium')
-  chosenTrack.value = null
-  emit('track-change', null)
+  // 면접관을 바꾸면 앞서 고른 트랙은 버린다
+  interview.setTrack(null)
   void model.chooseInterviewer(id)
   void iv.preview(id)
 }
 
 function pickTrack(t: Track) {
-  chosenTrack.value = t
-  emit('track-change', t)
+  interview.setTrack(t)
 }
 function onKey(e: KeyboardEvent) {
   const dir =
@@ -111,7 +112,7 @@ const sheet = (id: InterviewerId) => {
         :key="t"
         type="button"
         class="mono tbtn"
-        :class="{ on: chosenTrack === t }"
+        :class="{ on: interview.chosenTrack === t }"
         :data-test="`track-${t}`"
         @click="pickTrack(t)"
       >

@@ -66,6 +66,7 @@ function strip(u: User): Session {
     email: u.email,
     tier: u.tier,
     tickets: u.tickets,
+    isAdmin: u.isAdmin,
     profile: { ...u.profile },
     createdAt: u.createdAt,
   }
@@ -132,6 +133,7 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
         password,
         tier: 'member',
         tickets: 0,
+        isAdmin: true,
         profile: { name: trimmed, age: null },
         createdAt: now(),
       }
@@ -164,6 +166,7 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
           password: '',
           tier: 'member',
           tickets: 0,
+          isAdmin: true,
           profile: { name: null, age: null },
           createdAt: now(),
         }
@@ -288,22 +291,31 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       save(db)
     },
 
+    async uploadRecording(archiveId, turn, clip) {
+      await wait()
+      const db = load()
+      const u = current(db)
+      const found = db.archive.find((e) => e.id === archiveId)
+      if (!found || db.owner[archiveId] !== u.userId)
+        throw new AccountError('not_found', '없는 기록입니다')
+      if (!found.premium) throw new AccountError('premium_required', '프리미엄 기록만 녹음합니다')
+      // 목업은 Blob URL로 들고 있는다 — 새로고침하면 끊긴다(서버는 파일로 보관한다)
+      const id = newId('rec')
+      const url = URL.createObjectURL(clip)
+      found.recordings = [...found.recordings.filter((r) => r.turn !== turn), { turn, url }].sort(
+        (a, b) => a.turn - b.turn,
+      )
+      found.hasRecording = true
+      save(db)
+      return { id, url }
+    },
+
     async purchasePremium() {
       await wait()
       const db = load()
       const u = current(db)
       u.tier = 'premium'
       u.tickets += PREMIUM_TICKETS
-      save(db)
-      return strip(u)
-    },
-
-    async spendTicket() {
-      await wait()
-      const db = load()
-      const u = current(db)
-      if (u.tickets <= 0) throw new AccountError('no_tickets', '남은 티켓이 없습니다')
-      u.tickets -= 1
       save(db)
       return strip(u)
     },
