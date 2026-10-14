@@ -147,17 +147,18 @@ button:focus-visible {
   text-decoration: underline;
 }
 
-/* 바닥 자막 — 부모(무대)가 position:relative다. 영화 자막 자리라 "내가 듣는 말"로 읽힌다.
+/* 바닥 자막 — 영화 자막 자리라 "내가 듣는 말"로 읽힌다.
    좌우 판 사이 빈 폭에 들어가야 하므로 너비를 묶는다.
    가운데 맞추기는 **translate**로 한다 — transform은 떠 있는 움직임이 쓴다 */
 .bar.note {
-  position: absolute;
+  /* 무대(.stage-area)는 지원자가 서 있는 높이에서 끝난다. 그 안에 두면 자막이
+     내 머리 위에 얹히므로 화면 기준으로 띄워 좌우 판 사이 바닥까지 내린다 */
+  position: fixed;
   left: 50%;
   translate: -50% 0;
   right: auto;
   top: auto;
-  /* 판보다 조금 더 아래 — 자막답게 앉고, 내 머리를 덜 가린다 */
-  bottom: var(--sp-2);
+  bottom: var(--sp-5);
   transform: none;
   width: clamp(220px, 22vw, 330px);
   z-index: 5;

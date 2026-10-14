@@ -33,7 +33,9 @@ export const ANIMS: Record<AnimName, { loop: boolean }> = {
   right_pentap: { loop: false },
 }
 export const CANDIDATE_BACK = { file: '/sprites/interviewers/candidate_back.png', w: 32, h: 32 }
-export const FPS = 8
+/** 12fps. 8fps 시절보다 프레임을 1.5배로 뽑아 길이는 그대로 두고 중간 동작만 늘렸다 —
+ *  숫자를 되돌리면 모든 동작이 1.5배 빨라진다 */
+export const FPS = 12
 /** 면접관 배율: 프레임 92(CENTER_FRAME_PX) × 3 = 276px. 대체용 32×32 시트도 SpriteFrame이 시트 전체를 늘려 같은 276px로 그린다.
  *  정수만 쓴다 — 픽셀 그림을 반 칸으로 늘리면 칸마다 두께가 달라져 뭉개진다 */
 export const SCALE = 3

@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { CENTER_FRAME_PX, LEGACY_CENTER, LEGACY_SIDE, interviewerById } from '@/interviewers'
-import { CANDIDATE_BACK, candidateScaleFor, DESK_OVERLAP, SCALE } from './interviewerAnims'
+import {
+  CENTER_FRAME_PX,
+  DEFAULT_INTERVIEWER,
+  LEGACY_CENTER,
+  LEGACY_SIDE,
+  SIDE_SPRITES,
+  interviewerById,
+} from '@/interviewers'
+import { CANDIDATE_BACK, candidateScaleFor, DESK_OVERLAP, FPS, SCALE } from './interviewerAnims'
 import InterviewStage from './InterviewStage.vue'
 import InterviewStageSource from './InterviewStage.vue?raw'
 
@@ -40,9 +47,9 @@ describe('InterviewStage', () => {
       const st = (w.find(`[data-char="${c}"]`).element as HTMLElement).style
       expect([st.width, st.height], c).toEqual([`${px}px`, `${px}px`])
     }
-    // 배석자 left_idle 16프레임(manifest) → 시트 전체가 프레임 수만큼 길어진다
+    // 배석자 left_idle 프레임 수(manifest) → 시트 전체가 그만큼 길어진다. 하드코딩하지 않는다
     const left = (w.find('[data-char="left"]').element as HTMLElement).style
-    expect(left.backgroundSize).toBe(`${px * 16}px ${px}px`)
+    expect(left.backgroundSize).toBe(`${px * SIDE_SPRITES.left.idle.frames}px ${px}px`)
     const cand = (w.find('.candidate .sprite').element as HTMLElement).style
     const cpx = CANDIDATE_BACK.w * candidateScaleFor(window.innerHeight)
     expect([cand.width, cand.height]).toEqual([`${cpx}px`, `${cpx}px`])
@@ -102,7 +109,8 @@ describe('InterviewStage 1회 재생', () => {
     vi.advanceTimersByTime(ms)
     await w.vm.$nextTick()
   }
-  const F = 125 // 8fps 한 프레임
+  const F = 1000 / FPS // 한 프레임
+  const M1 = interviewerById('m1')!.sprites
   const srcOf = (w: ReturnType<typeof mount>, char: string) =>
     (w.find(`[data-char="${char}"]`).element as HTMLElement).style.backgroundImage
 
@@ -110,7 +118,8 @@ describe('InterviewStage 1회 재생', () => {
     const w = mount(InterviewStage, { props: base })
     await w.setProps({ watchTick: 1 })
     expect(srcOf(w, 'center')).toContain('center_watch')
-    vi.advanceTimersByTime(12 * 125 + 50) // f3 watch 12f @ 8fps
+    const watchMs = (interviewerById(DEFAULT_INTERVIEWER)!.sprites.watch.frames * 1000) / FPS
+    vi.advanceTimersByTime(watchMs + 50)
     await w.vm.$nextTick()
     expect(srcOf(w, 'center')).toContain('center_idle')
     await w.setProps({ watchTick: 2 })
@@ -135,13 +144,13 @@ describe('InterviewStage 1회 재생', () => {
     const w = mount(InterviewStage, { props: base })
     await w.setProps({ stage: 'speaking' })
     expect(srcOf(w, 'center')).toContain('m1/center_question_in.png')
-    await tick(w, 8 * F + 50) // m1 question_in 8f
+    await tick(w, M1.question_in.frames * F + 50)
     expect(srcOf(w, 'center')).toContain('m1/center_question.png')
     await tick(w, 30 * F) // 말하는 동안 계속 question
     expect(srcOf(w, 'center')).toContain('m1/center_question.png')
     await w.setProps({ stage: 'waiting' })
     expect(srcOf(w, 'center')).toContain('m1/center_question_out.png')
-    await tick(w, 8 * F + 50) // question_out 8f
+    await tick(w, M1.question_out.frames * F + 50)
     expect(srcOf(w, 'center')).toContain('m1/center_idle.png')
   })
 
@@ -151,9 +160,9 @@ describe('InterviewStage 1회 재생', () => {
     await tick(w, 3 * F)
     await w.setProps({ stage: 'waiting' })
     expect(srcOf(w, 'center')).toContain('center_question_in.png')
-    await tick(w, 5 * F + 50)
+    await tick(w, (M1.question_in.frames - 3) * F + 50) // 들던 것을 마저 든다
     expect(srcOf(w, 'center')).toContain('center_question_out.png')
-    await tick(w, 8 * F + 50)
+    await tick(w, M1.question_out.frames * F + 50)
     expect(srcOf(w, 'center')).toContain('m1/center_idle.png')
   })
 
