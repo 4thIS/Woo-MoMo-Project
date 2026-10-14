@@ -1081,7 +1081,7 @@ describe('프리미엄 면접 녹음', () => {
     const s = await readyStore()
     await s.start()
     expect(startRecording).not.toHaveBeenCalled()
-    expect(s.recordings).toEqual([])
+    expect(s.recordingCount).toBe(0)
   })
 
   it('프리미엄 면접이면 녹음을 시작한다', async () => {
@@ -1100,7 +1100,7 @@ describe('프리미엄 면접 녹음', () => {
     expect(s.stage).toBe('waiting')
     await s.send('답변입니다')
     expect(s.messages.filter((m) => m.role === 'model')).toHaveLength(2)
-    expect(s.recordings).toEqual([])
+    expect(s.recordingCount).toBe(0)
   })
 
   it('답변마다 조각을 남긴다 — 면접관 말은 버린다', async () => {
@@ -1110,7 +1110,7 @@ describe('프리미엄 면접 녹음', () => {
     const s = await premiumStore()
     await s.start()
     await s.send('답변입니다')
-    expect(s.recordings).toEqual([{ turn: 0, url: expect.any(String) }])
+    expect(s.recordingCount).toBe(1)
     // 질문 2번 + 답변 1번 = cut 3번. 질문 조각은 버려진다
     expect(rec.cut).toHaveBeenCalledTimes(3)
   })
@@ -1123,7 +1123,7 @@ describe('프리미엄 면접 녹음', () => {
     await s.send('답변입니다')
     expect(s.recordingWarning).toBe(RECORDING_FULL)
     await s.send('두 번째 답변')
-    expect(s.recordings).toHaveLength(1)
+    expect(s.recordingCount).toBe(1)
   })
 
   it('녹음이 있으면 hasRecording: true로 저장된다', async () => {
@@ -1166,7 +1166,7 @@ describe('프리미엄 면접 녹음', () => {
     await s.start()
     await s.send('답변입니다')
     await s.reset()
-    expect(s.recordings).toEqual([])
+    expect(s.recordingCount).toBe(0)
     expect(s.recordingWarning).toBeNull()
   })
 })
@@ -1301,5 +1301,103 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
     await s.finish()
     // 지운 뒤에는 부를 면접이 없다 — 남은 id로 남의 리포트를 받아 오면 안 된다
     expect(reportStream).not.toHaveBeenCalled()
+  })
+})
+
+describe('녹음은 보관함에 올라가야 남는다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+
+  function fakeRecorder() {
+    return {
+      cut: vi.fn(async () => new Blob([new Uint8Array(32)], { type: 'audio/webm' })),
+      stop: vi.fn(async () => null),
+    }
+  }
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(startRecording).mockReset().mockResolvedValue(fakeRecorder())
+    vi.mocked(startInterview)
+      .mockReset()
+      .mockResolvedValue({
+        interviewId: 'pi_rec',
+        session: {
+          userId: 'u1',
+          email: 'a@b.com',
+          tier: 'premium',
+          tickets: 9,
+          isAdmin: false,
+          profile: { name: null, age: null },
+          createdAt: '2026-10-13T00:00:00.000Z',
+        },
+      })
+    vi.mocked(turnStream)
+      .mockReset()
+      .mockImplementation(async (_id, _a, onDelta) => {
+        onDelta('질문입니다.')
+        return { ended: false }
+      })
+    vi.mocked(reportStream)
+      .mockReset()
+      .mockImplementation(async (_id, onDelta) => {
+        onDelta(fenced(REPORT))
+      })
+  })
+
+  async function benWithClip() {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    // 서버는 **그 계정의** 세션을 돌려준다 — 지어낸 세션을 넣으면 뒤따르는 저장이 남의 것이 된다
+    vi.mocked(startInterview).mockResolvedValue({ interviewId: 'pi_rec', session: a.session! })
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    await s.start()
+    await s.send('답변입니다')
+    return { s, a }
+  }
+
+  it('기록을 만든 뒤에 올린다 — 기록 id가 있어야 서버가 받는다', async () => {
+    const { s, a } = await benWithClip()
+    const spy = vi.spyOn(a, 'uploadRecording')
+    await s.finish()
+    expect(spy).toHaveBeenCalledOnce()
+    const [archiveId, turn, clip] = spy.mock.calls[0]
+    expect(archiveId).toBe(a.archive[0].id)
+    expect(turn).toBe(0)
+    expect(clip).toBeInstanceOf(Blob)
+  })
+
+  it('올린 녹음이 상세에 보인다', async () => {
+    const { s, a } = await benWithClip()
+    await s.finish()
+    const full = await a.getArchive(a.archive[0].id)
+    expect(full?.recordings).toHaveLength(1)
+    expect(full?.hasRecording).toBe(true)
+  })
+
+  it('기록을 못 남겼으면 올리지 않는다 — 붙일 기록이 없다', async () => {
+    const { s, a } = await benWithClip()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue(null)
+    const up = vi.spyOn(a, 'uploadRecording')
+    await s.finish()
+    expect(up).not.toHaveBeenCalled()
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('업로드가 실패해도 리포트는 그대로 보인다 — 녹음은 덤이다', async () => {
+    const { s, a } = await benWithClip()
+    vi.spyOn(a, 'uploadRecording').mockRejectedValue(new Error('too large'))
+    await s.finish()
+    expect(s.reportStatus).toBe('done')
+    expect(s.archiveSaved).toBe(true)
+    expect(s.recordingWarning).toMatch(/\S/)
+  })
+
+  it('reset은 들고 있던 녹음을 버린다', async () => {
+    const { s } = await benWithClip()
+    expect(s.recordingCount).toBe(1)
+    await s.reset()
+    expect(s.recordingCount).toBe(0)
   })
 })

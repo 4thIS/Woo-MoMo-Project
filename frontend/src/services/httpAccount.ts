@@ -13,6 +13,7 @@ import {
   type ArchiveDraft,
   type ArchiveEntry,
   type Profile,
+  type RecordingRef,
   type ResumeDraft,
   type ResumeSlot,
   type Session,
@@ -131,6 +132,28 @@ export function makeHttpAccount(): AccountApi {
       call<{ entry: ArchiveEntry; evicted: string[] }>('/archive', 'POST', { ...draft }),
 
     deleteArchive: (id) => call<void>(`/archive/${id}`, 'DELETE'),
+
+    async uploadRecording(archiveId, turn, clip) {
+      const form = new FormData()
+      form.append('archiveId', archiveId)
+      form.append('turn', String(turn))
+      form.append('clip', clip)
+      let res: Response
+      try {
+        // Content-Type을 직접 붙이지 않는다 — 브라우저가 경계(boundary)를 넣어야 한다
+        res = await fetch(`${BASE}/recordings`, {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        })
+      } catch {
+        throw new AccountError('network', MESSAGES.network)
+      }
+      if (res.ok) return (await res.json()) as RecordingRef
+      // 413은 nginx가 먼저 막아 본문이 JSON이 아닐 수 있다 — 상태로 판단한다
+      if (res.status === 413) throw new AccountError('too_large', MESSAGES.too_large)
+      throw toError(await res.json().catch(() => undefined))
+    },
 
     purchasePremium: () => call<Session>('/premium/purchase', 'POST'),
   }

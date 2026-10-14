@@ -12,6 +12,7 @@ import {
   type ArchiveDraft,
   type ArchiveEntry,
   type Profile,
+  type RecordingRef,
   type ResumeDraft,
   type ResumeKind,
   type ResumeSlot,
@@ -154,6 +155,15 @@ export const useAccountStore = defineStore('account', {
     async deleteArchive(id: string) {
       const done = await this.run(() => api.deleteArchive(id))
       if (done !== null) await this.refreshArchive()
+    },
+
+    /** 녹음 한 조각. 기록을 만든 뒤라야 받는다 */
+    async uploadRecording(
+      archiveId: string,
+      turn: number,
+      clip: Blob,
+    ): Promise<RecordingRef | null> {
+      return await this.run(() => api.uploadRecording(archiveId, turn, clip))
     },
 
     async purchasePremium() {

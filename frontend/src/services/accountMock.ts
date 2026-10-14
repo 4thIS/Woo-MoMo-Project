@@ -291,6 +291,25 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       save(db)
     },
 
+    async uploadRecording(archiveId, turn, clip) {
+      await wait()
+      const db = load()
+      const u = current(db)
+      const found = db.archive.find((e) => e.id === archiveId)
+      if (!found || db.owner[archiveId] !== u.userId)
+        throw new AccountError('not_found', '없는 기록입니다')
+      if (!found.premium) throw new AccountError('premium_required', '프리미엄 기록만 녹음합니다')
+      // 목업은 Blob URL로 들고 있는다 — 새로고침하면 끊긴다(서버는 파일로 보관한다)
+      const id = newId('rec')
+      const url = URL.createObjectURL(clip)
+      found.recordings = [...found.recordings.filter((r) => r.turn !== turn), { turn, url }].sort(
+        (a, b) => a.turn - b.turn,
+      )
+      found.hasRecording = true
+      save(db)
+      return { id, url }
+    },
+
     async purchasePremium() {
       await wait()
       const db = load()
