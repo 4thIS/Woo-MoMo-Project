@@ -36,6 +36,9 @@ jobs:
             backend:
               - 'backend/**'
               - 'docs/API.md'
+              - 'frontend/src/prompts/**'
+              - 'frontend/src/utils/endDetector.ts'
+              - 'frontend/src/interviewers/index.ts'
             deploy:
               - 'deploy/**'
 

@@ -1,6 +1,14 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 MODELS_PREFIX = "/models/"
 HF_PREFIX = "https://huggingface.co/"
@@ -132,3 +140,187 @@ class QuestionSet(BaseModel):
         if any(not q.strip() for q in v):
             raise ValueError("questions must not be blank")
         return v
+
+
+# ── 계정 (2026-10-13, docs/API.md "계정·이력서·보관함·프리미엄") ──
+
+Tier = Literal["member", "premium"]
+
+
+class Profile(BaseModel):
+    name: str | None
+    age: int | None
+
+
+class Session(BaseModel):
+    userId: str
+    email: str
+    tier: Tier
+    tickets: int
+    isAdmin: bool
+    profile: Profile
+    createdAt: str
+
+
+class SignupBody(BaseModel):
+    # 기본값을 둬서 빠진 칸도 라우터가 정해진 오류 코드로 답하게 한다
+    email: str = ""
+    password: str = ""
+    name: str = ""
+    consent: bool | None = None
+
+
+class LoginBody(BaseModel):
+    email: str = ""
+    password: str = ""
+
+
+class ProfileBody(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    age: int | None = Field(default=None, ge=1, le=120)
+
+
+class EmailTakenResponse(BaseModel):
+    taken: bool
+
+
+# ── 내 이력서 ──
+
+ResumeKind = Literal["company", "admission"]
+ResumeTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+ResumeText = Annotated[str, Field(max_length=20_000)]
+
+
+class ResumeSlot(BaseModel):
+    id: str
+    kind: ResumeKind
+    title: str
+    text: str
+    updatedAt: str
+
+
+class ResumeCreate(BaseModel):
+    kind: ResumeKind
+    title: ResumeTitle
+    text: ResumeText
+
+
+class ResumeUpdate(BaseModel):
+    # kind는 바꿀 수 없다. 프론트 ResumeDraft가 kind를 실어 보내도 무시된다.
+    title: ResumeTitle
+    text: ResumeText
+
+
+# ── 보관함 ──
+
+Track = Literal["company", "admission"]
+ShortText = Annotated[str, Field(max_length=100)]
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "model"]
+    text: str = Field(max_length=20_000)
+    at: int | None = None
+
+
+class ReportItem(BaseModel):
+    question: str
+    answerSummary: str
+    feedback: str
+
+
+class RecordingRef(BaseModel):
+    turn: int
+    url: str
+
+
+class ArchiveEntry(BaseModel):
+    id: str
+    interviewerId: str
+    premium: bool
+    track: Track
+    startedAt: str
+    endedAt: str
+    questionCount: int
+    hasRecording: bool
+    field: str | None = None
+    job: str | None = None
+    name: str | None = None
+    age: int | None = None
+    university: str | None = None
+    department: str | None = None
+
+
+class ArchiveDetail(ArchiveEntry):
+    messages: list[ChatMessage]
+    report: list[ReportItem]
+    reportRaw: str
+    recordings: list[RecordingRef]
+
+
+class ArchiveCreate(BaseModel):
+    # 프론트 ArchiveDraft의 hasRecording·recordings는 서버가 정하므로 무시된다
+    interviewerId: str = Field(min_length=1, max_length=20)
+    premium: bool
+    track: Track
+    startedAt: AwareDatetime
+    endedAt: AwareDatetime
+    questionCount: int = Field(default=0, ge=0)
+    field: ShortText | None = None
+    job: ShortText | None = None
+    name: ShortText | None = None
+    age: int | None = Field(default=None, ge=1, le=120)
+    university: ShortText | None = None
+    department: ShortText | None = None
+    messages: list[ChatMessage] = Field(max_length=200)
+    report: list[ReportItem] = Field(max_length=50)
+    reportRaw: str = Field(max_length=100_000)
+    premiumInterviewId: str | None = None
+
+
+class ArchiveSaved(BaseModel):
+    entry: ArchiveEntry
+    evicted: list[str]
+
+
+# ── 벤 면접 ──
+
+NonBlank100 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
+class CompanyInputs(BaseModel):
+    field: NonBlank100
+    job: NonBlank100
+
+
+class AdmissionInputs(BaseModel):
+    name: NonBlank100
+    age: int = Field(ge=1, le=120)
+    university: NonBlank100
+    department: NonBlank100
+
+
+class InterviewStart(BaseModel):
+    track: Track
+    resumeText: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20_000)
+    ]
+    company: CompanyInputs | None = None
+    admission: AdmissionInputs | None = None
+
+
+class InterviewStarted(BaseModel):
+    interviewId: str
+    session: Session
+
+
+class TurnBody(BaseModel):
+    answer: str | None = None
+
+
+# ── 녹음 ──
+
+
+class RecordingCreated(BaseModel):
+    id: str
+    url: str

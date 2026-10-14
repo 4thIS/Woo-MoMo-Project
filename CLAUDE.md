@@ -6,7 +6,7 @@
 
 ## 프로젝트 개요
 
-- 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 이력서·대화·리포트가 사용자 기기를 떠나지 않는다. 포트폴리오 겸 공모전 데모.
+- 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 비로그인 사용자의 이력서·대화·리포트는 기기를 떠나지 않는다(로그인 사용자는 동의 후 서버 보관, 프리미엄 면접관 벤은 Claude API — "절대 하지 말 것" 8번). 포트폴리오 겸 공모전 데모.
 - 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/arm64)
 - 호스팅: https://github.com/4thIS/Woo-MoMo-Project
 - 배포: 개인 라즈베리파이 웹서버. 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
@@ -118,14 +118,14 @@ finetune: ...           # 파인튜닝 트랙
 5. `git push --force`, `git reset --hard` 금지
 6. 파괴적 명령 임의 실행 금지 — 막히면 이슈로 남김
 7. 모델 파일(`.litertlm`)·이력서 샘플 PDF 등 대용량/개인정보 파일 커밋 금지 (500KB 훅이 차단)
-8. 이력서 텍스트·대화 내용을 서버로 전송하는 코드 작성 금지 (프로젝트 핵심 가치)
+8. 개인정보는 등급으로 가른다(2026-10-13 개정, 공동 승인 — `docs/specs/backend/2026-10-13-accounts-backend-design.md` 1절). **비로그인** 사용자의 이력서·대화·리포트를 서버로 보내는 코드 작성 금지(기기를 떠나지 않는다). **로그인** 사용자의 데이터는 가입 때 받은 동의 범위(이력서 슬롯·보관함·녹음) 안에서만 서버에 저장한다. **프리미엄 면접관(벤)**의 대화는 외부 AI(Claude API)로 가므로 면접 시작 전에 알린다. 이 밖으로 사용자 데이터를 보내거나 비밀번호·이력서·대화 본문을 로그에 남기는 코드 작성 금지
 
 ## 문서 인덱스
 
 | 문서 | 내용 |
 |------|------|
 | `docs/superpowers/specs/2026-09-15-mock-interview-design.md` | 전체 설계서 (아키텍처·화면·LLM·배포·일정) |
-| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크 응답 형식 (백엔드 담당이 소유) |
+| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크·계정·이력서·보관함·프리미엄(벤)·녹음 (백엔드 담당이 소유) |
 | `docs/specs/{area}/`·`docs/plans/{area}/` | 영역별 설계서·작업지시서 (템플릿: `docs/specs/spec.template.md`, `docs/plans/plan.template.md`) |
 | `docs/demo-checklist.md` | 데모 리허설 수동 시나리오 |
 | `frontend/CLAUDE.md` | frontend 영역 규칙 |
