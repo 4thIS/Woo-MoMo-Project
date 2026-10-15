@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
@@ -45,6 +45,14 @@ const infoDone = computed(() => {
 const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
+const pickerBox = ref<HTMLElement | null>(null)
+/* 패널은 버튼 아래에 생겨 화면 밖에서 열리기 쉽다 — 열 때만 다 보이는 자리까지 내린다.
+   nearest라 이미 다 보이면 움직이지 않는다. 닫을 때는 보던 자리를 지킨다 */
+watch(pickerOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  pickerBox.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
 // 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
 const interviewerName = computed(
   () => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).displayName,
@@ -512,7 +520,9 @@ async function clearAndRetry() {
             도움말 다시 보기
           </button>
         </div>
-        <InterviewerPicker v-if="pickerOpen && !busy" @need-premium="modal.show('premium')" />
+        <div v-if="pickerOpen && !busy" ref="pickerBox">
+          <InterviewerPicker @need-premium="modal.show('premium')" />
+        </div>
         <div class="start-row">
           <ul class="mono checklist">
             <li>

@@ -461,6 +461,32 @@ describe('PrepareView — 면접관', () => {
     expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
     expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
   })
+  it('바꾸기를 누르면 고르기 패널이 다 보이게 스크롤한다 — 화면 밖에서 열리면 못 찾는다', async () => {
+    const into = vi.fn()
+    // jsdom에는 scrollIntoView가 없다
+    Element.prototype.scrollIntoView = into
+    const w = mountView()
+    expect(into).not.toHaveBeenCalled()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    expect(into).toHaveBeenCalled()
+    // 스크롤한 대상이 고르기 패널을 담은 상자여야 한다
+    const el = into.mock.instances[0] as HTMLElement
+    expect(el.contains(w.findComponent({ name: 'InterviewerPicker' }).element)).toBe(true)
+  })
+
+  it('닫을 때는 스크롤하지 않는다 — 보던 자리에서 움직이면 거슬린다', async () => {
+    const into = vi.fn()
+    Element.prototype.scrollIntoView = into
+    const w = mountView()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    into.mockClear()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    expect(into).not.toHaveBeenCalled()
+  })
+
   it('선택이 없으면 칩은 실제로 쓰일 기본 면접관 이름을 보인다', () => {
     const w = mountView()
     expect(w.find('[data-test="interviewer-chip"]').text()).toBe('면접관: 데이빗')

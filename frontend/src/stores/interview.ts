@@ -203,9 +203,10 @@ export const useInterviewStore = defineStore('interview', {
     },
 
     async start() {
+      // canStart가 트랙별로 필요한 칸을 이미 다 본다. 여기서 회사 전용 칸(field)을
+      // 또 보면 대입은 버튼만 켜지고 열리지 않는다
       if (
         !this.canStart ||
-        !this.profile.field ||
         starting ||
         this.generating ||
         this.speaking ||
@@ -219,14 +220,30 @@ export const useInterviewStore = defineStore('interview', {
         ivStore.stopPreview() // 미리 듣기가 면접관 목소리와 겹치지 않게
         const chosen = ivStore.current ?? interviewerById(DEFAULT_INTERVIEWER)!
         this.interviewerId = chosen.id
-        const prompt = buildSystemPrompt({
-          fieldLabel: FIELD_LABELS[this.profile.field],
-          job: this.profile.job,
+        const common = {
           resumeText: this.resumeText,
           fallbackQuestions: this.fallbackQuestions,
           override: model.manifest?.systemPromptOverride,
           persona: PERSONAS[this.sessionInterviewer.persona],
-        })
+        }
+        const p = this.profile
+        const prompt =
+          this.track === 'admission'
+            ? buildSystemPrompt({
+                ...common,
+                track: 'admission',
+                admission: {
+                  name: p.name,
+                  age: p.age ?? 0,
+                  university: p.university,
+                  department: p.department,
+                },
+              })
+            : buildSystemPrompt({
+                ...common,
+                fieldLabel: FIELD_LABELS[p.field as Field],
+                job: p.job,
+              })
         if (session) await session.dispose().catch(() => undefined)
         systemPrompt = prompt
         benId = null
