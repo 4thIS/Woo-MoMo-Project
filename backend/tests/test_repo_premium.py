@@ -39,8 +39,9 @@ def _tickets(conn, uid) -> int:
     return users.get_by_id(conn, uid).tickets
 
 
-def test_max_model_turns_is_15():
-    assert premium.MAX_MODEL_TURNS == 15
+def test_max_model_turns_is_9():
+    # 본질문 5 + 면접 전체 꼬리질문 3 + 끝맺음 1
+    assert premium.MAX_MODEL_TURNS == 9
 
 
 def test_start_spends_a_ticket_and_creates_a_row(path):

@@ -281,7 +281,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 
 본문 `{ "answer": "..." }`. 첫 요청은 본문 없이(또는 `{}`, `answer`는 무시됨) 보내 첫 질문을 받는다. 이후에는 `answer`가 필요하다.
 
-스트림 전 오류(JSON): `404 not_found`, `403 premium_required`, `409 interview_over`(끝났거나 면접관 응답 15번을 다 씀, 또는 이 면접의 Claude 호출 시도가 33번(`2 × 15 + 3`, 실패한 시도 포함)을 넘음), `422 missing_answer`(`field: "answer"`), `422 answer_too_long`(2,000자 초과, `field: "answer"`), `429 rate_limited`(사용자당 턴·리포트 요청 합쳐 분당 6회), `503 ben_unavailable`.
+스트림 전 오류(JSON): `404 not_found`, `403 premium_required`, `409 interview_over`(끝났거나 면접관 응답 9번을 다 씀, 또는 이 면접의 Claude 호출 시도가 21번(`2 × 9 + 3`, 실패한 시도 포함)을 넘음), `422 missing_answer`(`field: "answer"`), `422 answer_too_long`(2,000자 초과, `field: "answer"`), `429 rate_limited`(사용자당 턴·리포트 요청 합쳐 분당 6회), `503 ben_unavailable`.
 
 응답은 SSE다. 스트림 맨 앞에 주석 줄 `: ping`이 먼저 온다(Cloudflare 첫 바이트 100초 제한 대비). `:`로 시작하는 줄은 SSE 주석이므로 파서는 무시한다.
 
@@ -308,7 +308,7 @@ data: {"ended":false}
   ```
   `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 조사는 약 90초 안에 끝나지 않으면 포기하고 `ok: false`로 알린다(늦게 끝난 결과는 7일 캐시에만 들어간다). 브리핑은 면접 질문에만 쓰이고 리포트에는 쓰이지 않는다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
 
-- `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 15번). 다음 턴은 `409 interview_over`. 리포트를 부른다.
+- `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 9번 — 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1, 2026-10-15). 다음 턴은 `409 interview_over`. 리포트를 부른다.
 - Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.
 - SSE `error` 코드 `turn_conflict`: 같은 면접에 턴 요청이 겹쳐 뒤의 것을 기록하지 않음. 새로 고쳐 이어 가면 된다.
 - SSE `error` 코드 `server_error`: 서버 내부 오류. 그 턴은 기록되지 않았을 수 있으니 `claude_error`처럼 같은 요청으로 다시 시도한다.
@@ -317,7 +317,7 @@ SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `ref
 
 **3) 리포트 — POST /api/premium/interviews/{id}/report**
 
-본문 없음. 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 33번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
+본문 없음. 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 21번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
 SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 되고 서버가 원문을 보관한다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
 **이미 리포트를 받은(`done`) 면접에 다시 요청하면** Claude를 부르지 않고 보관한 원문을 그대로 다시 보낸다(`delta` 한 번 + `done`). 리포트 스트림이 끊겼거나 새로 고친 뒤 원문을 다시 받을 때 쓴다. 요청 수 제한(`429`)은 똑같이 센다.
 프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.

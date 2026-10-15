@@ -158,3 +158,10 @@ def test_bracket_only_name_falls_back_to_the_field_label():
     inputs = {**NAMED, "company": {**NAMED["company"], "name": "[ ]"}}
     rules = prompts.build_system("company", inputs)[0]["text"]
     assert 'IT 분야 기업의 채용 면접관입니다. 지원 직무는 "백엔드 개발자"입니다.' in rules
+
+
+def test_follow_ups_are_capped_at_3_for_the_whole_interview():
+    for track, inputs in (("company", COMPANY), ("admission", ADMISSION)):
+        text = prompts.build_system(track, inputs)[0]["text"]
+        assert f"3. {prompts.SHARP_FOLLOW_UP} {prompts.BEN_FOLLOW_UP_TOTAL}" in text
+    assert prompts.BEN_FOLLOW_UP_TOTAL == "면접 전체에서 꼬리질문은 모두 합쳐 최대 3개입니다."
