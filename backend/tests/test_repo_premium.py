@@ -199,3 +199,53 @@ def test_count_attempt_is_capped(path):
             assert premium.count_attempt(conn, interview_id=iid) == n
         with pytest.raises(premium.TooManyAttempts):
             premium.count_attempt(conn, interview_id=iid)
+
+
+def test_new_interview_has_no_briefing(path):
+    with db.connection(path) as conn:
+        uid = _premium_user(conn)
+        iid = _start(conn, uid)
+        got = premium.get_interview(conn, user_id=uid, interview_id=iid)
+    assert (got.briefing, got.briefing_status) == (None, "none")
+
+
+def test_start_with_pending_briefing_then_set(path):
+    with db.connection(path) as conn:
+        uid = _premium_user(conn)
+        iid = premium.start_interview(
+            conn,
+            user_id=uid,
+            track="company",
+            inputs=INPUTS,
+            created_at=T0,
+            day_start=DAY_START,
+            daily_limit=30,
+            briefing_status="pending",
+        )
+        assert (
+            premium.get_interview(conn, user_id=uid, interview_id=iid).briefing_status == "pending"
+        )
+        premium.set_briefing(conn, interview_id=iid, briefing="본문")
+        got = premium.get_interview(conn, user_id=uid, interview_id=iid)
+    assert (got.briefing, got.briefing_status) == ("본문", "ok")
+
+
+def test_set_briefing_none_is_failed_and_only_from_pending(path):
+    with db.connection(path) as conn:
+        uid = _premium_user(conn)
+        iid = premium.start_interview(
+            conn,
+            user_id=uid,
+            track="company",
+            inputs=INPUTS,
+            created_at=T0,
+            day_start=DAY_START,
+            daily_limit=30,
+            briefing_status="pending",
+        )
+        premium.set_briefing(conn, interview_id=iid, briefing=None)
+        premium.set_briefing(
+            conn, interview_id=iid, briefing="늦게 온 본문"
+        )  # pending이 아니면 무시
+        got = premium.get_interview(conn, user_id=uid, interview_id=iid)
+    assert (got.briefing, got.briefing_status) == (None, "failed")

@@ -1,6 +1,7 @@
 """벤의 Claude 호출 (spec 4.4). 라우터는 ClaudeClient만 알고, 테스트는 가짜를 넣는다."""
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 import anthropic
@@ -9,8 +10,18 @@ MODEL = "claude-sonnet-5-5"
 TURN_MAX_TOKENS = 4096
 REPORT_MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+RESEARCH_TIMEOUT = 60.0
+# 서버 쪽 검색 반복이 길어 pause_turn으로 멈추면 이어 받는다 — 무한 반복 방지 상한
+MAX_CONTINUATIONS = 2
+WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 
 Effort = Literal["low", "medium"]
+
+
+@dataclass(frozen=True)
+class ResearchResult:
+    text: str
+    sources: list[dict[str, str]]
 
 
 class ClaudeError(Exception):
@@ -30,6 +41,10 @@ class ClaudeClient(Protocol):
         effort: Effort,
         max_tokens: int,
     ) -> Iterator[str]: ...
+
+    def research(
+        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+    ) -> ResearchResult: ...
 
 
 class AnthropicClaude:
@@ -64,3 +79,56 @@ class AnthropicClaude:
             raise ClaudeError("claude_error") from exc
         if final.stop_reason == "refusal":
             raise ClaudeError("refused")
+
+    def research(
+        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+    ) -> ResearchResult:
+        """웹 검색 서버 도구로 조사한다. 본문은 text 블록, 출처는 검색 결과 블록에서 모은다."""
+        convo = list(messages)
+        texts: list[str] = []
+        # 첫 검색 전의 머리말 후보. 첫 server_tool_use가 오면 버리고,
+        # 검색이 한 번도 없으면 본문으로 남긴다. 상태는 pause_turn 이어 받기에도 이어진다.
+        preamble: list[str] = []
+        searched = False
+        sources: list[dict[str, str]] = []
+        seen: set[str] = set()
+        try:
+            for _ in range(MAX_CONTINUATIONS + 1):
+                # 재시도 끝: 90초 기한 안에서 조사가 여러 번 도는 것을 막는다
+                resp = self._sdk.with_options(max_retries=0).messages.create(
+                    model=MODEL,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=convo,
+                    tools=[WEB_SEARCH_TOOL],
+                    output_config={"effort": "medium"},
+                    extra_body={"fallbacks": "default"},
+                    extra_headers={"anthropic-beta": FALLBACK_BETA},
+                    timeout=RESEARCH_TIMEOUT,
+                )
+                if resp.stop_reason == "refusal":
+                    raise ClaudeError("refused")
+                for block in resp.content:
+                    if block.type == "text":
+                        (texts if searched else preamble).append(block.text)
+                        continue
+                    if block.type == "server_tool_use" and not searched:
+                        # 첫 검색 전 서술("검색해 보겠습니다")만 버린다
+                        preamble.clear()
+                        searched = True
+                    if block.type == "web_search_tool_result" and isinstance(block.content, list):
+                        # 검색 오류는 예외가 아니라 content가 오류 객체(리스트 아님)로 온다
+                        for result in block.content:
+                            url = getattr(result, "url", None)
+                            if url and url not in seen:
+                                seen.add(url)
+                                sources.append(
+                                    {"title": getattr(result, "title", "") or url, "url": url}
+                                )
+                if resp.stop_reason != "pause_turn":
+                    break
+                convo = [*convo, {"role": "assistant", "content": resp.content}]
+        except anthropic.APIError as exc:
+            raise ClaudeError("claude_error") from exc
+        texts.extend(preamble)  # 검색이 한 번도 없었다면 머리말도 본문이다
+        return ResearchResult(text="".join(texts), sources=sources)

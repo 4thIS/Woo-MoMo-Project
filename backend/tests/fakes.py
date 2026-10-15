@@ -3,7 +3,17 @@
 from collections.abc import Iterator
 from typing import Any
 
+from app.llm.claude import ResearchResult
+
 DEFAULT_REPLY = ["자기소개를 ", "해 주세요."]
+DEFAULT_BRIEFING = (
+    "토스(비바리퍼블리카)는 간편송금으로 시작해 결제·증권·은행으로 넓힌 금융 플랫폼이다. "
+    "최근 소식: 2026년 토스증권 해외주식 거래량이 늘었고, 토스페이먼츠가 오프라인 결제 단말을 냈다. "
+    "기술·제품: 코틀린·스프링 기반 마이크로서비스, 대용량 트래픽 결제 시스템, 내부 데이터 플랫폼을 운영한다. "
+    "인재상: 높은 자율과 책임, 빠른 실행, 사용자 문제를 숫자로 확인하는 사람을 찾는다. "
+    "백엔드 직무는 결제 안정성과 장애 대응 경험을 중요하게 본다."
+)
+DEFAULT_SOURCES = [{"title": "토스 기술 블로그", "url": "https://toss.tech"}]
 
 
 class FakeClock:
@@ -23,6 +33,8 @@ class FakeClaude:
     def __init__(self) -> None:
         self.replies: list[list[Any]] = []
         self.calls: list[dict[str, Any]] = []
+        self.research_results: list[Any] = []
+        self.research_calls: list[dict[str, Any]] = []
 
     def stream_text(
         self,
@@ -40,3 +52,18 @@ class FakeClaude:
             if isinstance(item, Exception):
                 raise item
             yield item
+
+    def research(
+        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+    ) -> ResearchResult:
+        self.research_calls.append(
+            {"system": system, "messages": messages, "max_tokens": max_tokens}
+        )
+        item = (
+            self.research_results.pop(0)
+            if self.research_results
+            else ResearchResult(text=DEFAULT_BRIEFING, sources=list(DEFAULT_SOURCES))
+        )
+        if isinstance(item, Exception):
+            raise item
+        return item
