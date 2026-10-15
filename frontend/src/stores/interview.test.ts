@@ -1271,6 +1271,61 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
     })
   })
 
+  it('회사명을 적으면 시작 요청에 실어 보낸다 — 비우면 보내지 않는다', async () => {
+    const s = await benStore()
+    s.setCompanyName('  토스(비바리퍼블리카)  ')
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      company: { field: 'it', job: '백엔드', name: '토스(비바리퍼블리카)' },
+    })
+    // 공백만 넣으면 아예 보내지 않는다 (이미 면접이 열려 start는 다시 안 되므로 묶음만 본다)
+    s.setCompanyName('   ')
+    expect(s.benRequest()).toMatchObject({ track: 'company' })
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('name')
+  })
+
+  it('조사 중이면 회사명과 함께 알리고, 끝나면 내린다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'researching' })
+      expect(useInterviewStore().briefing).toBe('researching')
+      onStatus?.({ phase: 'briefing', ok: true })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('토스')
+    await s.start()
+    expect(s.briefing).toBeNull() // 성공이면 아무 말도 남기지 않는다
+  })
+
+  it('reset은 회사명과 브리핑 표시를 지운다 — 다음 면접에 묻어 가면 안 된다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'briefing', ok: false })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('토스')
+    await s.start()
+    expect(s.briefing).toBe('failed')
+    await s.reset()
+    expect(s.briefing).toBeNull()
+    expect(s.profile.companyName).toBe('')
+  })
+
+  it('조사에 실패하면 한 줄 남긴다 — 면접은 그대로 이어진다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'briefing', ok: false })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('없는회사')
+    await s.start()
+    expect(s.briefing).toBe('failed')
+    expect(s.messages.at(-1)).toMatchObject({ role: 'model', text: '자기소개를 해 주세요.' })
+  })
+
   it('첫 질문은 답변 없이 받아 와 대화에 남는다', async () => {
     const s = await benStore()
     await s.start()

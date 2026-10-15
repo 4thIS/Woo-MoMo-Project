@@ -572,6 +572,51 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(w.find('[data-test=ad-name]').exists()).toBe(false)
   })
 
+  it('회사명 칸은 벤 + 회사일 때만 — 조사는 벤만 한다', async () => {
+    pick('m1')
+    const w = mountView()
+    expect(w.find('[data-test=company-name]').exists()).toBe(false)
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    await flushPromises()
+    expect(w.find('[data-test=company-name]').exists()).toBe(true)
+    // 벤이어도 대입이면 쓰지 않는다
+    useInterviewStore().setTrack('admission')
+    await flushPromises()
+    expect(w.find('[data-test=company-name]').exists()).toBe(false)
+  })
+
+  it('회사명은 선택 입력이다 — 비워도 시작을 막지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    vi.mocked(extractPdfText).mockResolvedValue('이력서 '.repeat(100))
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    await flushPromises()
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    interview.setField('it')
+    interview.setResume('cv.pdf', '가'.repeat(200))
+    await flushPromises()
+    expect(interview.profile.companyName).toBe('')
+    expect(interview.canStart).toBe(true)
+    await w.find('[data-test=company-name]').setValue('토스(비바리퍼블리카)')
+    expect(interview.profile.companyName).toBe('토스(비바리퍼블리카)')
+  })
+
+  it('벤이면 웹 검색을 쓴다고 시작 전에 알린다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').text()).toContain('웹을 검색')
+    useInterviewerStore().select('m1')
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').exists()).toBe(false)
+  })
+
   it('대입 면접관이면 다섯 칸 중 네 칸이 1단계에 나온다', () => {
     pick('f3')
     const w = mountView()

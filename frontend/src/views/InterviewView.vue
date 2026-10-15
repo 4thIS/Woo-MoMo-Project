@@ -113,6 +113,13 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
 
     <div class="dock right">
       <PixelWindow padding="sm" class="input-win">
+        <!-- 회사 브리핑(첫 턴만). 조사는 20~40초 걸려 가만히 두면 멈춘 것처럼 보인다 -->
+        <p v-if="s.briefing === 'researching'" class="mono note" data-test="briefing">
+          벤이 {{ s.profile.companyName || '회사' }}를 살펴보는 중…
+        </p>
+        <p v-else-if="s.briefing === 'failed'" class="mono note" data-test="briefing-failed">
+          회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요
+        </p>
         <p v-if="s.overLimit" class="mono note">
           면접관이 마무리하려 합니다. 면접 종료를 눌러 리포트를 받으세요.
         </p>
