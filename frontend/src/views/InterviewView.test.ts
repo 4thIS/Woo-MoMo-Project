@@ -263,3 +263,17 @@ describe('면접장 — 방이 곧 화면이다', () => {
     expect(w.findComponent({ name: 'HintBar' }).exists()).toBe(true)
   })
 })
+
+describe('면접장 — 알림이 답변 버튼을 밀어내지 않는다', () => {
+  const css = () => InterviewViewSource.split('<style')[1] ?? ''
+
+  it('알림은 한 상자에 모여 스스로 접힌다 — 알림마다 판 전체를 아래로 밀면 버튼이 카드를 벗어난다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', briefing: 'researching', recordingOn: true })
+    const w = mount(InterviewView)
+    expect(w.find('.notes [data-test="rec"]').exists()).toBe(true)
+    expect(w.find('.notes [data-test="briefing"]').exists()).toBe(true)
+    expect(css()).toMatch(/\.notes\s*\{[^}]*max-height:/)
+    expect(css()).toMatch(/\.notes\s*\{[^}]*overflow-y:\s*auto/)
+  })
+})

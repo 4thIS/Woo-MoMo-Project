@@ -230,7 +230,10 @@ const micTitle = computed(() =>
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  height: 100%;
+  /* 카드 높이의 100%가 아니라 '남은 자리'다 — 100%는 위에 뜬 알림을 못 보고
+     그만큼 아래로 넘쳐, 전송·말하기 버튼이 카드 밖으로 나간다 */
+  flex: 1;
+  min-height: 0;
 }
 .timer {
   display: flex;
@@ -262,7 +265,9 @@ const micTitle = computed(() =>
 }
 .ta-wrap {
   position: relative;
-  flex: 1;
+  /* basis가 0%면 카드는 입력칸을 0으로 보고 자라지 않는다. 72px은 평상시 카드 높이
+     안에 들어오는 값 — 자리가 남으면 늘고(평상시), 모자라면 줄어든다 */
+  flex: 1 1 72px;
   /* flex 항목은 기본적으로 내용보다 작아지지 않는다 — 없으면 창이 좁을 때 버튼이 창 밖으로 밀린다 */
   min-height: 0;
 }
