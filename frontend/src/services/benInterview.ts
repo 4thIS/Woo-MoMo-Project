@@ -82,7 +82,8 @@ function codeOf(raw: unknown): BenErrorCode {
 export interface StartCompany {
   track: Extract<Track, 'company'>
   resumeText: string
-  company: { field: string; job: string }
+  /** `name`(선택, 2026-10-15): 있으면 첫 턴에 서버가 회사명·직무로 웹을 뒤져 브리핑을 만든다 */
+  company: { field: string; job: string; name?: string }
 }
 export interface StartAdmission {
   track: Extract<Track, 'admission'>
@@ -118,10 +119,18 @@ export async function startInterview(req: StartRequest): Promise<Started> {
   return body as Started
 }
 
+/** 회사 브리핑 진행 상황 (`docs/API.md`, 회사명이 있는 면접의 첫 턴만).
+ *  `researching`은 조사 시작(캐시가 있으면 생략), `briefing`은 결과. 모르는 phase도 그대로 넘긴다 */
+export interface BenStatus {
+  phase: string
+  ok?: boolean
+}
+
 /** SSE 본문을 끝까지 읽는다. `done`의 data를 돌려주고, error 이벤트는 던진다 */
 async function readStream(
   res: Response,
   onDelta: (text: string) => void,
+  onStatus?: (s: BenStatus) => void,
 ): Promise<Record<string, unknown>> {
   if (!res.ok) {
     const body = await res.json().catch(() => undefined)
@@ -136,6 +145,9 @@ async function readStream(
     if (e.event === 'delta') {
       const text = (JSON.parse(e.data) as { text?: unknown }).text
       if (typeof text === 'string') onDelta(text)
+    } else if (e.event === 'status') {
+      const s = JSON.parse(e.data || '{}') as BenStatus
+      if (typeof s.phase === 'string') onStatus?.(s)
     } else if (e.event === 'done') {
       done = JSON.parse(e.data || '{}') as Record<string, unknown>
     } else if (e.event === 'error') {
@@ -170,13 +182,14 @@ export async function turnStream(
   answer: string | undefined,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  onStatus?: (s: BenStatus) => void,
 ): Promise<{ ended: boolean }> {
   const res = await post(
     `${BASE}/${interviewId}/turns`,
     answer === undefined ? {} : { answer },
     signal,
   )
-  const done = await readStream(res, onDelta)
+  const done = await readStream(res, onDelta, onStatus)
   return { ended: done.ended === true }
 }
 

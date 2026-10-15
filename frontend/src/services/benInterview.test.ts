@@ -97,6 +97,75 @@ describe('turnStream', () => {
     expect((await turnStream('pi_1', '네', () => {})).ended).toBe(true)
   })
 
+  it('회사 브리핑 status 이벤트를 흘린다 — 조사 중 표시에 쓴다', async () => {
+    next = [
+      {
+        sse: [
+          ': ping\n\n',
+          'event: status\ndata: {"phase":"researching"}\n\n',
+          'event: status\ndata: {"phase":"briefing","ok":true}\n\n',
+          'event: delta\ndata: {"text":"자기소개를 해 주세요."}\n\n',
+          'event: done\ndata: {"ended":false}\n\n',
+        ],
+      },
+    ]
+    const seen: unknown[] = []
+    const got: string[] = []
+    await turnStream(
+      'pi_1',
+      undefined,
+      (t) => got.push(t),
+      undefined,
+      (st) => seen.push(st),
+    )
+    expect(seen).toEqual([{ phase: 'researching' }, { phase: 'briefing', ok: true }])
+    expect(got.join('')).toBe('자기소개를 해 주세요.')
+  })
+
+  it('조사에 실패하면 ok:false로 온다 — 면접은 그대로 이어진다', async () => {
+    next = [
+      {
+        sse: [
+          'event: status\ndata: {"phase":"briefing","ok":false}\n\n',
+          'event: delta\ndata: {"text":"자기소개를 해 주세요."}\n\n',
+          'event: done\ndata: {"ended":false}\n\n',
+        ],
+      },
+    ]
+    const seen: unknown[] = []
+    const r = await turnStream(
+      'pi_1',
+      undefined,
+      () => {},
+      undefined,
+      (st) => seen.push(st),
+    )
+    expect(seen).toEqual([{ phase: 'briefing', ok: false }])
+    expect(r.ended).toBe(false)
+  })
+
+  it('모르는 status는 무시하고 이어 간다 — 계약이 늘어도 깨지지 않는다', async () => {
+    next = [
+      {
+        sse: [
+          'event: status\ndata: {"phase":"무언가새것"}\n\n',
+          'event: done\ndata: {"ended":false}\n\n',
+        ],
+      },
+    ]
+    const seen: unknown[] = []
+    await expect(
+      turnStream(
+        'pi_1',
+        undefined,
+        () => {},
+        undefined,
+        (st) => seen.push(st),
+      ),
+    ).resolves.toEqual({ ended: false })
+    expect(seen).toEqual([{ phase: '무언가새것' }])
+  })
+
   it('스트림 전 오류는 JSON이다 — 409면 면접이 끝난 것', async () => {
     next = [{ status: 409, json: { error: 'interview_over' } }]
     const e = await turnStream('pi_1', '네', () => {}).catch((x) => x)

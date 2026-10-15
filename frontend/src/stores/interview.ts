@@ -97,6 +97,8 @@ export const useInterviewStore = defineStore('interview', {
     profile: {
       field: null as Field | null,
       job: '',
+      /** 벤 + 회사에서만 쓰는 선택 입력. 있으면 서버가 웹을 뒤져 브리핑을 만든다 */
+      companyName: '',
       name: '',
       age: null as number | null,
       university: '',
@@ -116,6 +118,9 @@ export const useInterviewStore = defineStore('interview', {
     ttsWarning: null as string | null,
     generating: false,
     genError: null as string | null,
+    /** 벤 회사 브리핑(첫 턴만). `researching`이면 조사 중, `failed`면 못 찾고 그냥 간다.
+     *  성공하면 보여 줄 것이 없으므로 다시 null로 돌아간다 */
+    briefing: null as 'researching' | 'failed' | null,
     reactPending: false,
     ended: false,
     tokenCount: 0,
@@ -186,6 +191,10 @@ export const useInterviewStore = defineStore('interview', {
     },
     setJob(job: string) {
       this.profile.job = job.slice(0, 40)
+    },
+    /** 벤 회사 브리핑용. 서버가 1~100자를 받으므로 여기서 자른다 */
+    setCompanyName(name: string) {
+      this.profile.companyName = name.slice(0, 100)
     },
     /** 벤에서 고른 트랙. 다른 면접관으로 바꾸면 비운다 */
     setTrack(t: Track | null) {
@@ -325,6 +334,11 @@ export const useInterviewStore = defineStore('interview', {
               userText === KICKOFF ? undefined : userText,
               onDelta,
               abortCtl.signal,
+              (s) => {
+                // 조사는 20~40초 걸린다 — 그동안 가만히 두면 멈춘 것처럼 보인다
+                if (s.phase === 'researching') this.briefing = 'researching'
+                else if (s.phase === 'briefing') this.briefing = s.ok === false ? 'failed' : null
+              },
             )
             serverEnded = r.ended
           } else if (session) {
@@ -580,10 +594,12 @@ export const useInterviewStore = defineStore('interview', {
             department: p.department,
           },
         }
+      const name = p.companyName.trim()
       return {
         track: 'company',
         resumeText: this.resumeText,
-        company: { field: p.field ?? '', job: p.job },
+        // 비었으면 아예 보내지 않는다 — 서버가 "없는 것"으로 친다
+        company: { field: p.field ?? '', job: p.job, ...(name ? { name } : {}) },
       }
     },
 
@@ -639,7 +655,16 @@ export const useInterviewStore = defineStore('interview', {
       this.report = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = { field: null, job: '', name: '', age: null, university: '', department: '' }
+      this.profile = {
+        field: null,
+        job: '',
+        companyName: '',
+        name: '',
+        age: null,
+        university: '',
+        department: '',
+      }
+      this.briefing = null
       this.chosenTrack = null
       this.resumeText = ''
       this.resumeName = null

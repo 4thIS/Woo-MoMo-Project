@@ -46,12 +46,15 @@ const hints = useHintsStore()
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 const pickerBox = ref<HTMLElement | null>(null)
+/* 회사 브리핑은 벤(프리미엄)만 한다 — 무료 면접관은 서버를 거치지 않고, 대입은 쓰지 않는다 */
+const benCompany = computed(() => Boolean(iv.current?.premium) && interview.track === 'company')
 /* 패널은 버튼 아래에 생겨 화면 밖에서 열리기 쉽다 — 열 때만 다 보이는 자리까지 내린다.
    nearest라 이미 다 보이면 움직이지 않는다. 닫을 때는 보던 자리를 지킨다 */
 watch(pickerOpen, async (open) => {
   if (!open) return
   await nextTick()
-  pickerBox.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  // jsdom에는 scrollIntoView가 없다 — 없으면 그냥 넘어간다
+  pickerBox.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
 })
 // 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
 const interviewerName = computed(
@@ -427,6 +430,25 @@ async function clearAndRetry() {
                     관리 — 입력을 마치면 이력서 단계로 넘어갑니다</span
                   >
                 </div>
+                <!-- 회사명은 벤만 쓴다(서버가 웹을 뒤져 브리핑을 만든다). 선택 입력이라
+                     비워도 시작을 막지 않는다 — 체크리스트에도 넣지 않는다 -->
+                <div v-if="benCompany" class="field">
+                  <label class="mono label" for="company-name"
+                    >지원 회사 <span class="dim">(선택)</span></label
+                  >
+                  <input
+                    id="company-name"
+                    data-test="company-name"
+                    class="input"
+                    :value="interview.profile.companyName"
+                    maxlength="100"
+                    placeholder="예: 삼성전자 DS부문(반도체), 토스(비바리퍼블리카)"
+                    @input="interview.setCompanyName(($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="mono hint"
+                    >회사 이름이 비슷한 곳이 많으면 사업부·서비스명까지 적어 주세요</span
+                  >
+                </div>
               </template>
             </div>
 
@@ -523,6 +545,14 @@ async function clearAndRetry() {
         <div v-if="pickerOpen && !busy" ref="pickerBox">
           <InterviewerPicker @need-premium="modal.show('premium')" />
         </div>
+        <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
+             웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
+        <p v-if="iv.current?.premium" class="mono notice" data-test="ben-notice">
+          벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
+          <template v-if="interview.track === 'company'">
+            회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
+          </template>
+        </p>
         <div class="start-row">
           <ul class="mono checklist">
             <li>
@@ -745,6 +775,11 @@ async function clearAndRetry() {
   align-items: center;
   gap: var(--sp-3);
   margin-bottom: var(--sp-3);
+}
+.notice {
+  margin: 0 0 var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-label);
 }
 .start-row {
   display: flex;

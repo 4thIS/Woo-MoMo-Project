@@ -208,6 +208,30 @@ describe('InterviewView — 녹음 표시', () => {
   })
 })
 
+describe('InterviewView — 회사 브리핑', () => {
+  it('조사 중이면 회사명과 함께 알린다 — 20~40초 동안 멈춘 것처럼 보이면 안 된다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', briefing: 'researching' })
+    s.setCompanyName('토스(비바리퍼블리카)')
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing"]').text()).toContain('토스(비바리퍼블리카)')
+  })
+
+  it('조사에 실패하면 이력서 중심으로 간다고 한 줄 알린다', () => {
+    useInterviewStore().$patch({ phase: 'interview', briefing: 'failed' })
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing-failed"]').text()).toContain('이력서 중심')
+    expect(w.find('[data-test="briefing"]').exists()).toBe(false)
+  })
+
+  it('브리핑이 없으면 아무 말도 하지 않는다 — 회사명을 안 적은 사람에게는 보이지 않는다', () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing"]').exists()).toBe(false)
+    expect(w.find('[data-test="briefing-failed"]').exists()).toBe(false)
+  })
+})
+
 describe('면접장 — 방이 곧 화면이다', () => {
   const css = () => InterviewViewSource.split('<style')[1] ?? ''
 
