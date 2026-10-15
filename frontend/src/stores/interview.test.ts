@@ -876,6 +876,34 @@ describe('interview store — 트랙별 입력', () => {
     expect(s.canStart).toBe(true)
   })
 
+  it('대입은 칸을 다 채우면 실제로 면접이 열린다 — 버튼만 켜지고 안 열리면 안 된다', async () => {
+    const sess = fakeSession(['자기소개를 해주세요.'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.canStart).toBe(true)
+    await s.start()
+    expect(s.phase).toBe('interview')
+  })
+
+  it('대입 프롬프트는 학교·학과·이름을 담고 자기소개서라고 부른다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['자기소개를 해주세요.']))
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    await s.start()
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).toContain('한국대 컴퓨터공학과')
+    expect(prompt).toContain('홍길동')
+    expect(prompt).toContain('자기소개서')
+    expect(prompt).not.toContain('분야 기업의 채용 면접관') // 회사용 문구가 새면 안 된다
+  })
+
   it('면접관을 바꿔 트랙이 바뀌면 앞 트랙의 입력은 쓰지 않는다', () => {
     const s = useInterviewStore()
     ready()
@@ -1221,6 +1249,25 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
     expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
       track: 'company',
       company: { field: 'it', job: '백엔드' },
+    })
+  })
+
+  it('벤의 대입 면접도 열린다 — 대입은 분야 칸을 쓰지 않는다', async () => {
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    useInterviewerStore().select('m2')
+    const s = useInterviewStore()
+    s.setTrack('admission')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.profile.field).toBeNull() // 대입은 분야를 고르는 칸이 없다
+    expect(s.canStart).toBe(true)
+    await s.start()
+    expect(s.phase).toBe('interview')
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      track: 'admission',
+      admission: { name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' },
     })
   })
 
