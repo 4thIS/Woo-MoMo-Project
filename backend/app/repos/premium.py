@@ -8,7 +8,8 @@ from typing import Any
 from app.db import transaction
 from app.ids import new_id
 
-MAX_MODEL_TURNS = 15
+# 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1. 모델이 규칙을 넘겨도 서버가 여기서 끊는다
+MAX_MODEL_TURNS = 9
 # 면접 하나의 Claude 호출 시도(턴·리포트, 실패 포함) 상한 — 재시도 반복으로 비용이 불지 않게
 MAX_ATTEMPTS = 2 * MAX_MODEL_TURNS + 3
 
@@ -38,7 +39,7 @@ class DailyLimitReached(Exception):
 
 
 class TurnConflict(Exception):
-    """다른 요청이 먼저 턴을 기록했거나, 면접이 이미 끝났거나, 15번을 채웠다."""
+    """다른 요청이 먼저 턴을 기록했거나, 면접이 이미 끝났거나, 상한(MAX_MODEL_TURNS)을 채웠다."""
 
 
 def _interview(row: sqlite3.Row) -> PremiumInterview:

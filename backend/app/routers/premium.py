@@ -215,7 +215,7 @@ def _stream(events: Iterator[str]) -> StreamingResponse:
 
 
 def is_over(interview: PremiumInterview) -> bool:
-    """리포트까지 받았거나, 면접관 응답 15번이거나, 마지막 응답이 종료 문장이면 끝."""
+    """리포트까지 받았거나, 면접관 응답 상한(9번)이거나, 마지막 응답이 종료 문장이면 끝."""
     if interview.status == "done" or interview.model_turns >= MAX_MODEL_TURNS:
         return True
     last = interview.messages[-1] if interview.messages else None

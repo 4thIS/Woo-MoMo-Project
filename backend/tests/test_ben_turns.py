@@ -99,16 +99,16 @@ def test_end_phrase_ends_the_interview(client, fake_claude):
     assert res.json() == {"error": "interview_over"}
 
 
-def test_at_most_15_interviewer_turns(client, clock):
+def test_at_most_9_interviewer_turns(client, clock):
     iid = start_ben(client)
     last = None
-    for i in range(15):
+    for i in range(9):
         clock.advance(11)  # 벤 요청 제한(분당 6회) 안에서
         res = _turn(client, iid, answer=None if i == 0 else f"답변 {i}")
         last = sse_events(res.text)[-1]
     assert last == ("done", {"ended": True})
     clock.advance(11)
-    assert _turn(client, iid, answer="16번째").json() == {"error": "interview_over"}
+    assert _turn(client, iid, answer="10번째").json() == {"error": "interview_over"}
 
 
 def test_other_users_interview_is_404(client, settings):
