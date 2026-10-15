@@ -29,7 +29,9 @@ main() {
   local images before after
   images="$(docker compose config --images)"
   before="$(image_ids "$images")"
-  docker compose pull -q
+  # 진행 표시는 바뀐 게 없어도 매번 찍히므로 실패할 때만 남긴다
+  local out
+  out="$(docker compose pull -q 2>&1)" || { echo "$out"; return 1; }
   after="$(image_ids "$images")"
   if [ "$before" != "$after" ]; then
     echo "이미지 갱신: $(echo "$images" | tr '\n' ' ')"
