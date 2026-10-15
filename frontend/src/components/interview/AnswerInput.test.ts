@@ -9,6 +9,7 @@ vi.mock('@/services/speech', () => ({
 }))
 import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
 import AnswerInput, { SILENCE_MS } from './AnswerInput.vue'
+import AnswerInputSource from './AnswerInput.vue?raw'
 
 beforeEach(() => vi.mocked(speechSupported).mockReturnValue(false))
 
@@ -269,5 +270,15 @@ describe('AnswerInput 답변 타이머(60초 게이지)', () => {
     await w.find('textarea').setValue('늦은 답')
     await w.find('[data-test="send"]').trigger('click')
     expect(w.emitted('send')?.[0]).toEqual(['늦은 답'])
+  })
+})
+
+describe('AnswerInput — 버튼이 카드 밖으로 나가지 않는다', () => {
+  const css = () => AnswerInputSource.split('<style')[1] ?? ''
+
+  it('판은 남은 자리만 차지한다 — height: 100%는 위쪽 알림을 못 보고 그만큼 넘친다', () => {
+    expect(css()).not.toMatch(/\.input-panel\s*\{[^}]*height:\s*100%/)
+    expect(css()).toMatch(/\.input-panel\s*\{[^}]*flex:\s*1/)
+    expect(css()).toMatch(/\.input-panel\s*\{[^}]*min-height:\s*0/)
   })
 })
