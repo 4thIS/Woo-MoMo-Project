@@ -5,21 +5,23 @@ import time
 from collections.abc import Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from app import db
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
-from app.llm import prompts
+from app.llm import delivery, prompts
 from app.llm.claude import REPORT_MAX_TOKENS, TURN_MAX_TOKENS, ClaudeClient, ClaudeError
 from app.presenters import to_session
 from app.repos import briefings, premium, users
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
-from app.schemas import InterviewStart, InterviewStarted, Session, TurnBody
+from app.schemas import InterviewStart, InterviewStarted, ReportBody, Session, TurnBody
 from app.security import RateLimiter
 from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
@@ -285,9 +287,38 @@ def take_turn(
     return _stream(events())
 
 
+def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
+    """리포트 본문의 전달력 측정을 검증해 프롬프트 블록으로. 없으면 None(지금과 같음)."""
+    try:
+        parsed = ReportBody.model_validate(body if body is not None else {})
+    except ValidationError:
+        raise ApiError(422, "invalid", field="delivery") from None
+    answers = sum(1 for m in interview.messages if m["role"] == "user")
+    if any(m.answer > answers for m in parsed.delivery):
+        raise ApiError(422, "invalid", field="delivery")
+    return delivery.render(
+        [
+            delivery.AnswerMetrics(
+                answer=m.answer,
+                speech_sec=m.speechSec,
+                syllables=m.syllables,
+                long_pauses=m.longPauses,
+                longest_pause_sec=m.longestPauseSec,
+                first_word_sec=m.firstWordSec,
+                filler_level=m.fillerLevel,
+            )
+            for m in parsed.delivery
+        ]
+    )
+
+
 @router.post("/premium/interviews/{interview_id}/report")
 def make_report(
-    interview_id: str, user: PremiumUser, conn: Db, request: Request
+    interview_id: str,
+    user: PremiumUser,
+    conn: Db,
+    request: Request,
+    body: Any = Body(default=None),  # noqa: B008
 ) -> StreamingResponse:
     _ben_rate_limit(request, user)
     interview = _owned(conn, user, interview_id)
@@ -304,10 +335,11 @@ def make_report(
         return _stream(replay())
     if interview.model_turns == 0:
         raise ApiError(409, "interview_not_started")
+    block = _delivery_block(body, interview)
     claude = _claude(request)
     _count_attempt(conn, interview)
     system = prompts.build_system(interview.track, interview.inputs)
-    messages = prompts.report_messages(interview.messages)
+    messages = prompts.report_messages(interview.messages, block)
     db_path = request.app.state.settings.db_path
 
     def events() -> Iterator[str]:

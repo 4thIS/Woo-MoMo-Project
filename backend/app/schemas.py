@@ -1,12 +1,14 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     StringConstraints,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -227,6 +229,38 @@ class ReportItem(BaseModel):
     question: str
     answerSummary: str
     feedback: str
+    # 벤 전달력 피드백(2026-10-16). 없으면 칸 자체를 내보내지 않는다 — 예전 기록과 같은 모양
+    delivery: str | None = Field(default=None, max_length=2000)
+
+    @model_serializer(mode="wrap")
+    def _omit_missing_delivery(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("delivery") is None:
+            data.pop("delivery", None)
+        return data
+
+
+class DeliveryMetric(BaseModel):
+    """브라우저가 잰 답변 하나의 전달력(spec 2026-10-16 2.1). 숫자만."""
+
+    answer: int = Field(ge=1, le=8)
+    speechSec: float = Field(ge=0, le=600)
+    syllables: int = Field(ge=0, le=5000)
+    longPauses: int = Field(ge=0, le=200)
+    longestPauseSec: float = Field(ge=0, le=600)
+    firstWordSec: float = Field(ge=0, le=600)
+    fillerLevel: Literal["low", "normal", "high"] | None = None
+
+
+class ReportBody(BaseModel):
+    delivery: list[DeliveryMetric] = Field(default_factory=list, max_length=8)
+
+    @field_validator("delivery")
+    @classmethod
+    def _answers_are_unique(cls, v: list[DeliveryMetric]) -> list[DeliveryMetric]:
+        if len({m.answer for m in v}) != len(v):
+            raise ValueError("duplicate answer")
+        return v
 
 
 class RecordingRef(BaseModel):

@@ -191,3 +191,20 @@ def test_archive_body_at_the_limits_is_accepted(client):
         reportRaw="x" * 100_000,
     )
     assert client.post(URL, json=body).status_code == 201
+
+
+def test_report_delivery_round_trips_and_is_absent_when_missing(client):
+    signup(client)
+    item = {"question": "q", "answerSummary": "a", "feedback": "f"}
+    sent = archive_body(report=[{**item, "delivery": "쉼이 잦았습니다."}, item])
+    aid = client.post(URL, json=sent).json()["entry"]["id"]
+    detail = client.get(f"{URL}/{aid}").json()
+    assert detail["report"] == [{**item, "delivery": "쉼이 잦았습니다."}, item]
+    assert "delivery" not in detail["report"][1]
+
+
+def test_report_delivery_is_at_most_2000_chars(client):
+    signup(client)
+    item = {"question": "q", "answerSummary": "a", "feedback": "f", "delivery": "가" * 2001}
+    res = client.post(URL, json=archive_body(report=[item]))
+    assert res.status_code == 422
