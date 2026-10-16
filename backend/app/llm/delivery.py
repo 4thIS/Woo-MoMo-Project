@@ -60,7 +60,7 @@ def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
     first = "보통" if m.first_word_sec <= FIRST_WORD_MAX else "망설임 긺"
     parts = [
         f"분당 {spm}음절({_speed(spm)})",
-        f"2초 이상 쉼 {m.long_pauses}회·말한 1분당 {rate:.1f}회({_pause(rate)})",
+        f"2초 이상 쉼 {m.long_pauses}회·말한 1분당 {rate:.1f}회({_pause(round(rate, 1))})",
         f"가장 긴 쉼 {m.longest_pause_sec:.1f}초",
         f"첫마디까지 {m.first_word_sec:.1f}초({first})",
     ]
@@ -72,7 +72,7 @@ def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
         if _far(speed_ratio):
             notes.append(f"말 속도 {speed_ratio:.1f}배")
         base_rate = _pause_rate(base)
-        if base_rate > 0 and _far(rate / base_rate):
+        if base_rate > 0 and rate > 0 and _far(rate / base_rate):
             notes.append(f"쉼 {rate / base_rate:.1f}배")
         if notes:
             parts.append("기준 대비 " + "·".join(notes))
@@ -87,7 +87,7 @@ def render(metrics: list[AnswerMetrics]) -> str | None:
     first = ordered[0]
     base = (
         first
-        if first.answer == 1 and first.speech_sec >= MIN_SPEECH_SEC and first.syllables > 0
+        if first.answer == 1 and first.speech_sec >= MIN_SPEECH_SEC and _per_minute(first) > 0
         else None
     )
     return "\n".join(["[답변별 전달력 측정]", *(_line(m, base) for m in ordered)])

@@ -71,3 +71,21 @@ def test_no_baseline_when_answer_1_missing_or_short_or_zero_pauses():
 def test_lines_are_sorted_by_answer():
     lines = render([m(3), m(1)]).splitlines()
     assert lines[1].startswith("답변 1:") and lines[2].startswith("답변 3:")
+
+
+def test_baseline_that_rounds_to_zero_speed_is_not_used():
+    # 600초에 4음절 → 분당 0음절로 반올림. 0으로 나누지 않고 기준 비교만 생략한다.
+    text = render([m(1, speech=600.0, syl=4), m(2)])
+    assert "기준 대비" not in text
+
+
+def test_pause_label_agrees_with_the_displayed_rate():
+    # 26회 / 25분 = 1.04 → 표시 1.0회이므로 라벨도 "적음"
+    line = render([m(1, speech=1500.0, syl=7500, pauses=26)]).splitlines()[1]
+    assert "말한 1분당 1.0회(적음)" in line
+
+
+def test_zero_pause_answer_has_no_pause_ratio_note():
+    lines = render([m(1), m(2, pauses=0)]).splitlines()
+    assert "쉼 0.0배" not in lines[2]
+    assert "기준 대비" not in lines[2]

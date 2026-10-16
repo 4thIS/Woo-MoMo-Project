@@ -218,3 +218,35 @@ def test_done_report_ignores_delivery(client, fake_claude):
     res = client.post(f"/api/premium/interviews/{iid}/report", json={"delivery": [METRIC]})
     assert "".join(d["text"] for e, d in sse_events(res.text) if e == "delta") == REPORT_RAW
     assert len(fake_claude.calls) == calls
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"answer": 0},
+        {"longPauses": 201},
+        {"firstWordSec": 601},
+    ],
+)
+def test_out_of_range_metric_is_422_delivery(client, fake_claude, bad):
+    iid = start_ben(client)
+    _answered(client, iid, 2)
+    res = client.post(
+        f"/api/premium/interviews/{iid}/report", json={"delivery": [{**METRIC, **bad}]}
+    )
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "delivery"}
+
+
+def test_null_filler_level_is_accepted_without_filler_text(client, fake_claude):
+    iid = start_ben(client)
+    _answered(client, iid, 2)
+    fake_claude.replies = [[REPORT_RAW]]
+    res = client.post(
+        f"/api/premium/interviews/{iid}/report",
+        json={"delivery": [{**METRIC, "fillerLevel": None}]},
+    )
+    assert res.status_code == 200
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    block = content.split("[답변별 전달력 측정]", 1)[1]
+    assert "군말" not in block

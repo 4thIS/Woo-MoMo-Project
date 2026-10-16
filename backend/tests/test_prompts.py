@@ -183,3 +183,6 @@ def test_report_messages_append_delivery_after_the_instruction():
     }
     assert '"delivery"' in prompts.DELIVERY_INSTRUCTION
     assert "경향" in prompts.DELIVERY_INSTRUCTION
+    assert prompts.KICKOFF in prompts.DELIVERY_INSTRUCTION
+    assert "답변 1은 자기소개에 대한 답변" in prompts.DELIVERY_INSTRUCTION
+    assert "JSON 배열 하나뿐이며, delivery 값은 문자열입니다." in prompts.DELIVERY_INSTRUCTION

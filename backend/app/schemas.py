@@ -232,6 +232,7 @@ class ReportItem(BaseModel):
     # 벤 전달력 피드백(2026-10-16). 없으면 칸 자체를 내보내지 않는다 — 예전 기록과 같은 모양
     delivery: str | None = Field(default=None, max_length=2000)
 
+    # delivery가 없으면 키를 뺀다. 부작용: 직렬화 JSON 스키마(OpenAPI)가 일반형이 된다(런타임 무관).
     @model_serializer(mode="wrap")
     def _omit_missing_delivery(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data = handler(self)

@@ -97,8 +97,8 @@
 |---|---|---|
 | `POST /api/premium/interviews/{id}/report` 본문 `delivery` | public(계약) | 2.1 |
 | 리포트 문항 `delivery` 칸 | public(계약) | 2.3, 2.4 |
-| `delivery.judge(metrics: list[AnswerMetrics]) -> list[AnswerJudgement]` | internal | 2.2. 순수 함수 |
-| `delivery.render(judgements) -> str` | internal | 프롬프트용 측정 블록 문자열 |
+| `delivery.AnswerMetrics` (frozen dataclass) | internal | 답변 1개의 측정값 |
+| `delivery.render(metrics: list[AnswerMetrics]) -> str \| None` | internal | 2.2. 판정까지 해서 프롬프트용 측정 블록을 만든다(순수 함수, 비면 None) |
 | `prompts.report_messages(messages, delivery_block: str \| None = None)` | internal | 2.3. None이면 지금과 동일 |
 
 ## 5. 영역별 영향
