@@ -193,12 +193,34 @@ export async function turnStream(
   return { ended: done.ended === true }
 }
 
-/** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다 */
+/** 브라우저가 잰 답변 하나의 전달력 (`docs/API.md` 리포트 본문, 2026-10-16). **숫자만** 간다 */
+export interface DeliveryMetric {
+  /** 몇 번째 지원자 답변인지 (1부터) */
+  answer: number
+  speechSec: number
+  syllables: number
+  longPauses: number
+  longestPauseSec: number
+  firstWordSec: number
+  fillerLevel: 'low' | 'normal' | 'high' | null
+}
+
+/** 서버가 받는 상한. 넘겨 보내면 통째로 422가 되므로 앞쪽만 보낸다 */
+export const DELIVERY_MAX = 8
+
+/** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다.
+ *  `delivery`는 선택 — 비면 본문을 `{}`로 보내 예전과 같은 요청이 된다 */
 export async function reportStream(
   interviewId: string,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  delivery?: DeliveryMetric[],
 ): Promise<void> {
-  const res = await post(`${BASE}/${interviewId}/report`, {}, signal)
+  const metrics = (delivery ?? []).filter((d) => d.answer <= DELIVERY_MAX).slice(0, DELIVERY_MAX)
+  const res = await post(
+    `${BASE}/${interviewId}/report`,
+    metrics.length ? { delivery: metrics } : {},
+    signal,
+  )
   await readStream(res, onDelta)
 }

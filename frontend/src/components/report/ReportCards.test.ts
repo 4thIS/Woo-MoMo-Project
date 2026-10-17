@@ -33,3 +33,26 @@ describe('ReportCards', () => {
     expect(short.findAll('[data-test=card]')).toHaveLength(2)
   })
 })
+
+describe('ReportCards — 전달력 (#99)', () => {
+  const withDelivery = [
+    {
+      question: '지원 동기는?',
+      answerSummary: '동아리 경험',
+      feedback: '구체적입니다',
+      delivery: '분당 352음절로 빠른 편입니다. 핵심 뒤에 한 박자 쉬어 보세요.',
+    },
+    { question: '어려웠던 점은?', answerSummary: '일정 지연', feedback: '본인 역할이 흐립니다' },
+  ]
+  const m = () => mount(ReportCards, { props: { report: withDelivery, answers } })
+
+  it('벤이 쓴 전달력 문장을 카드 안에 보여 준다', () => {
+    const card = m().findAll('[data-test=card]')[0]
+    expect(card.get('[data-test=delivery]').text()).toContain('분당 352음절')
+  })
+
+  it('전달력이 없는 문항에는 칸을 만들지 않는다 — 로컬 면접관 리포트는 그대로다', () => {
+    expect(m().findAll('[data-test=card]')[1].find('[data-test=delivery]').exists()).toBe(false)
+    expect(w().find('[data-test=delivery]').exists()).toBe(false)
+  })
+})

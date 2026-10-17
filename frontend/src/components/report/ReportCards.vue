@@ -30,6 +30,12 @@ defineProps<{
           <span :class="{ strong: p.strong }">{{ p.text }}</span>
         </template>
       </dd>
+      <!-- 벤이 녹음 측정을 받았을 때만. 숫자는 따로 깔지 않는다 — 서버에 남지 않아
+           보관함에서 다시 열면 사라지고, 벤이 문장 안에 이미 근거로 적는다 (#99) -->
+      <template v-if="it.delivery">
+        <dt class="mono">전달력</dt>
+        <dd data-test="delivery">{{ it.delivery }}</dd>
+      </template>
     </dl>
   </PixelWindow>
 </template>
