@@ -165,3 +165,24 @@ def test_follow_ups_are_capped_at_3_for_the_whole_interview():
         text = prompts.build_system(track, inputs)[0]["text"]
         assert f"3. {prompts.SHARP_FOLLOW_UP} {prompts.BEN_FOLLOW_UP_TOTAL}" in text
     assert prompts.BEN_FOLLOW_UP_TOTAL == "면접 전체에서 꼬리질문은 모두 합쳐 최대 3개입니다."
+
+
+BLOCK = "[답변별 전달력 측정]\n답변 1: 분당 300음절(보통)"
+
+
+def test_report_messages_without_block_are_unchanged():
+    assert prompts.report_messages(HISTORY, None) == prompts.report_messages(HISTORY)
+    assert prompts.report_messages(HISTORY)[-1]["content"] == prompts.report_instruction()
+
+
+def test_report_messages_append_delivery_after_the_instruction():
+    last = prompts.report_messages(HISTORY, BLOCK)[-1]
+    assert last == {
+        "role": "user",
+        "content": f"{prompts.report_instruction()}\n\n{prompts.DELIVERY_INSTRUCTION}\n\n{BLOCK}",
+    }
+    assert '"delivery"' in prompts.DELIVERY_INSTRUCTION
+    assert "경향" in prompts.DELIVERY_INSTRUCTION
+    assert prompts.KICKOFF in prompts.DELIVERY_INSTRUCTION
+    assert "답변 1은 자기소개에 대한 답변" in prompts.DELIVERY_INSTRUCTION
+    assert "JSON 배열 하나뿐이며, delivery 값은 문자열입니다." in prompts.DELIVERY_INSTRUCTION

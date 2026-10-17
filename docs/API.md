@@ -163,7 +163,7 @@
 // ArchiveDetail = ArchiveEntry + 아래
 {
   "messages": [{ "role": "model", "text": "...", "at": 1760000000000 }],  // role: "user" | "model", at은 선택
-  "report": [{ "question": "...", "answerSummary": "...", "feedback": "..." }],
+  "report": [{ "question": "...", "answerSummary": "...", "feedback": "...", "delivery": "..." }],  // delivery는 선택(최대 2,000자, 없으면 칸 없음)
   "reportRaw": "...",
   "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ..." }]   // turn 오름차순
 }
@@ -317,7 +317,20 @@ SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `ref
 
 **3) 리포트 — POST /api/premium/interviews/{id}/report**
 
-본문 없음. 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 21번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
+본문은 선택(2026-10-16). 없거나 `{}`이면 지금과 같다. 벤 면접에서 브라우저가 잰 답변별 전달력 측정을 보낼 수 있다(숫자만, 소리는 보내지 않는다):
+
+```jsonc
+{ "delivery": [
+  { "answer": 1, "speechSec": 42.5, "syllables": 210, "longPauses": 3,
+    "longestPauseSec": 4.1, "firstWordSec": 2.8, "fillerLevel": "high" }  // low|normal|high|null
+  // firstWordSec: 답변 녹음 조각의 시작(면접관 음성이 끝나 답변 차례가 된 시각)부터 첫 말소리까지(초)
+] }
+```
+- 검증: 항목 0~8, `answer` 1~8·서로 다름·이 면접의 실제 답변 수 이하, `speechSec`·`longestPauseSec`·`firstWordSec` 0~600, `syllables` 0~5,000, `longPauses` 0~200. 위반 → `422 {"error":"invalid","field":"delivery"}`(Claude를 부르지 않고 시도도 세지 않음). 본문이 JSON이 아니면 `field` 없는 `422 {"error":"invalid"}`. 턴이 하나도 없는 면접은 본문 검증보다 먼저 `409 interview_not_started`를 돌려준다. 타이핑 답변·측정 불가 답변은 빼고 보낸다. 요청 수 제한(`429`, 분당 6회)은 본문 검증보다 먼저 세므로 `422`를 받아도 한 번으로 친다.
+- 측정이 있으면 서버가 기준표(말 속도 250~330음절/분 보통, 2초 이상 쉼 말한 1분당 2회 이하 보통, 첫마디 3초 이하 보통, 군말은 경향, 말한 시간 5초 미만·받아쓴 음절 0은 측정 부족, 1번 답변 대비 1.5배·0.67배)로 판정해 벤에게 주고, 벤은 리포트 문항마다 선택 칸 `delivery`(전달력 피드백 한두 문장)를 더 쓴다: `{question, answerSummary, feedback, delivery?}`.
+- 이미 `done`인 면접은 보관한 원문을 다시 보내고 본문은 무시한다.
+
+스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 21번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
 SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 되고 서버가 원문을 보관한다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
 **이미 리포트를 받은(`done`) 면접에 다시 요청하면** Claude를 부르지 않고 보관한 원문을 그대로 다시 보낸다(`delta` 한 번 + `done`). 리포트 스트림이 끊겼거나 새로 고친 뒤 원문을 다시 받을 때 쓴다. 요청 수 제한(`429`)은 똑같이 센다.
 프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.

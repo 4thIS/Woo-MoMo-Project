@@ -154,13 +154,28 @@ def turn_messages(messages: list[Message], answer: str | None) -> list[Message]:
     return out
 
 
+# 벤 전용(로컬 리포트 지시문과 동기화하지 않는다): 브라우저가 잰 전달력 측정이 있을 때만 붙인다
+DELIVERY_INSTRUCTION = (
+    "아래는 녹음에서 잰 답변별 전달력 수치와 판정입니다. "
+    '각 문항 객체에 "delivery" 칸을 더해, 그 문항에 속한 답변(꼬리질문 답 포함)의 전달력을 '
+    "한두 문장으로 쓰세요. 판정과 숫자를 근거로 들고, 고칠 방법을 하나 제시하세요. "
+    "군말은 단정하지 말고 '경향'으로만 말하세요. "
+    '측정이 없는 답변만으로 된 문항에는 "delivery"를 쓰지 마세요. '
+    f"답변 번호는 '{KICKOFF}' 이후 지원자가 한 답변의 순서입니다(답변 1은 자기소개에 대한 답변). "
+    "출력은 여전히 위 JSON 배열 하나뿐이며, delivery 값은 문자열입니다."
+)
+
+
 def report_instruction() -> str:
     """프론트 buildReportInstruction(PERSONAS.sharp)과 같다: JSON 예시 앞에 말투 한 줄."""
     return REPORT_INSTRUCTION.replace("\n\n[", f"\n{SHARP_REPORT_TONE}\n\n[", 1)
 
 
-def report_messages(messages: list[Message]) -> list[Message]:
-    return [*_history(messages), {"role": "user", "content": report_instruction()}]
+def report_messages(messages: list[Message], delivery_block: str | None = None) -> list[Message]:
+    instruction = report_instruction()
+    if delivery_block:
+        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION}\n\n{delivery_block}"
+    return [*_history(messages), {"role": "user", "content": instruction}]
 
 
 def has_end_phrase(text: str) -> bool:
