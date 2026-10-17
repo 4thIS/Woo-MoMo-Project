@@ -46,11 +46,11 @@
 ### 3.1 `GET /api/admin/overview`
 ```jsonc
 {
-  "users": { "total": 42, "last7Days": 5, "last30Days": 18, "premium": 7, "admins": 3 },
+  "users": { "total": 42, "last7Days": 5, "last30Days": 18, "withTickets": 7, "admins": 3 }   // withTickets: 티켓 1장 이상 보유,
   "tickets": { "outstanding": 61 },                 // 모든 사용자 남은 티켓 합
   "ben": { "today": 4, "dailyLimit": 30,
            "byDay": [{ "date": "2026-10-17", "count": 4 }, ...] },   // 최근 30일, 없는 날은 0
-  "archive": { "entries": 120, "premium": 15 },
+  "archive": { "entries": 120, "ben": 15 },          // ben: 벤(프리미엄 면접관) 기록
   "recordings": { "count": 33, "bytes": 51200000 },
   "briefings": { "cached": 6 },                     // 7일 안의 company_briefings 행
   "weakEmergencyPassword": true
@@ -62,7 +62,7 @@
 ```jsonc
 { "page": 1, "pageSize": 50, "total": 42,
   "items": [{ "id": "u_…", "email": "…", "name": "…" | null, "createdAt": "…",
-              "tier": "member" | "premium", "tickets": 3, "isAdmin": false,
+              "tickets": 3, "isAdmin": false,
               "archiveCount": 4, "benCount": 2, "lastActiveAt": "…" | null }] }
 ```
 - `lastActiveAt`: 가장 최근 세션 생성·보관 기록·벤 면접 시각 중 최댓값.
@@ -83,7 +83,8 @@
 - 본문 `{ "delta": 5, "reason": "이벤트 보상" }`. `delta` 정수 −100~100, 0 불가. `reason` 공백 제거 후 1~200자.
 - 결과 티켓이 0 미만이면 `409 {"error":"insufficient_tickets"}`(바꾸지 않음). 없는 사용자 `404`.
 - 티켓 변경과 감사 로그 기록은 **한 트랜잭션**. 응답 `200 { "tickets": 8 }`.
-- 지급은 등급(tier)을 바꾸지 않는다(벤은 프리미엄만 시작 가능 — 지금 규칙 그대로).
+- 대시보드는 계정 등급(`tier`)을 **보여 주지도 바꾸지도 않는다**. 계정 상태는 비로그인/로그인뿐이고, 벤 사용 가능 여부는 티켓으로 본다는 것이 제품 기준이다.
+- 알려진 제약: 현재 코드는 아직 `tier == "premium"`으로 벤을 막는다(9절 "등급 정리"). 정리 전까지는 티켓만 지급받은 계정이 벤을 시작하지 못할 수 있다.
 
 ### 3.5 `GET /api/admin/usage?days=30`
 `days` 1~90(기본 30).
@@ -140,6 +141,8 @@
 - 백엔드 테스트: 관리자 집합(비상용 ∪ 목록, 목록 밖 해제·세션 삭제, 가입 즉시 관리자), 403/401, 각 API 응답 형태·집계(빈 DB, 날짜 경계 KST), 티켓 조정(범위·0·음수 결과 409·트랜잭션·감사 로그), 비용 기록(성공·실패·거절, 조사 합산, 비용 계산), 본문 비노출(응답에 이력서·대화 문자열이 없음).
 
 ## 9. 추후 방안 (이번 범위 밖)
+
+- **등급 정리:** `users.tier`·`PremiumUser`(`403 premium_required`)를 없애고 "로그인 + 티켓 1장 이상이면 벤 시작, 진행 중 턴·리포트·녹음은 본인 면접이면 허용"으로 바꾼다. `Session.tier`는 프론트가 티켓 기준으로 바뀐 뒤 제거(lockstep). 결제 목업의 "일반 계정 1회 허용"과 함께 처리.
 
 - **콘텐츠 열람(C):** 신고 대응 등으로 특정 기록의 대화·리포트를 열람. 열람 사유 입력 + 열람 감사 로그 필수. 가입 동의는 "본인이 다시 보기 위한 보관"이므로 **동의 범위·고지 문구를 공동으로 합의한 뒤** 진행(CLAUDE.md 8번 개정 필요 여부 포함).
 - 계정 정지·해제(로그인·세션 차단, 데이터 유지), 계정 삭제와 사용자 직접 탈퇴(이력서·보관함·녹음 삭제, 되돌릴 수 없음 — 확인 절차·감사 로그).
