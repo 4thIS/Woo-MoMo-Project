@@ -17,7 +17,18 @@ from app.data import (
 from app.errors import install_error_handlers
 from app.llm.claude import AnthropicClaude, ClaudeClient
 from app.middleware import OriginGuard
-from app.routers import archive, auth, health, manifest, me, premium, questions, recordings, resumes
+from app.routers import (
+    admin,
+    archive,
+    auth,
+    health,
+    manifest,
+    me,
+    premium,
+    questions,
+    recordings,
+    resumes,
+)
 from app.security import RateLimiter
 from app.startup import prepare_storage
 
@@ -68,6 +79,7 @@ def create_app(
     app.include_router(archive.router, prefix="/api")
     app.include_router(premium.router, prefix="/api")
     app.include_router(recordings.router, prefix="/api")
+    app.include_router(admin.router, prefix="/api")
     return app
 
 
