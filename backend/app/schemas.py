@@ -367,3 +367,163 @@ class TurnBody(BaseModel):
 class RecordingCreated(BaseModel):
     id: str
     url: str
+
+
+# ── 관리자 (spec 2026-10-17 3절). 본문(이력서·대화·리포트·녹음)은 어떤 모델에도 없다 ──
+
+
+class AdminUsers(BaseModel):
+    total: int
+    last7Days: int
+    last30Days: int
+    withTickets: int
+    admins: int
+
+
+class AdminDayCount(BaseModel):
+    date: str
+    count: int
+
+
+class AdminBen(BaseModel):
+    today: int
+    dailyLimit: int
+    byDay: list[AdminDayCount]
+
+
+class AdminOverview(BaseModel):
+    users: AdminUsers
+    tickets: dict[str, int]
+    ben: AdminBen
+    archive: dict[str, int]
+    recordings: dict[str, int]
+    briefings: dict[str, int]
+    weakEmergencyPassword: bool
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    email: str
+    name: str | None
+    createdAt: str
+    tickets: int
+    isAdmin: bool
+    archiveCount: int
+    benCount: int
+    lastActiveAt: str | None
+
+
+class AdminUserPage(BaseModel):
+    page: int
+    pageSize: int
+    total: int
+    items: list[AdminUserItem]
+
+
+class AdminBenItem(BaseModel):
+    id: str
+    createdAt: str
+    track: str
+    status: str
+    modelTurns: int
+    briefingStatus: str
+
+
+class AdminArchiveItem(BaseModel):
+    id: str
+    startedAt: str
+    interviewerId: str
+    premium: bool
+    track: str
+    questionCount: int
+    hasRecording: bool
+
+
+class AdminTicketLogItem(BaseModel):
+    at: str
+    adminEmail: str | None
+    delta: int
+    reason: str
+
+
+class AdminUserDetail(BaseModel):
+    user: AdminUserItem
+    ben: list[AdminBenItem]
+    archive: list[AdminArchiveItem]
+    ticketLog: list[AdminTicketLogItem]
+
+
+class TicketAdjust(BaseModel):
+    delta: Annotated[int, Field(strict=True, ge=-100, le=100)]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+    @field_validator("delta")
+    @classmethod
+    def _not_zero(cls, v: int) -> int:
+        if v == 0:
+            raise ValueError("delta must not be 0")
+        return v
+
+
+class TicketsResult(BaseModel):
+    tickets: int
+
+
+class AdminPricing(BaseModel):
+    model: str
+    inputPerMTok: float
+    outputPerMTok: float
+    cacheReadPerMTok: float
+    cacheWritePerMTok: float
+    webSearch: float
+
+
+class AdminUsageDay(BaseModel):
+    date: str
+    calls: int
+    inputTokens: int
+    outputTokens: int
+    cacheReadTokens: int
+    cacheWriteTokens: int
+    webSearches: int
+    errors: int
+    refusals: int
+    costUsd: float
+
+
+class AdminUsageKind(BaseModel):
+    kind: str
+    calls: int
+    costUsd: float
+
+
+class AdminTopInterview(BaseModel):
+    interviewId: str
+    userEmail: str | None
+    calls: int
+    costUsd: float
+
+
+class AdminUsage(BaseModel):
+    pricing: AdminPricing
+    since: str | None
+    byDay: list[AdminUsageDay]
+    byKind: list[AdminUsageKind]
+    topInterviews: list[AdminTopInterview]
+
+
+class AdminAuditItem(BaseModel):
+    at: str
+    adminEmail: str | None
+    action: str
+    targetUserId: str | None
+    targetEmail: str | None
+    delta: int | None
+    reason: str | None
+
+
+class AdminAuditPage(BaseModel):
+    page: int
+    pageSize: int
+    total: int
+    items: list[AdminAuditItem]
