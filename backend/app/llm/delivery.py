@@ -55,6 +55,8 @@ def _far(ratio: float) -> bool:
 def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
     if m.speech_sec < MIN_SPEECH_SEC:
         return f"답변 {m.answer}: 측정 부족(말한 시간 5초 미만)"
+    if m.syllables == 0:  # 말소리는 있는데 받아쓰기가 빔 — "느림"이 아니라 측정 실패
+        return f"답변 {m.answer}: 측정 부족(받아쓴 음절 없음)"
     spm = _per_minute(m)
     rate = _pause_rate(m)
     first = "보통" if m.first_word_sec <= FIRST_WORD_MAX else "망설임 긺"

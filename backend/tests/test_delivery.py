@@ -89,3 +89,10 @@ def test_zero_pause_answer_has_no_pause_ratio_note():
     lines = render([m(1), m(2, pauses=0)]).splitlines()
     assert "쉼 0.0배" not in lines[2]
     assert "기준 대비" not in lines[2]
+
+
+def test_no_syllables_is_insufficient_not_slow():
+    # 말소리는 있는데 받아쓰기가 비면(인식 실패·소음) 측정 실패로 본다 — "느림"으로 지적하지 않는다
+    lines = render([m(1), m(2, speech=20.0, syl=0)]).splitlines()
+    assert lines[2] == "답변 2: 측정 부족(받아쓴 음절 없음)"
+    assert "기준 대비" not in lines[2]

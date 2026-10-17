@@ -42,7 +42,7 @@
     "syllables": 210,        // 받아쓴 텍스트의 음절(한글 글자) 수
     "longPauses": 3,         // 2초 이상 쉼 횟수
     "longestPauseSec": 4.1,  // 가장 긴 쉼(초)
-    "firstWordSec": 2.8,     // 질문이 끝난 뒤 첫마디까지(초)
+    "firstWordSec": 2.8,     // 답변 녹음 조각 시작(면접관 음성이 끝나 답변 차례가 된 시각)부터 첫 말소리까지(초)
     "fillerLevel": "high" }  // "low" | "normal" | "high" | null(측정 불가)
 ] }
 ```
@@ -66,7 +66,7 @@
 | 첫마디까지 | `firstWordSec` | 3초 이하 "보통", 3초 초과 "망설임 긺" |
 | 군말 | `fillerLevel` 그대로 | "적음"/"보통"/"잦은 경향"(단정하지 않음), `null`이면 언급 안 함 |
 
-- `speechSec`가 5초 미만인 답변은 "측정 부족"으로 판정을 생략한다.
+- `speechSec`가 5초 미만이거나 `syllables`가 0인(받아쓰기 실패) 답변은 "측정 부족"으로 판정을 생략한다.
 - **개인 기준 비교:** 1번 답변(자기소개)이 측정됐으면 그것을 기준으로, 다른 답변의 분당 음절·긴 쉼 비율이 기준의 1.5배 이상 또는 0.67배 이하이면 "기준 대비 ○배"를 덧붙인다.
 - 기준값은 모듈 상수로 두고 테스트로 고정한다.
 
@@ -105,7 +105,7 @@
 
 - backend: 2.1~2.4, `docs/API.md`.
 - frontend(@leemonta9482에게 이슈로 요청):
-  1. 측정: 벤 답변 녹음(이미 답변마다 잘라 둠)을 Web Audio로 디코드 → 말 구간 판별(에너지 기준, 잡음이 문제면 Silero VAD) → `speechSec`·`longPauses`·`longestPauseSec`, 질문 재생 종료~첫 말소리로 `firstWordSec`, 받아쓴 텍스트 한글 글자 수로 `syllables`, 길게 끄는 같은 높이 모음 구간으로 `fillerLevel`(정확도 중간 → 경향만)
+  1. 측정: 벤 답변 녹음(이미 답변마다 잘라 둠)을 Web Audio로 디코드 → 말 구간 판별(에너지 기준, 잡음이 문제면 Silero VAD) → `speechSec`·`longPauses`·`longestPauseSec`, 답변 녹음 조각 시작(면접관 음성 종료 = 답변 차례)~첫 말소리로 `firstWordSec`, 받아쓴 텍스트 한글 글자 수로 `syllables`, 길게 끄는 같은 높이 모음 구간으로 `fillerLevel`(정확도 중간 → 경향만)
   2. 리포트 요청에 `delivery` 실어 보내기(타이핑 답변·측정 불가는 제외)
   3. 리포트·보관함 화면에 측정값과 `delivery` 표시 — **표시 방식은 아직 미정, 논의 후 결정**
   4. 출시 전 샘플 답변 10~20개로 사람 측정(또는 Praat)과 비교해 오차 확인
