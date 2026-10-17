@@ -1,5 +1,6 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
+import logging
 import sqlite3
 import time
 from collections.abc import Callable, Generator, Iterator
@@ -147,8 +148,10 @@ def _usage_sink(
                     web_searches=used.web_searches,
                     outcome=outcome,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "claude usage record failed: %s", type(exc).__name__
+            )
 
     return sink
 

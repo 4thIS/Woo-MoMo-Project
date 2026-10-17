@@ -425,3 +425,26 @@ def test_audit_page_newest_first(client, settings, clock):
     }
     assert first["action"] == "tickets" and first["adminEmail"] == "admin"
     assert client.get("/api/admin/audit", params={"page": 0}).status_code == 422
+
+
+def test_weak_emergency_password_false_without_emergency_account(make_client, settings):
+    s = replace(settings, admin_login=None, admin_password="short", admin_emails=("a@b.com",))
+    c = make_client(s)
+    signup(c, "a@b.com")
+    c = make_client(s)
+    c.post("/api/auth/login", json={"email": "a@b.com", "password": "password123"})
+    assert c.get("/api/admin/overview").json()["weakEmergencyPassword"] is False
+
+
+def test_usage_cost_totals_round_once(client, settings, clock):
+    login_admin(client)
+    now = clock.now
+    with open_db(settings) as conn:
+        admin = _uid(settings, "admin")
+        for _ in range(200):
+            _usage(conn, at=iso(now), user_id=admin, input_tokens=12_345)
+    body = client.get("/api/admin/usage", params={"days": 1}).json()
+    # 행당 0.02469 -> 반올림 0.0247 * 200 = 4.94 이 아니라 0.02469 * 200 = 4.938
+    assert body["byDay"][-1]["costUsd"] == 4.938
+    assert body["byKind"][0]["costUsd"] == 4.938
+    assert body["topInterviews"][0]["costUsd"] == 4.938

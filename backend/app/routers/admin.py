@@ -31,7 +31,7 @@ def get_overview(request: Request, _: AdminUser, conn: Db) -> dict:
         conn,
         now=request.app.state.clock(),
         daily_limit=s.ben_daily_limit,
-        emergency_password=s.admin_password,
+        emergency_password=s.admin_password if s.admin_login else None,
     )
 
 
@@ -86,4 +86,4 @@ def get_usage(
 @router.get("/audit", response_model=AdminAuditPage)
 def get_audit(_: AdminUser, conn: Db, page: Page = 1) -> dict:
     total, items = audit.page(conn, page=page)
-    return {"page": page, "pageSize": 50, "total": total, "items": items}
+    return {"page": page, "pageSize": admin_stats.PAGE_SIZE, "total": total, "items": items}

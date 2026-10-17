@@ -23,3 +23,4 @@ CREATE TABLE admin_audit (
     detail_json TEXT NOT NULL
 );
 CREATE INDEX admin_audit_at ON admin_audit (at);
+CREATE INDEX admin_audit_target ON admin_audit (target_user_id);

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useAdminStore } from '@/stores/admin'
 import BarChart from './BarChart.vue'
-import { fmtDate, fmtInt, fmtUsd } from './format'
+import { fmtDate, fmtInt, fmtText, fmtUsd } from './format'
 
 const admin = useAdminStore()
 const u = computed(() => admin.usage)
@@ -74,7 +74,7 @@ const total = computed(() => (u.value?.byDay ?? []).reduce((s, d) => s + d.costU
             <tbody>
               <tr v-for="t in u.topInterviews" :key="t.interviewId" data-test="admin-top-row">
                 <td>{{ t.interviewId }}</td>
-                <td>{{ t.userEmail }}</td>
+                <td>{{ fmtText(t.userEmail) }}</td>
                 <td>{{ fmtInt(t.calls) }}</td>
                 <td>{{ fmtUsd(t.costUsd) }}</td>
               </tr>

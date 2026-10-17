@@ -79,6 +79,20 @@ describe('AdminView — 권한', () => {
     expect(ov).not.toHaveBeenCalled()
   })
 
+  it('세션을 읽다 연결이 끊기면 연결 오류를 보인다(관리자 아님 문구가 아니다)', async () => {
+    setAccountApi({
+      ...makeMockAccount({ delayMs: 0 }),
+      me: async () => {
+        throw new Error('offline')
+      },
+    })
+    const ov = vi.spyOn(adminApi, 'overview')
+    const w = await mountView()
+    expect(w.get('[data-test=admin-connection-error]').text()).toContain('연결하지 못했습니다')
+    expect(w.find('[data-test=admin-denied]').exists()).toBe(false)
+    expect(ov).not.toHaveBeenCalled()
+  })
+
   it('관리자가 아닌 로그인 사용자도 막는다', async () => {
     asSession(session(false))
     const ov = vi.spyOn(adminApi, 'overview')

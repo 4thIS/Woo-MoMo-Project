@@ -373,3 +373,14 @@ def test_research_reports_refused_and_error_once():
             system="s", messages=R_MESSAGES, max_tokens=9, on_usage=sink
         )
     assert got == [(Usage(10, 5, 3, 2, 0), "refused"), (Usage(), "error")]
+
+
+def test_report_logs_only_exception_type_on_sink_failure(caplog):
+    from app.llm.claude import _report
+
+    def boom(usage, outcome):
+        raise RuntimeError("secret content 이력서")
+
+    with caplog.at_level("WARNING"):
+        _report(boom, Usage(), "ok")
+    assert [r.getMessage() for r in caplog.records] == ["claude usage record failed: RuntimeError"]

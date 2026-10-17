@@ -27,9 +27,9 @@
 
 ### 2.1 관리자 목록
 - 새 설정 `ADMIN_EMAILS`: 쉼표로 구분한 이메일 목록(공백 제거·소문자, `users.normalize_login`과 같은 규칙). 비어 있으면 없음.
-- 관리자 = 비상용 `ADMIN_LOGIN` 계정 ∪ `ADMIN_EMAILS`에 있는 이메일로 가입한 계정.
+- 관리자 = 비상용 `ADMIN_LOGIN` 계정 ∪ `ADMIN_EMAILS`에 있는 이메일로 가입한 계정(기동 시 반영).
 - 기동 시(`startup.sync_admin`): 위 집합만 `is_admin = 1`, 나머지는 0으로 맞추고 해제되는 계정의 세션을 지운다(지금 동작 유지). `ADMIN_EMAILS` 계정의 비밀번호는 건드리지 않는다(각자 가입 때 정한 것).
-- 가입 시: 이메일이 `ADMIN_EMAILS`에 있으면 가입과 동시에 관리자(재시작 불필요).
+- 가입만으로는 관리자가 되지 않는다. 목록은 기동 시에만 반영된다(가입에 이메일 인증이 없어, 가입 즉시 승격하면 목록에만 있고 아직 가입 안 한 이메일을 남이 선점해 관리자가 될 수 있다).
 - 응답 `Session.isAdmin`은 지금처럼 이 값을 따른다.
 
 ### 2.2 비상용 비밀번호 알림
@@ -91,14 +91,20 @@
 ```jsonc
 { "pricing": { "model": "claude-sonnet-5-5", "inputPerMTok": 2.0, "outputPerMTok": 10.0,
                "cacheReadPerMTok": 0.2, "cacheWritePerMTok": 2.5, "webSearch": 0.01 },
-  "since": "2026-10-17",                             // 기록을 시작한 날(그 전은 0)
+  "since": "2026-10-17" | null,                    // 기록을 시작한 한국 날짜(기록이 없으면 null)
   "byDay": [{ "date": "…", "calls": 40, "inputTokens": 0, "outputTokens": 0,
               "cacheReadTokens": 0, "cacheWriteTokens": 0, "webSearches": 3,
               "errors": 1, "refusals": 0, "costUsd": 0.42 }],
   "byKind": [{ "kind": "turn" | "report" | "research", "calls": 0, "costUsd": 0.0 }],
-  "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…", "calls": 12, "costUsd": 0.31 }] }  // 상위 10
+  "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…" | null, "calls": 12, "costUsd": 0.31 }] }  // 비용 순 상위 10
 ```
-비용은 **조회할 때** 요금표로 계산한다(저장하지 않음).
+비용은 **조회할 때** 요금표로 계산한다(저장하지 않음). 합계는 행별 비용을 반올림하지 않고 더한 뒤 한 번만 반올림한다.
+
+- `byDay`: 오래된 날 → 최근 날 순, 기록 없는 날도 0으로 채운다(`days`개).
+- `byKind`: 기록이 있는 종류만.
+- `topInterviews`: 비용 순위. 면접 id가 없는 행은 제외. 사용자가 지워졌으면 `userEmail`은 `null`.
+- `since`: 기록이 하나도 없으면 `null`.
+- 비용은 **하한 추정치**다. 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
 
 ### 3.6 `GET /api/admin/audit?page=`
 최신순 50개: `{ at, adminEmail, action: "tickets", targetUserId, targetEmail, delta, reason }`.
@@ -133,12 +139,13 @@
 - **Cloudflare Access**(2차): `/admin`, `/api/admin/*` 경로에 정책 — 허용 이메일(본인·@leemonta9482) 또는 GitHub 4thIS 조직. 설정 절차는 `deploy/README.md`에 적고 대시보드에서 사람이 설정한다(코드 변경 없음). demomo·momo 각각.
 - `deploy/.env`에 `ADMIN_EMAILS` 추가(사람이 직접). 비밀번호는 커밋하지 않는다.
 - 비상용 비밀번호는 운영 전 12자 이상으로 바꾼다(2.2 경고로 상기).
+- `/api/premium/purchase`는 Cloudflare Access 경로(`/admin`, `/api/admin/*`) 밖이다. 서버의 관리자 검사로만 막힌다(관리자 전용).
 
 ## 8. 롤아웃 · 테스트
 
 - 순서: 백엔드 PR(관리자 권한·API·비용 기록·감사 로그·`docs/API.md`) → dev → demomo에서 curl 확인 → 프론트 PR → Cloudflare Access 설정.
 - 기존 동작 보존: `ADMIN_EMAILS`가 없으면 관리자 결정은 지금과 같다. 비용 기록 추가가 벤 턴·리포트·조사의 SSE 이벤트·응답을 바꾸지 않는다.
-- 백엔드 테스트: 관리자 집합(비상용 ∪ 목록, 목록 밖 해제·세션 삭제, 가입 즉시 관리자), 403/401, 각 API 응답 형태·집계(빈 DB, 날짜 경계 KST), 티켓 조정(범위·0·음수 결과 409·트랜잭션·감사 로그), 비용 기록(성공·실패·거절, 조사 합산, 비용 계산), 본문 비노출(응답에 이력서·대화 문자열이 없음).
+- 백엔드 테스트: 관리자 집합(비상용 ∪ 목록, 목록 밖 해제·세션 삭제, 가입만으로는 관리자 아님·재기동 후 관리자), 403/401, 각 API 응답 형태·집계(빈 DB, 날짜 경계 KST), 티켓 조정(범위·0·음수 결과 409·트랜잭션·감사 로그), 비용 기록(성공·실패·거절, 조사 합산, 비용 계산), 본문 비노출(응답에 이력서·대화 문자열이 없음).
 
 ## 9. 추후 방안 (이번 범위 밖)
 

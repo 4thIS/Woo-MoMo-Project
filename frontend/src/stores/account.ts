@@ -26,6 +26,9 @@ export function setAccountApi(next: AccountApi): void {
   api = next
 }
 
+/** 진행 중인 load() — 같은 스토어에서 겹쳐 부르면 한 번만 읽는다(TopBar·AdminView) */
+const loading = new WeakMap<object, Promise<void>>()
+
 export const useAccountStore = defineStore('account', {
   state: () => ({
     session: null as Session | null,
@@ -59,13 +62,19 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async load() {
-      const s = await this.run(() => api.me())
-      this.session = s ?? null
-      if (s) {
-        await this.refreshResumes()
-        await this.refreshArchive()
-      }
+    load(): Promise<void> {
+      const running = loading.get(this)
+      if (running) return running
+      const p = (async () => {
+        const s = await this.run(() => api.me())
+        this.session = s ?? null
+        if (s) {
+          await this.refreshResumes()
+          await this.refreshArchive()
+        }
+      })().finally(() => loading.delete(this))
+      loading.set(this, p)
+      return p
     },
 
     /** 폼 안내용 — 실패해도 error를 건드리지 않는다 */
