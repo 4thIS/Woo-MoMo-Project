@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from app.llm.claude import ClaudeClient, ClaudeError
+from app.llm.claude import ClaudeClient, ClaudeError, UsageSink
 from app.llm.prompts import _one_line
 
 BRIEFING_MIN = 200
@@ -47,13 +47,16 @@ def research_messages(company: str, job: str) -> list[dict[str, Any]]:
     ]
 
 
-def make_briefing(claude: ClaudeClient, company: str, job: str) -> Briefing | None:
+def make_briefing(
+    claude: ClaudeClient, company: str, job: str, on_usage: UsageSink | None = None
+) -> Briefing | None:
     """조사 1회. 실패(오류·거절·본문이 너무 짧음)는 None — 면접은 브리핑 없이 이어 간다."""
     try:
         result = claude.research(
             system=RESEARCH_SYSTEM,
             messages=research_messages(company, job),
             max_tokens=RESEARCH_MAX_TOKENS,
+            on_usage=on_usage,
         )
     except ClaudeError:
         return None

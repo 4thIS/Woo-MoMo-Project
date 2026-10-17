@@ -13,6 +13,7 @@ from app.llm.claude import (
     AnthropicClaude,
     ClaudeError,
     ResearchResult,
+    Usage,
 )
 from app.main import create_app
 
@@ -269,3 +270,106 @@ def test_research_keeps_body_written_between_searches():
     )
     got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
     assert got.text == "사업: 간편송금 최근 소식: 증권"
+
+
+def _usage(**over):
+    base = dict(
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_input_tokens=3,
+        cache_creation_input_tokens=2,
+        server_tool_use=None,
+    )
+    return SimpleNamespace(**{**base, **over})
+
+
+class _UsageStream(_Stream):
+    def __init__(self, chunks, stop_reason="end_turn", usage=None):
+        super().__init__(chunks, stop_reason)
+        self._usage = usage
+
+    def get_final_message(self):
+        return SimpleNamespace(stop_reason=self._stop, usage=self._usage)
+
+
+def _collect():
+    got = []
+    return got, lambda usage, outcome: got.append((usage, outcome))
+
+
+def test_stream_reports_usage_ok():
+    got, sink = _collect()
+    claude = _claude(
+        _Messages(stream=_UsageStream(["a"], usage=_usage(cache_read_input_tokens=None)))
+    )
+    assert list(
+        claude.stream_text(
+            system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=9, on_usage=sink
+        )
+    ) == ["a"]
+    assert got == [(Usage(10, 5, 0, 2, 0), "ok")]
+
+
+def test_stream_reports_refused_then_raises():
+    got, sink = _collect()
+    claude = _claude(_Messages(stream=_UsageStream(["a"], "refusal", _usage())))
+    with pytest.raises(ClaudeError) as err:
+        list(
+            claude.stream_text(
+                system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=9, on_usage=sink
+            )
+        )
+    assert err.value.code == "refused"
+    assert got == [(Usage(10, 5, 3, 2, 0), "refused")]
+
+
+def test_stream_reports_error_with_zero_usage():
+    got, sink = _collect()
+    claude = _claude(_Messages(error=_ApiFailure()))
+    with pytest.raises(ClaudeError):
+        list(
+            claude.stream_text(
+                system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=9, on_usage=sink
+            )
+        )
+    assert got == [(Usage(), "error")]
+
+
+def test_stream_swallows_callback_errors():
+    def boom(usage, outcome):
+        raise RuntimeError("db down")
+
+    claude = _claude(_Messages(stream=_UsageStream(["a"], usage=_usage())))
+    out = list(
+        claude.stream_text(
+            system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=9, on_usage=boom
+        )
+    )
+    assert out == ["a"]
+
+
+def test_research_sums_usage_across_continuations_and_searches():
+    got, sink = _collect()
+    first = _resp([_text("a")], "pause_turn")
+    first.usage = _usage(server_tool_use=SimpleNamespace(web_search_requests=2))
+    second = _resp([_text("b")])
+    second.usage = _usage(server_tool_use=SimpleNamespace(web_search_requests=1))
+    _research_claude(_Create([first, second])).research(
+        system="s", messages=R_MESSAGES, max_tokens=9, on_usage=sink
+    )
+    assert got == [(Usage(20, 10, 6, 4, 3), "ok")]
+
+
+def test_research_reports_refused_and_error_once():
+    got, sink = _collect()
+    refused = _resp([], "refusal")
+    refused.usage = _usage()
+    with pytest.raises(ClaudeError):
+        _research_claude(_Create([refused])).research(
+            system="s", messages=R_MESSAGES, max_tokens=9, on_usage=sink
+        )
+    with pytest.raises(ClaudeError):
+        _research_claude(_Create(error=_ApiFailure())).research(
+            system="s", messages=R_MESSAGES, max_tokens=9, on_usage=sink
+        )
+    assert got == [(Usage(10, 5, 3, 2, 0), "refused"), (Usage(), "error")]
