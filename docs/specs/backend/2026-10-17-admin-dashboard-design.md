@@ -46,7 +46,7 @@
 ### 3.1 `GET /api/admin/overview`
 ```jsonc
 {
-  "users": { "total": 42, "last7Days": 5, "last30Days": 18, "withTickets": 7, "admins": 3 }   // withTickets: 티켓 1장 이상 보유,
+  "users": { "total": 42, "last7Days": 5, "last30Days": 18, "withTickets": 7, "admins": 3 },   // withTickets: 티켓 1장 이상 보유
   "tickets": { "outstanding": 61 },                 // 모든 사용자 남은 티켓 합
   "ben": { "today": 4, "dailyLimit": 30,
            "byDay": [{ "date": "2026-10-17", "count": 4 }, ...] },   // 최근 30일, 없는 날은 0
