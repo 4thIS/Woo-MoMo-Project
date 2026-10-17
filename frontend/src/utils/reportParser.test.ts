@@ -81,3 +81,20 @@ describe('clip', () => {
     expect(clipped.length).toBe(41)
   })
 })
+
+describe('전달력 칸 (#99)', () => {
+  const spoken = { question: 'Q', answerSummary: 'A', feedback: '좋았습니다', delivery: '빠른 편' }
+
+  it('파서는 모르는 칸을 버리지 않는다 — delivery가 붙어 와도 그대로 남는다', () => {
+    const got = parseReport(JSON.stringify([spoken]))
+    expect(got?.[0].delivery).toBe('빠른 편')
+  })
+
+  it('복사 텍스트에도 전달력을 넣는다 — 화면에 있는 것이 복사본에 없으면 안 된다', () => {
+    expect(reportToText([spoken], [['답']], 'IT', '백엔드')).toContain('전달력: 빠른 편')
+  })
+
+  it('전달력이 없으면 줄 자체가 없다', () => {
+    expect(reportToText([item], [['답']], 'IT', '백엔드')).not.toContain('전달력')
+  })
+})

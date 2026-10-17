@@ -229,4 +229,40 @@ describe('reportStream', () => {
     const e = await reportStream('pi_1', () => {}).catch((x) => x)
     expect(e.code).toBe('interview_not_started')
   })
+
+  const ok = () => [{ sse: ['event: delta\ndata: {"text":"[]"}\n\n', 'event: done\ndata: {}\n\n'] }]
+  const metric = (answer: number) => ({
+    answer,
+    speechSec: 20,
+    syllables: 100,
+    longPauses: 1,
+    longestPauseSec: 2.4,
+    firstWordSec: 0.8,
+    fillerLevel: 'low' as const,
+  })
+  const sentBody = () => JSON.parse(String(calls[0].init.body))
+
+  it('측정값을 싣는다', async () => {
+    next = ok()
+    await reportStream('pi_1', () => {}, undefined, [metric(1)])
+    expect(sentBody()).toEqual({ delivery: [metric(1)] })
+  })
+
+  it('측정이 없으면 본문은 {} — 예전과 같은 요청이다', async () => {
+    next = ok()
+    await reportStream('pi_1', () => {}, undefined, [])
+    expect(sentBody()).toEqual({})
+    next = ok()
+    calls = []
+    await reportStream('pi_1', () => {})
+    expect(sentBody()).toEqual({})
+  })
+
+  it('서버 상한(8개)을 넘겨 보내지 않는다 — 한 개가 넘쳐도 통째로 422가 된다', async () => {
+    next = ok()
+    await reportStream('pi_1', () => {}, undefined, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(metric))
+    expect(sentBody().delivery.map((d: { answer: number }) => d.answer)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ])
+  })
 })

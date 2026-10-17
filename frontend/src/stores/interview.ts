@@ -27,9 +27,11 @@ import {
   reportStream,
   startInterview,
   turnStream,
+  type DeliveryMetric,
   type StartRequest,
 } from '@/services/benInterview'
-import { playClip, setMuted } from '@/services/audio'
+import { decodeClip, playClip, setMuted } from '@/services/audio'
+import { analyzeSpeech, countSyllables, fillerLevelOf } from '@/utils/delivery'
 
 export type Phase = 'landing' | 'prepare' | 'interview' | 'report'
 export type Field = 'it' | 'finance' | 'manufacturing' | 'retail' | 'general'
@@ -76,6 +78,9 @@ let recorder: Recorder | null = null
 /** 답변별 녹음 조각. 기록을 만든 **뒤에** 올려야 하므로 그때까지 들고 있는다.
  *  Blob은 직렬화할 수 없어 Pinia state에 두지 않는다 */
 let clips: { turn: number; blob: Blob }[] = []
+/** 전달력 측정(벤 전용, #99). 답변마다 바로 걸어 두고 리포트 요청 직전에 거둔다 —
+ *  마지막에 몰아 재면 리포트를 누른 뒤 멈춘 것처럼 보인다 */
+let measuring: Promise<DeliveryMetric | null>[] = []
 let recordedBytes = 0
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
 let abortCtl: AbortController | null = null
@@ -88,6 +93,20 @@ let playing: { stop(): void } | null = null
 let revealTimer: ReturnType<typeof setInterval> | null = null
 let graceTimer: ReturnType<typeof setTimeout> | null = null // onended가 안 올 때의 상한
 let speakText = '' // 재생 중인 발화 전문 — 중단 시 이걸로 revealed를 채운다
+
+/** 답변 조각 하나를 숫자로. 못 재면 null — 그 답변만 빠지고 면접·리포트는 그대로다.
+ *  파형도 받아쓴 텍스트도 여기서 끝난다. 나가는 건 숫자뿐이다(`docs/API.md`) */
+async function measureClip(
+  blob: Blob,
+  answer: number,
+  text: string,
+): Promise<DeliveryMetric | null> {
+  const decoded = await decodeClip(blob)
+  if (!decoded) return null
+  const stats = analyzeSpeech(decoded.samples, decoded.sampleRate)
+  if (!stats) return null
+  return { answer, ...stats, syllables: countSyllables(text), fillerLevel: fillerLevelOf(text) }
+}
 
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
@@ -285,6 +304,7 @@ export const useInterviewStore = defineStore('interview', {
         this.recordingOn = recorder !== null
         // 지난 면접의 조각을 물려받지 않는다 — 남의 기록에 올라간다
         clips = []
+        measuring = []
         this.recordingCount = 0
         this.recordingWarning = null
         recordedBytes = 0
@@ -512,7 +532,9 @@ export const useInterviewStore = defineStore('interview', {
       try {
         if (benId) {
           // 서버가 쓴다. 이미 받은 면접에 다시 불러도 보관한 원문을 그대로 준다
-          await reportStream(benId, (d) => (this.reportRaw += d))
+          // 걸어 둔 측정을 여기서 거둔다. 못 잰 답변은 빠진다(`docs/API.md`: 빼고 보낸다)
+          const delivery = (await Promise.all(measuring)).filter((m) => m !== null)
+          await reportStream(benId, (d) => (this.reportRaw += d), undefined, delivery)
         } else if (session) {
           this.reportRaw = await session.send(
             buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
@@ -542,6 +564,11 @@ export const useInterviewStore = defineStore('interview', {
       const turn = this.messages.filter((m) => m.role === 'user').length - 1
       clips.push({ turn, blob })
       this.recordingCount = clips.length
+      // 전달력은 벤만 받는다. 기다리지 않는다 — 여기서 await하면 면접관 응답이 그만큼 늦는다
+      if (benId) {
+        const text = this.messages.at(-1)?.text ?? ''
+        measuring.push(measureClip(blob, turn + 1, text))
+      }
     },
 
     async releaseMic() {
@@ -677,6 +704,7 @@ export const useInterviewStore = defineStore('interview', {
       await this.releaseMic()
       recordedBytes = 0
       clips = []
+      measuring = []
       this.recordingCount = 0
       this.recordingWarning = null
       this.phase = 'prepare'
