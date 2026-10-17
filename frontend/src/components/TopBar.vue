@@ -10,6 +10,7 @@ import { computed, onMounted, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useModalStore } from '@/stores/modal'
+import { isAdminPath } from '@/services/route'
 import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
@@ -18,6 +19,7 @@ import ArchiveModal from '@/components/account/ArchiveModal.vue'
 const account = useAccountStore()
 const interview = useInterviewStore()
 const modal = useModalStore()
+const onAdmin = isAdminPath()
 const shown = computed(() => interview.phase !== 'interview')
 
 // 바가 사라지는 화면으로 넘어가면 열려 있던 모달도 거둔다
@@ -31,6 +33,14 @@ onMounted(() => void account.load())
 <template>
   <header v-if="shown" class="topbar" data-test="topbar">
     <div class="side">
+      <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>
+      <a
+        v-else-if="account.session?.isAdmin"
+        href="/admin"
+        class="mono link press"
+        data-test="top-admin"
+        >관리자</a
+      >
       <template v-if="account.signedIn">
         <!-- 램프가 지금 프리미엄인지 한눈에 알려 준다. 요금 카드의 램프와 같은 어법 -->
         <button
@@ -102,6 +112,7 @@ onMounted(() => void account.load())
   pointer-events: auto;
 }
 .link {
+  text-decoration: none;
   font-size: var(--fs-label);
   color: var(--text-2);
   background: none;
