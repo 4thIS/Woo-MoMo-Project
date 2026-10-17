@@ -50,3 +50,12 @@ def require_premium(user: LoggedInUser) -> User:
 
 
 PremiumUser = Annotated[User, Depends(require_premium)]
+
+
+def require_admin(user: LoggedInUser) -> User:
+    if not user.is_admin:
+        raise ApiError(403, "admin_required")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]
