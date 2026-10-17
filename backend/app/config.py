@@ -37,6 +37,13 @@ def _parse_origins(value: str | None) -> tuple[str, ...]:
     return origins
 
 
+def _parse_emails(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    emails = (e.strip().lower() for e in value.split(","))
+    return tuple(dict.fromkeys(e for e in emails if e))
+
+
 @dataclass(frozen=True)
 class Settings:
     storage_dir: Path
@@ -46,6 +53,7 @@ class Settings:
     admin_login: str | None = None
     admin_password: str | None = None
     ben_daily_limit: int = DEFAULT_BEN_DAILY_LIMIT
+    admin_emails: tuple[str, ...] = ()
 
     @property
     def db_path(self) -> Path:
@@ -69,4 +77,5 @@ class Settings:
             # 비밀번호는 공백도 값이다 — 비어 있을 때만 없음으로 본다
             admin_password=e.get("ADMIN_PASSWORD") or None,
             ben_daily_limit=int(limit) if limit else DEFAULT_BEN_DAILY_LIMIT,
+            admin_emails=_parse_emails(e.get("ADMIN_EMAILS")),
         )

@@ -81,6 +81,9 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
             user = users.create_user(
                 conn, email=email, password_hash=password_hash, name=name, created_at=created_at
             )
+            if email in request.app.state.settings.admin_emails:
+                conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user.id,))
+                user = users.get_by_id(conn, user.id) or user
             _start_session(request, response, conn, user)
     except users.EmailTaken:
         raise ApiError(409, "email_taken") from None
