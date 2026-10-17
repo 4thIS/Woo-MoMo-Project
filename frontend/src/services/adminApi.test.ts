@@ -88,6 +88,18 @@ describe('adminApi — 오류', () => {
     expect(a.message).toBe('요청을 처리하지 못했습니다')
   })
 
+  it('Object.prototype 이름은 코드가 아니다', async () => {
+    replies = [
+      { status: 500, body: { error: 'toString' } },
+      { status: 500, body: { error: '__proto__' } },
+    ]
+    const a = await adminApi.overview().catch((x) => x)
+    const b = await adminApi.overview().catch((x) => x)
+    expect(a.code).toBe('unknown')
+    expect(b.code).toBe('unknown')
+    expect(a.message).toBe('요청을 처리하지 못했습니다')
+  })
+
   it('연결 실패는 network', async () => {
     replies = [{ throws: true }]
     const e = await adminApi.overview().catch((x) => x)

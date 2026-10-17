@@ -139,7 +139,7 @@ const MESSAGES: Record<AdminErrorCode, string> = {
 function toError(body: unknown): AdminError {
   const raw = (body as { error?: unknown } | null | undefined)?.error
   const code: AdminErrorCode =
-    typeof raw === 'string' && raw in MESSAGES && raw !== 'network'
+    typeof raw === 'string' && Object.hasOwn(MESSAGES, raw) && raw !== 'network'
       ? (raw as AdminErrorCode)
       : 'unknown'
   return new AdminError(code, MESSAGES[code])

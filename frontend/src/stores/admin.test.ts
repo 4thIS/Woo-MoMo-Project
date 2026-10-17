@@ -38,7 +38,7 @@ describe('admin 스토어', () => {
     await s.goPage(3)
     expect(us).toHaveBeenLastCalledWith('', 3)
     await s.searchUsers('kim')
-    expect(s.page).toBe(1)
+    expect(s.usersPage).toBe(1)
     expect(s.query).toBe('kim')
     expect(us).toHaveBeenLastCalledWith('kim', 1)
   })
@@ -104,5 +104,56 @@ describe('admin 스토어', () => {
     await s.setUsageDays(7)
     expect(s.usageDays).toBe(7)
     expect(us).toHaveBeenCalledWith(7)
+  })
+
+  it('사용자 목록과 감사 로그의 페이지는 따로 센다', async () => {
+    const us = vi.spyOn(adminApi, 'users').mockResolvedValue(page(1) as never)
+    const au = vi.spyOn(adminApi, 'audit').mockResolvedValue(page(1) as never)
+    const s = useAdminStore()
+    await s.loadTab('users')
+    await s.goPage(3)
+    await s.loadTab('audit')
+    expect(au).toHaveBeenLastCalledWith(1)
+    await s.goPage(2)
+    expect(s.auditPage).toBe(2)
+    expect(s.usersPage).toBe(3)
+    await s.loadTab('users')
+    expect(us).toHaveBeenLastCalledWith('', 3)
+  })
+
+  it('탭을 바꾸면 열려 있던 사용자 상세를 닫는다', async () => {
+    vi.spyOn(adminApi, 'user').mockResolvedValue({ user: { id: 'u_1' } } as never)
+    vi.spyOn(adminApi, 'usage').mockResolvedValue({ byDay: [] } as never)
+    const s = useAdminStore()
+    await s.openUser('u_1')
+    await s.loadTab('usage')
+    expect(s.detail).toBeNull()
+  })
+
+  it('조정 뒤 상세 읽기 오류를 목록 읽기가 지우지 않는다', async () => {
+    vi.spyOn(adminApi, 'adjustTickets').mockResolvedValue(8)
+    const detail = vi
+      .spyOn(adminApi, 'user')
+      .mockResolvedValueOnce({ user: { id: 'u_1' } } as never)
+      .mockRejectedValueOnce(new AdminError('network', '연결하지 못했습니다'))
+    vi.spyOn(adminApi, 'users').mockResolvedValue(page(1) as never)
+    const s = useAdminStore()
+    await s.openUser('u_1')
+    await s.adjustTickets(5, '보상')
+    expect(detail).toHaveBeenCalledTimes(2)
+    expect(s.error).toBe('연결하지 못했습니다')
+  })
+
+  it('늦게 도착한 옛 응답이 새 데이터를 덮지 않는다', async () => {
+    let first!: (v: unknown) => void
+    vi.spyOn(adminApi, 'users')
+      .mockImplementationOnce(() => new Promise((r) => (first = r)) as never)
+      .mockResolvedValueOnce({ ...page(1), total: 2 } as never)
+    const s = useAdminStore()
+    const a = s.searchUsers('old')
+    await s.searchUsers('new')
+    first({ ...page(1), total: 99 })
+    await a
+    expect(s.users?.total).toBe(2)
   })
 })
