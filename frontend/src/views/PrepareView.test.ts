@@ -371,14 +371,17 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
     await flushPromises()
   }
-  it('TTS 실패: 버튼 문구가 실패를 말하고, "진행 창으로" 링크와 "목소리 없이 시작"이 보인다', async () => {
+  it('TTS 실패: 시작은 열려 있고 왜 자막인지 알린다. "진행 창으로" 링크와 "목소리 없이 시작"도 보인다', async () => {
     const m = useModelStore()
     m.manifest = manifestWithTts
     m.status = 'ready'
     m.$patch({ ttsStatus: 'error', ttsError: 'boom' })
     const w = mountView()
     await filled(w)
-    expect(w.find('[data-test=start]').text()).toContain('목소리를 준비하지 못했습니다')
+    // 목소리는 더 이상 시작을 막지 않는다 — 버튼은 열리고, 실패는 문구가 설명한다
+    expect(w.find('[data-test=start]').text()).toBe('면접 시작')
+    expect(w.find('[data-test=start]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test=voice-failed]').text()).toContain('자막으로 진행')
     expect(w.find('[data-test=start-scroll-top]').exists()).toBe(true)
     const voiceless = w.find('[data-test=start-voiceless]')
     expect(voiceless.exists()).toBe(true)
@@ -697,5 +700,35 @@ describe('PrepareView — 트랙별 입력', () => {
     pick('f3')
     await flushPromises()
     expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('PrepareView — 목소리를 기다리지 않고 시작 (멘토링 보완)', () => {
+  async function filledForm(w: ReturnType<typeof mountView>) {
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+  }
+
+  it('목소리를 받는 중에도 시작할 수 있고, 자막으로 간다고 알린다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
+    const w = mountView()
+    await filledForm(w)
+    expect(w.find('[data-test=start]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test=voice-pending]').text()).toContain('자막으로 진행')
+  })
+
+  it('목소리가 준비되면 안내가 사라진다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'ready' })
+    const w = mountView()
+    await filledForm(w)
+    expect(w.find('[data-test=voice-pending]').exists()).toBe(false)
+    expect(w.find('[data-test=voice-failed]').exists()).toBe(false)
   })
 })

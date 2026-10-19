@@ -203,7 +203,7 @@ describe('model store — TTS', () => {
     expect(s.ready).toBe(true)
   })
 
-  it('TTS 준비 전에는 ready가 false다 (Gemma는 ready여도)', async () => {
+  it('목소리를 기다리지 않고 시작할 수 있다 — 자막으로 가다가 목소리가 합류한다 (멘토링 보완)', async () => {
     vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
     let release!: () => void
     vi.mocked(initTts).mockReturnValue(new Promise<void>((r) => (release = r)))
@@ -211,10 +211,24 @@ describe('model store — TTS', () => {
     await s.loadManifest()
     const p = s.download()
     await vi.waitFor(() => expect(s.status).toBe('ready'))
-    expect(s.ready).toBe(false)
+    // 모델이 섰으면 면접은 열린다. 목소리 399MB를 더 기다리면 실측 회선에서 53초, LTE에서 2분 40초를 더 쓴다
+    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(true)
     release()
     await p
     expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(false)
+  })
+
+  it('목소리가 끝내 실패해도 면접은 열려 있다', async () => {
+    vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
+    vi.mocked(initTts).mockRejectedValueOnce(new Error('size mismatch'))
+    const s = useModelStore()
+    await s.loadManifest()
+    await s.download()
+    expect(s.ttsStatus).toBe('error')
+    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(false)
   })
 
   it('initTts 실패 → ttsStatus error + 원인. retryTts로 TTS만 다시', async () => {
@@ -226,7 +240,7 @@ describe('model store — TTS', () => {
     expect(s.status).toBe('ready')
     expect(s.ttsStatus).toBe('error')
     expect(s.ttsError).toBe('size mismatch')
-    expect(s.ready).toBe(false)
+    expect(s.ready).toBe(true) // 목소리가 실패해도 자막으로 면접은 본다
     await s.retryTts()
     expect(initTts).toHaveBeenCalledTimes(2)
     expect(initEngine).toHaveBeenCalledTimes(1) // Gemma는 다시 올리지 않는다
@@ -524,18 +538,20 @@ describe('model store — 초기화 상한 (#41)', () => {
     expect(s.ttsStatus).toBe('error')
     expect(s.ttsError).toContain('초기화')
     expect(disposeTts).toHaveBeenCalled()
-    expect(s.ready).toBe(false)
+    expect(s.ready).toBe(true) // 목소리가 죽어도 자막으로 면접은 본다
+    expect(s.voicePending).toBe(false)
   })
-  it('목소리를 해제하면 TTS가 실패·대기 중이어도 Gemma만으로 ready', async () => {
+  it('목소리를 해제하면 기다리던 것도 사라진다 — 자막으로 간다는 뜻이다', async () => {
     vi.mocked(getManifest).mockResolvedValue({ ...manifest, tts })
     vi.mocked(initTts).mockReturnValue(new Promise(() => {}))
     const s = useModelStore()
     await s.loadManifest()
     void s.download()
     await vi.advanceTimersByTimeAsync(10)
-    expect(s.ready).toBe(false)
+    expect(s.ready).toBe(true) // 목소리를 기다리지 않는다
+    expect(s.voicePending).toBe(true)
     s.setVoiceWanted(false)
-    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(false)
   })
 })
 
@@ -709,7 +725,7 @@ describe('model store — 면접관 목소리 (tts.voices)', () => {
     }
     expect(vi.mocked(setTtsVoice).mock.calls.map((c) => c[0])).toEqual(['F3', 'M5', 'F4', 'M4'])
   })
-  it('바꾸는 동안에는 ready가 false', async () => {
+  it('바꾸는 동안에도 면접은 열려 있고, 목소리만 아직이라고 알린다', async () => {
     const s = useModelStore()
     await s.loadManifest()
     await s.download()
@@ -717,10 +733,11 @@ describe('model store — 면접관 목소리 (tts.voices)', () => {
     vi.mocked(setTtsVoice).mockReturnValueOnce(new Promise<void>((r) => (release = r)))
     const p = s.chooseInterviewer('f3')
     await vi.waitFor(() => expect(s.voiceSwitching).toBe(true))
-    expect(s.ready).toBe(false)
+    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(true)
     release()
     await p
-    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(false)
   })
   it('교체에 실패하면 이전 목소리를 유지하고 선택도 되돌린다(voiceError)', async () => {
     const s = useModelStore()
@@ -969,7 +986,7 @@ describe('model store — 목소리 교체 상한', () => {
     expect(s.loadedInterviewerId).toBeNull()
     expect(s.voiceError).toBeNull() // 실패는 진행 창(ttsError)이 보여 준다
     expect(useInterviewerStore().id).toBe('f3')
-    expect(s.ready).toBe(false)
+    expect(s.ready).toBe(true) // 목소리 교체가 깨져도 면접은 연다
     // 다시 시도는 고른 목소리로 새 워커를 올린다
     await s.retryTts()
     expect(vi.mocked(initTts).mock.calls.at(-1)?.[0].voice).toBe(voiceOf('f3'))
@@ -1012,9 +1029,9 @@ describe('model store — 목소리 교체 상한', () => {
     void s.chooseInterviewer('f3')
     await vi.advanceTimersByTimeAsync(10)
     expect(s.voiceSwitching).toBe(true)
-    expect(s.ready).toBe(false)
+    expect(s.voicePending).toBe(true)
     s.setVoiceWanted(false)
-    expect(s.ready).toBe(true)
+    expect(s.voicePending).toBe(false)
   })
 })
 
@@ -1094,5 +1111,22 @@ describe('벤(서버 면접관)을 고르면 브라우저 모델을 받지 않�
     useInterviewerStore().select('m1')
     // 엔진이 없으므로 면접을 열면 안 된다
     expect(s.ready).toBe(false)
+  })
+})
+
+describe('model store — 기기 사정으로 끈 목소리는 기억하지 않는다 (멘토링 보완)', () => {
+  it('remember: false면 저장소를 건드리지 않는다 — 가속을 켠 뒤 돌아오면 목소리가 살아 있다', () => {
+    localStorage.setItem('momo.voice', '1')
+    const s = useModelStore()
+    s.setVoiceWanted(false, false)
+    expect(s.voiceWanted).toBe(false)
+    expect(localStorage.getItem('momo.voice')).toBe('1')
+  })
+
+  it('사용자가 직접 끄면 기억한다', () => {
+    localStorage.setItem('momo.voice', '1')
+    const s = useModelStore()
+    s.setVoiceWanted(false)
+    expect(localStorage.getItem('momo.voice')).toBe('0')
   })
 })

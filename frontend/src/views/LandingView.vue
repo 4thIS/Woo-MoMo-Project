@@ -90,7 +90,8 @@ const result = computed(() =>
 watch(
   [() => env.value?.webgpu, serverSide],
   ([gpu]) => {
-    if (gpu === false && model.voiceWanted) model.setVoiceWanted(false)
+    // 저장하지 않는다 — 이 기기에서 못 돌릴 뿐, 사용자가 목소리를 싫다고 한 게 아니다
+    if (gpu === false && model.voiceWanted) model.setVoiceWanted(false, false)
   },
   { immediate: true },
 )

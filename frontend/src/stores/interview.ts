@@ -184,9 +184,7 @@ export const useInterviewStore = defineStore('interview', {
       // 실패는 대기와 다르게 말한다(#41): 사용자가 위 진행 창의 '다시 시도'를 못 보고 "다 채웠는데 안 열린다"고 느끼기 쉽다
       if (m.status === 'error') return '면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도'
       if (m.status !== 'ready') return '면접관이 자리에 앉으면 열립니다'
-      if (m.ttsEnabled && m.ttsStatus === 'error')
-        return '목소리를 준비하지 못했습니다 — 다시 시도하거나 목소리 없이 시작'
-      if (!m.ready) return '면접관 목소리를 준비하면 열립니다'
+      // 목소리는 더 이상 시작을 막지 않는다 — 자막으로 가다가 준비되면 합류한다(`docs/download-time.md`)
       return '위 항목을 채우면 열립니다'
     },
     overLimit: (s) => s.tokenCount > TOKEN_LIMIT,

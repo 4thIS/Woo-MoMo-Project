@@ -602,16 +602,23 @@ describe('interview flow — 음성', () => {
   })
 })
 
-describe('canStart — TTS', () => {
-  it('manifest.tts가 있고 ttsStatus가 ready가 아니면 잠기고 이유를 말한다', async () => {
+describe('canStart — TTS (멘토링 보완: 목소리를 기다리지 않는다)', () => {
+  it('목소리를 받는 중이어도 시작할 수 있다 — 자막으로 가다가 합류한다', async () => {
     const s = await readyStore()
     const m = useModelStore()
     m.manifest = { ...m.manifest!, tts: TTS }
     m.ttsStatus = 'downloading'
-    expect(s.canStart).toBe(false)
-    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
-    m.ttsStatus = 'ready'
     expect(s.canStart).toBe(true)
+    expect(s.startBlockReason).toBeNull()
+    expect(m.voicePending).toBe(true)
+  })
+
+  it('모델이 아직이면 그대로 잠긴다 — 면접관 없이는 못 연다', async () => {
+    const s = await readyStore()
+    const m = useModelStore()
+    m.status = 'downloading'
+    expect(s.canStart).toBe(false)
+    expect(s.startBlockReason).toBe('면접관이 자리에 앉으면 열립니다')
   })
 })
 
@@ -740,16 +747,14 @@ describe('startBlockReason — 실패와 대기를 구분한다 (#41)', () => {
     useModelStore().status = 'error'
     expect(s.startBlockReason).toBe('면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도')
   })
-  it('TTS 실패 vs 준비 중', async () => {
+  it('목소리는 실패해도 준비 중이어도 시작을 막지 않는다 — 이유는 준비 화면 문구가 말한다', async () => {
     const s = await readyStore()
     const m = useModelStore()
     m.manifest = { ...m.manifest!, tts: TTS }
     m.ttsStatus = 'error'
-    expect(s.startBlockReason).toBe(
-      '목소리를 준비하지 못했습니다 — 다시 시도하거나 목소리 없이 시작',
-    )
+    expect(s.startBlockReason).toBeNull()
     m.ttsStatus = 'initializing'
-    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
+    expect(s.startBlockReason).toBeNull()
   })
 })
 

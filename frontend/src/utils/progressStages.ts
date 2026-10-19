@@ -84,6 +84,19 @@ export function progressRate(samples: Sample[], now: number, window = RATE_WINDO
   return dt > 0 && b.p > a.p ? (b.p - a.p) / dt : 0
 }
 
+/**
+ * 남은 시간 문구. **분 단위로 반올림한다** — 회선이 흔들릴 때마다 초가 널뛰면
+ * 숫자가 있는 편이 없느니만 못하다.
+ */
+export function formatEta(sec: number | null): string {
+  if (sec === null) return ''
+  if (sec <= 0) return '곧 끝납니다'
+  if (sec < 60) return '1분 안'
+  const m = Math.round(sec / 60)
+  if (m < 60) return `약 ${m}분`
+  return `약 ${Math.floor(m / 60)}시간 ${m % 60}분`
+}
+
 /** 물건까지 남은 거리(px): (at − 진행률) ÷ 진행 속도 × 걷는 속도. 이미 지났으면 0, 속도를 모르면 null(제자리 유지) */
 export function distanceAhead(
   at: number,
