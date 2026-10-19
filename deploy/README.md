@@ -1,6 +1,8 @@
 # 배포 (라즈베리파이, docker-compose)
 
-파이에는 리포를 **git clone**해서 올린다. 이미지는 CI가 arm64로 빌드해 GHCR에 올리고(main=`:latest`, dev=`:dev`), 파이는 받기만 한다.
+> **2026-10-18 서버 이전:** 라즈베리파이(arm64)에서 `myserver`(Ubuntu, x86_64, Tailscale `ssenu@myserver`)로 옮겼다. 폴더 구조(`/srv/apps/Woo-MoMo-Project`, `/srv/apps/Woo-MoMo-Project-dev`, `/srv/momo-dev/data`)와 compose 프로젝트 이름은 그대로다. 아래 "파이"는 배포 서버로 읽는다.
+
+배포 서버에는 리포를 **git clone**해서 올린다. 이미지는 CI가 **amd64**로 빌드해 GHCR에 올리고(main=`:latest`, dev=`:dev`), 서버는 받기만 한다.
 demomo(dev)는 자동 재배포 타이머가 2분마다 확인해 반영한다(아래 "자동 재배포"). 파이에서 직접 빌드(`--build`)도 여전히 된다.
 
 > **2026-09-17: 모델·TTS 다운로드는 Hugging Face로 전환됐다.** 매니페스트가 HF 주소를 가리키므로 브라우저는 파이에서 모델을 받지 않는다.
@@ -195,7 +197,7 @@ WEB_BIND=0.0.0.0:80
 - Tailscale IP로 직접 열려면 `WEB_BIND=0.0.0.0:8080`이 필요하다(기본은 127.0.0.1). 외부 노출은 터널로만 되므로 0.0.0.0 바인딩도 안전하다.
 
 ## GHCR 이미지 사용 (선택)
-CI(`.github/workflows/ci.yml`)가 main push마다 arm64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
+CI(`.github/workflows/ci.yml`)가 main push마다 amd64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
 파이에서 빌드하지 않고 받아 쓰려면:
 ```
 docker login ghcr.io          # read:packages 토큰
@@ -236,10 +238,10 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 
 `deploy/models/`와 `*.litertlm`은 이미 루트 `.gitignore`에 걸려 있어 커밋되지 않는다.
 
-## 로컬에서 직접 빌드(arm64 크로스)
+## 로컬에서 직접 빌드(amd64)
 ```
-docker buildx build --platform linux/arm64 -f deploy/api.Dockerfile -t ghcr.io/4this/woo-momo-api:latest backend
-docker buildx build --platform linux/arm64 -f deploy/web.Dockerfile -t ghcr.io/4this/woo-momo-web:latest .
+docker buildx build --platform linux/amd64 -f deploy/api.Dockerfile -t ghcr.io/4this/woo-momo-api:latest backend
+docker buildx build --platform linux/amd64 -f deploy/web.Dockerfile -t ghcr.io/4this/woo-momo-web:latest .
 ```
 
 ## 자동 재배포 (demomo, 2026-10-14~)
