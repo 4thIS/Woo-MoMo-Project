@@ -1,11 +1,14 @@
 <script lang="ts">
 /** 말하기 중 마지막 음성 결과 뒤 이만큼 조용하면 자동 전송. Chrome이 무음으로 인식을 스스로 끊는 시간(약 5~8초)보다 짧게 */
 export const SILENCE_MS = 3000
+/** 음성 인식 경로를 한 번 알렸다는 표시. 기기마다(브라우저마다) 한 번이면 된다 */
+export const SPEECH_NOTICE_KEY = 'momo.speechNotice.v1'
 </script>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
+import PixelWindow from '@/components/ui/PixelWindow.vue'
 import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
 import { ANSWER_LIMIT_MS, ANSWER_WARN_MS, formatSignedClock } from '@/utils/timing'
 
@@ -67,6 +70,32 @@ function onKey(e: KeyboardEvent) {
 }
 const locked = computed(() => props.generating || props.disabled)
 
+/* 음성 인식은 이 브라우저가 아니라 **Chrome이 구글 서버로 보내** 글자로 바꾼다.
+   "기기를 떠나지 않는다"는 이 서비스의 약속에서 유일하게 빠지는 길이므로, 켜기 전에 알린다 */
+const askingSpeech = ref(false)
+function noticeSeen(): boolean {
+  try {
+    return localStorage.getItem(SPEECH_NOTICE_KEY) === '1'
+  } catch {
+    // 저장소가 막힌 환경(프라이빗 창 등) — 매번 알리는 쪽이 안전하다
+    return false
+  }
+}
+function rememberNotice() {
+  try {
+    localStorage.setItem(SPEECH_NOTICE_KEY, '1')
+  } catch {
+    /* 기억하지 못해도 고지는 이미 했다 */
+  }
+}
+function acceptSpeech() {
+  askingSpeech.value = false
+  rememberNotice()
+  micOn.value = true
+  micError.value = ''
+  beginListen()
+}
+
 function toggleMic() {
   if (!supported || locked.value) return
   if (micOn.value) {
@@ -76,6 +105,10 @@ function toggleMic() {
     listening.value = false
     interim.value = ''
     emit('typing', text.value.trim().length > 0)
+    return
+  }
+  if (!noticeSeen()) {
+    askingSpeech.value = true
     return
   }
   micOn.value = true
@@ -188,6 +221,8 @@ const micTitle = computed(() =>
         formatSignedClock(leftMs)
       }}</span>
     </div>
+    <!-- 듣는 동안에는 계속 보인다 — 켤 때 한 번 본 고지를 면접 중에 잊지 않게 -->
+    <p v-if="listening" class="mono route" data-test="speech-live">음성이 구글 서버로 갑니다</p>
     <div class="ta-wrap" :class="{ listening }">
       <textarea
         v-model="text"
@@ -222,6 +257,23 @@ const micTitle = computed(() =>
       </PixelButton>
     </div>
     <p v-if="micError" class="mono err">{{ micError }}</p>
+
+    <!-- 켜기 전 한 번. 무대 위에 떠야 하므로 면접 화면 안에서 직접 그린다 -->
+    <div v-if="askingSpeech" class="ask" role="dialog" aria-label="말하기를 켜기 전에">
+      <div class="ask-back" @click="askingSpeech = false" />
+      <PixelWindow padding="sm" class="ask-win" title="말하기를 켜기 전에">
+        <p class="mono" data-test="speech-notice">
+          음성 인식은 Chrome 기능이라, 녹음된 소리가 <b>구글 서버로 전송돼</b> 글자로 바뀝니다.
+        </p>
+        <p class="mono dim">직접 입력한 답변은 이 브라우저를 떠나지 않습니다.</p>
+        <div class="ask-btns">
+          <PixelButton variant="secondary" data-test="speech-cancel" @click="askingSpeech = false">
+            직접 입력할게요
+          </PixelButton>
+          <PixelButton data-test="speech-ok" @click="acceptSpeech()">알겠습니다</PixelButton>
+        </div>
+      </PixelWindow>
+    </div>
   </div>
 </template>
 
@@ -324,6 +376,45 @@ const micTitle = computed(() =>
   width: 8px;
   height: 8px;
   background: currentColor;
+}
+/* 듣는 동안 뜨는 경로 안내 — 녹음 안내(.rec)와 같은 결, 색만 경고가 아니라 보통 */
+.route {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+/* 켜기 전 확인 — 면접 화면 전체를 덮는다. 무대 위라 z-index는 dock(4)보다 높게 */
+.ask {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+}
+.ask-back {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  opacity: 0.85;
+}
+.ask-win {
+  position: relative;
+  max-width: 420px;
+}
+.ask-win .dim {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.ask-win p {
+  margin: 0;
+}
+.ask-btns {
+  display: flex;
+  gap: var(--sp-3);
+  justify-content: flex-end;
 }
 .err {
   color: var(--danger);

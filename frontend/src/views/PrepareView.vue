@@ -15,6 +15,8 @@ import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
+import { formatEta } from '@/utils/progressStages'
+import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
@@ -71,7 +73,8 @@ const voice = computed(() => model.status === 'ready' && model.ttsEnabled)
 const phase = computed(() => {
   if (model.status === 'error' || (voice.value && model.ttsStatus === 'error')) return 'error'
   if (model.status !== 'ready') return model.status === 'initializing' ? 'init' : 'download'
-  return model.ready ? 'ready' : 'voice'
+  // 목소리를 받는 동안에도 면접은 열려 있다(model.ready) — 진행 창은 그래도 목소리 단계를 보여 준다
+  return model.voicePending ? 'voice' : 'ready'
 })
 /* 진행 창 제목도 단계를 따른다 — 아래 문구(PixelProgress caption)와 모순되지 않게 (#24) */
 const TITLE: Record<'download' | 'init' | 'voice' | 'ready' | 'error', string> = {
@@ -89,6 +92,8 @@ const ttsError = computed(() => voice.value && model.ttsStatus === 'error')
 const voiceReady = computed(() => model.ttsStatus === 'ready' && !model.voiceSwitching)
 /* 남은 시간: 최근 표본 속도로 추정 */
 const eta = ref('')
+/** 지금 받는 속도 문구(예: 7.2MB/s). 비면 아무것도 안 보인다 */
+const speed = ref('')
 const samples: { t: number; r: number }[] = []
 const downloading = computed(
   () => model.status === 'downloading' || (voice.value && model.ttsStatus === 'downloading'),
@@ -98,6 +103,7 @@ watch(
   ([r, on]) => {
     if (!on) {
       eta.value = ''
+      speed.value = ''
       samples.length = 0
       return
     }
@@ -108,14 +114,17 @@ watch(
     const rate = (r - a.r) / Math.max(1, (now - a.t) / 1000)
     if (rate <= 0) {
       eta.value = ''
+      speed.value = ''
       return
     }
+    speed.value = `${formatBytes(rate)}/s`
     const s = Math.round((model.overallTotal - r) / rate)
     if (s <= 0) {
       eta.value = '' // 다 받았는데 상태가 아직 downloading인 짧은 순간 — "약 0초 남음"을 내지 않는다
       return
     }
-    eta.value = s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
+    // 초까지 보여 주면 회선이 흔들릴 때마다 숫자가 널뛴다 — 분으로 반올림한다
+    eta.value = `${formatEta(s)} 남음`
   },
   { immediate: true },
 )
@@ -222,6 +231,10 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => stuckTimer && clearTimeout(stuckTimer))
+/** 목소리가 끝내 실패했는가. 시작을 막지는 않고 왜 자막인지만 알린다 */
+const voiceFailed = computed(
+  () => model.status === 'ready' && model.ttsEnabled && model.ttsStatus === 'error',
+)
 const voicelessOffer = computed(
   () =>
     model.status === 'ready' &&
@@ -260,7 +273,7 @@ async function clearAndRetry() {
   <div ref="root" class="prepare stars snap-root">
     <header class="mono topbar">
       <span>모두의 모의면접 · 준비</span>
-      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다</span>
+      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>
     </header>
 
     <!-- 1. 다운로드 / 초기화 -->
@@ -274,6 +287,7 @@ async function clearAndRetry() {
             :total="model.overallTotal"
             :file-name="fileName"
             :eta="eta"
+            :speed="speed"
             :error-text="
               ttsError ? `목소리를 준비하지 못했습니다: ${model.ttsError}` : (model.error ?? '')
             "
@@ -596,6 +610,14 @@ async function clearAndRetry() {
               }})
             </li>
           </ul>
+          <!-- 목소리를 기다리지 않고 시작할 수 있다. 무엇을 포기하는지는 알고 누르게 한다 -->
+          <p v-if="model.voicePending" class="mono voice-pending" data-test="voice-pending">
+            목소리는 아직 받는 중입니다 — 지금 시작하면 자막으로 진행하다가 준비되는 질문부터
+            말합니다.
+          </p>
+          <p v-else-if="voiceFailed" class="mono voice-pending" data-test="voice-failed">
+            목소리를 준비하지 못했습니다 — 자막으로 진행합니다.
+          </p>
           <div class="start-btns">
             <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
               startLabel
@@ -816,6 +838,13 @@ async function clearAndRetry() {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--sp-2);
+}
+
+.voice-pending {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
 }
 .link {
   background: none;
