@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import { checkEnvironment, type EnvCheck } from '@/services/gpuCheck'
-import { verdict } from '@/utils/envVerdict'
+import { isHandheld, verdict } from '@/utils/envVerdict'
 import { formatGB, formatSize } from '@/utils/format'
 import { useSectionWheel } from '@/composables/useSectionWheel'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
@@ -40,6 +40,9 @@ onMounted(() => {
   root.value?.addEventListener('scroll', onScroll, { passive: true })
   if (!model.manifest) model.loadManifest()
   manifestTimer = setTimeout(() => (manifestTimedOut.value = true), 5000)
+  // 휴대폰 배너는 들어오자마자 떠야 한다 — 동의 단계까지 기다리면 이미 3단계를 내려온 뒤다.
+  // 동의 때 한 번 더 검사하는 것은 그대로 둔다(그 사이 가속을 켤 수 있다)
+  if (!env.value && !envBusy.value) void runCheck()
 })
 onBeforeUnmount(() => {
   root.value?.removeEventListener('scroll', onScroll)
@@ -61,10 +64,36 @@ const needPick = computed(() => !iv.id)
 /* 장비 확인 */
 const env = ref<EnvCheck | null>(null)
 const envBusy = ref(false)
+/** 첫 화면 권장 사양 펼침 — 기본은 접어 둔다(첫 화면이 사양표가 되면 안 된다) */
+const specOpen = ref(false)
+/** 휴대폰·태블릿 — 모델을 올릴 수 없다. 둘러보기는 막지 않고 배너로만 알린다 (멘토링 2026-10-12) */
+const handheld = computed(() => (env.value ? isHandheld(env.value) : false))
+const copied = ref(false)
+async function copyUrl() {
+  try {
+    await navigator.clipboard.writeText(location.href)
+    copied.value = true
+    setTimeout(() => (copied.value = false), 2000)
+  } catch {
+    // 클립보드를 막은 브라우저 — 주소창을 그대로 쓰면 된다
+  }
+}
 /* 필요 용량: 모델 + 음성 모델(동의 창의 합계). 재방문(이미 캐시)이면 더 받을 게 없으니 0 — 디스크가 꽉 차도 막지 않는다 */
 const need = computed(() => (model.cached ? 0 : model.downloadSize))
 /* 매니페스트를 아직 못 받았으면(model.active 없음) 판정을 내리지 않는다 */
-const result = computed(() => (env.value && model.active ? verdict(env.value, need.value) : null))
+/* 벤(프리미엄)은 서버가 답한다 — 이 기기의 WebGPU와 무관하다(`stores/model.ts`의 llmSkipped와 같은 뿌리) */
+const serverSide = computed(() => model.llmSkipped)
+const result = computed(() =>
+  env.value && model.active ? verdict(env.value, need.value, !serverSide.value) : null,
+)
+/* WebGPU가 없으면 목소리 합성도 돌지 않는다. 0.4GB를 헛받지 않게 끄고 자막으로 간다 */
+watch(
+  [() => env.value?.webgpu, serverSide],
+  ([gpu]) => {
+    if (gpu === false && model.voiceWanted) model.setVoiceWanted(false)
+  },
+  { immediate: true },
+)
 
 async function runCheck() {
   envBusy.value = true
@@ -154,6 +183,17 @@ function startDownload() {
 
 <template>
   <div ref="root" class="landing stars snap-root">
+    <!-- 휴대폰·태블릿: 내려받을 수 없다는 것만 먼저 알리고, 둘러보기는 막지 않는다 -->
+    <div v-if="handheld" class="mono handheld" data-test="handheld">
+      <span class="mark" aria-hidden="true">!</span>
+      <span class="msg">
+        이 기기에서는 면접관을 내려받을 수 없습니다 — 데스크톱 Chrome·Edge 113+ 가 필요합니다.
+        <button type="button" class="link" data-test="copy-url" @click="copyUrl()">
+          {{ copied ? '주소를 복사했습니다' : 'PC에서 열 주소 복사' }}
+        </button>
+      </span>
+    </div>
+
     <!-- 1. 타이틀 -->
     <section
       ref="hero"
@@ -164,6 +204,20 @@ function startDownload() {
         <template #header><PixelTag>브라우저에서 실행 · 서버 전송 없음</PixelTag></template>
         <h1 class="display logo rise"><b class="mo">모</b>두의<br /><b class="mo">모</b>의면접</h1>
         <p class="sub rise">이력서를 읽는 AI 면접관이 이 컴퓨터 안에서 기다립니다.</p>
+        <!-- 모델이 이 컴퓨터에서 도는 서비스다. 사양은 들어오자마자 알려야 한다 —
+             4단계 장비 확인에서 막히고 나서 알면 이미 늦다 (멘토링 2026-10-12) -->
+        <p class="mono spec rise" data-test="spec-line">
+          데스크톱 Chrome·Edge 113+ · 저장 공간 4GB
+          <button type="button" class="more" data-test="spec-more" @click="specOpen = !specOpen">
+            자세히 {{ specOpen ? '▴' : '▾' }}
+          </button>
+        </p>
+        <ul v-if="specOpen" class="mono spec-list" data-test="spec-detail">
+          <li>데스크톱 Chrome 또는 Edge 113 이상</li>
+          <li>브라우저 저장 공간 4GB 이상 (모델 약 3GB + 목소리 약 0.4GB)</li>
+          <li>그래픽 가속 켠 상태 (WebGPU)</li>
+          <li>휴대폰·태블릿은 모델을 올리지 못합니다</li>
+        </ul>
       </PixelWindow>
       <div class="hint rise">
         <span class="blink"><CursorIcon /> 아래로 내려서 시작</span>
@@ -260,7 +314,9 @@ function startDownload() {
             </p>
             <p v-else class="mono meta">선택하면 아래 장비 확인 창으로 이동합니다.</p>
           </template>
-          <p v-else class="mono meta">이력서·대화·리포트는 이 브라우저를 떠나지 않습니다.</p>
+          <p v-else class="mono meta">
+            이력서·대화·리포트는 이 브라우저를 떠나지 않습니다 (음성 인식 제외).
+          </p>
         </PixelWindow>
       </div>
     </section>
@@ -287,11 +343,16 @@ function startDownload() {
             </div>
           </template>
           <template v-else>
+            <!-- 벤은 서버가 답한다 — 이 기기의 WebGPU를 볼 이유가 없다 (멘토링 2026-10-12) -->
+            <p v-if="serverSide && !env?.webgpu" class="mono server-side" data-test="server-side">
+              <span class="ok">✓</span> 벤은 서버가 답합니다 — 이 기기의 그래픽 성능과 무관합니다.
+              목소리는 받지 않고 자막으로 진행합니다.
+            </p>
             <div class="stats">
               <StatCard
                 label="WebGPU"
                 :value="env ? (env.webgpu ? '지원됨' : '지원 안 됨') : '확인 중'"
-                :state="env ? (env.webgpu ? 'ok' : 'fail') : 'pending'"
+                :state="!env ? 'pending' : env.webgpu ? 'ok' : serverSide ? 'partial' : 'fail'"
               />
               <StatCard
                 label="GPU"
@@ -417,6 +478,65 @@ function startDownload() {
   margin: 0;
   font-size: var(--fs-body-md);
   color: var(--text-2);
+}
+
+/* 권장 사양 — 타이틀 아래 한 줄. 본문보다 조용하게 */
+.spec {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+.spec .more {
+  background: none;
+  border: none;
+  padding: 0 0 0 var(--sp-2);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+/* 타이틀 창은 가운데 정렬이라 기본 불릿을 쓰면 글과 따로 논다 — 점을 글 앞에 직접 붙인다 */
+.spec-list {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.8;
+}
+.spec-list li::before {
+  content: '· ';
+  color: var(--text-3);
+}
+
+/* 휴대폰 배너 — 스크롤해도 따라온다. 한 번 지나치면 4단계에서 또 막히기 때문 */
+.handheld {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: var(--sp-3) var(--sp-5);
+  /* 로그인 버튼(TopBar)이 오른쪽 위에 떠 있다 — 그만큼 비워 글이 가려지지 않게 */
+  padding-right: 120px;
+  background: var(--raise);
+  border-bottom: 2px solid var(--line);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+}
+.handheld .mark {
+  color: var(--accent);
+  flex: none;
+}
+.handheld .link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-2);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .hint {
   font-size: var(--fs-button);

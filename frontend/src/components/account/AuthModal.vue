@@ -160,7 +160,7 @@ async function google() {
 
       <p v-if="signup" class="mono consent" data-test="auth-consent">
         로그인하면 이력서·면접 대화·리포트가 서버에 저장됩니다. 로그인하지 않으면 이 브라우저를
-        떠나지 않습니다.
+        떠나지 않습니다 (음성 인식 제외).
       </p>
 
       <div class="acts">

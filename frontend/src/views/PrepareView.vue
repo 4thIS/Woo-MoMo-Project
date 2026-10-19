@@ -260,7 +260,7 @@ async function clearAndRetry() {
   <div ref="root" class="prepare stars snap-root">
     <header class="mono topbar">
       <span>모두의 모의면접 · 준비</span>
-      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다</span>
+      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>
     </header>
 
     <!-- 1. 다운로드 / 초기화 -->
