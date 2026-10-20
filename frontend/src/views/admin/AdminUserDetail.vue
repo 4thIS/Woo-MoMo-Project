@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useAdminStore } from '@/stores/admin'
 import PixelButton from '@/components/ui/PixelButton.vue'
-import { fmtDate, fmtDateTime } from './format'
+import { fmtDate, fmtDateTime, fmtDelta, fmtText } from './format'
 
 const admin = useAdminStore()
 const d = computed(() => admin.detail)
@@ -175,8 +175,8 @@ async function go() {
           <tbody>
             <tr v-for="(t, i) in d.ticketLog" :key="i" data-test="admin-ticketlog-row">
               <td>{{ fmtDateTime(t.at) }}</td>
-              <td>{{ t.adminEmail }}</td>
-              <td>{{ t.delta > 0 ? `+${t.delta}` : t.delta }}</td>
+              <td>{{ fmtText(t.adminEmail) }}</td>
+              <td>{{ fmtDelta(t.delta) }}</td>
               <td>{{ t.reason }}</td>
             </tr>
             <tr v-if="d.ticketLog.length === 0">

@@ -12,9 +12,13 @@ import AdminAudit from './AdminAudit.vue'
 const account = useAccountStore()
 const admin = useAdminStore()
 
-/** 세션을 한 번 읽어 보기 전에는 판단하지 않는다 */
+/** 세션을 한 번 읽어 보기 전에는 판단하지 않는다. load()는 TopBar와 겹쳐도 한 번만 읽는다 */
 const checked = ref(false)
 const allowed = computed(() => account.session?.isAdmin === true)
+/** 연결 문제로 세션을 못 읽은 것과 관리자가 아닌 것을 구분한다 */
+const connectionFailed = computed(
+  () => account.session === null && account.error?.code === 'network',
+)
 
 const TABS: { id: AdminTab; label: string }[] = [
   { id: 'overview', label: '개요' },
@@ -45,6 +49,12 @@ watch(
 <template>
   <main class="admin">
     <p v-if="!checked" class="mono" data-test="admin-checking">확인 중…</p>
+    <PixelWindow v-else-if="connectionFailed" title="관리자">
+      <p role="alert" data-test="admin-connection-error">
+        연결하지 못했습니다 — 잠시 뒤 다시 시도해 주세요
+      </p>
+      <a class="mono" href="/">모모로 돌아가기</a>
+    </PixelWindow>
     <PixelWindow v-else-if="!allowed" title="관리자">
       <p data-test="admin-denied">관리자만 볼 수 있습니다</p>
       <a class="mono" href="/">모모로 돌아가기</a>

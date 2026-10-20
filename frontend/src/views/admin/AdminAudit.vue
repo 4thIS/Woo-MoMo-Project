@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useAdminStore } from '@/stores/admin'
 import PixelButton from '@/components/ui/PixelButton.vue'
-import { fmtDateTime } from './format'
+import { fmtDateTime, fmtDelta, fmtText } from './format'
 
 const admin = useAdminStore()
 const pages = computed(() => {
@@ -31,11 +31,11 @@ const pages = computed(() => {
           <tbody>
             <tr v-for="(r, i) in admin.audit.items" :key="i" data-test="admin-audit-row">
               <td>{{ fmtDateTime(r.at) }}</td>
-              <td>{{ r.adminEmail }}</td>
+              <td>{{ fmtText(r.adminEmail) }}</td>
               <td>{{ r.action }}</td>
-              <td>{{ r.targetEmail }}</td>
-              <td>{{ r.delta > 0 ? `+${r.delta}` : r.delta }}</td>
-              <td>{{ r.reason }}</td>
+              <td>{{ fmtText(r.targetEmail) }}</td>
+              <td>{{ fmtDelta(r.delta) }}</td>
+              <td>{{ fmtText(r.reason) }}</td>
             </tr>
             <tr v-if="admin.audit.items.length === 0">
               <td colspan="6" class="muted">기록 없음</td>

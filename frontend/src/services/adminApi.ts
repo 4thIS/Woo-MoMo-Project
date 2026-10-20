@@ -59,7 +59,7 @@ export interface AdminUserDetail {
     questionCount: number
     hasRecording: boolean
   }[]
-  ticketLog: { at: string; adminEmail: string; delta: number; reason: string }[]
+  ticketLog: { at: string; adminEmail: string | null; delta: number; reason: string }[]
 }
 
 export interface AdminUsageDay {
@@ -87,7 +87,7 @@ export interface AdminUsage {
   since: string | null
   byDay: AdminUsageDay[]
   byKind: { kind: 'turn' | 'report' | 'research'; calls: number; costUsd: number }[]
-  topInterviews: { interviewId: string; userEmail: string; calls: number; costUsd: number }[]
+  topInterviews: { interviewId: string; userEmail: string | null; calls: number; costUsd: number }[]
 }
 
 export interface AdminAuditPage {
@@ -96,12 +96,12 @@ export interface AdminAuditPage {
   total: number
   items: {
     at: string
-    adminEmail: string
+    adminEmail: string | null
     action: string
-    targetUserId: string
-    targetEmail: string
-    delta: number
-    reason: string
+    targetUserId: string | null
+    targetEmail: string | null
+    delta: number | null
+    reason: string | null
   }[]
 }
 
