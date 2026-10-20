@@ -276,3 +276,78 @@ systemctl --user disable --now momo-dev-autodeploy.timer    # 끄기
 ```
 - CI 빌드가 끝나기 전에 커밋을 먼저 받으면, 이미지는 다음 확인 때 바뀐다(머지 후 보통 5분 안쪽 반영).
 - 유닛 파일을 고쳤으면 다시 `cp` 후 `daemon-reload`.
+
+## 관리자 대시보드 (2026-10-17~)
+
+관리자 화면(`/admin`)과 관리자 API(`/api/admin/*`)는 **관리자 계정만** 쓸 수 있다. 관리자는 두 가지 방법으로 정해진다.
+
+- `ADMIN_EMAILS`에 적힌 이메일의 계정: **목록 반영은 재기동 때만** 이뤄진다(가입만으로는 관리자가 되지 않는다). 목록에서 빼면 재기동 때 관리자 권한이 해제된다.
+- `ADMIN_LOGIN` / `ADMIN_PASSWORD`(비상용): 기존 방식 그대로 유지한다. 이메일 목록이 망가졌을 때 들어가는 통로다.
+
+Cloudflare Access는 바깥 1차 관문이고, 서버는 관리자 권한을 따로 검사한다(2차). Access만 믿지 않는다.
+
+### `ADMIN_EMAILS` 설정 (`deploy/.env`, 커밋 금지)
+
+순서가 중요하다. 가입에는 이메일 인증이 없어서, 목록에 먼저 넣으면 아직 가입 안 한 그 이메일을 **남이 먼저 가입해 선점**할 수 있다. 그래서 반드시 이 순서로 한다.
+
+1. **본인이 먼저 그 이메일로 가입한다.**
+2. **계정이 본인 것인지 확인한다**(그 이메일·비밀번호로 로그인해 본다).
+3. **`ADMIN_EMAILS`에 추가한다.**
+4. **`docker compose up -d --no-build`** 로 api를 재기동한다(이때 관리자로 반영).
+
+demomo와 momo는 DB가 따로라 각각 먼저 가입해야 한다.
+
+쉼표로 구분한 이메일 목록이다. `.env`는 `.gitignore`가 막으니 직접 편집한다.
+
+demomo(dev)와 momo(운영)의 `deploy/` 폴더에서 각각 실행한다.
+```
+cd /srv/apps/Woo-MoMo-Project-dev/deploy      # 운영은 /srv/apps/Woo-MoMo-Project/deploy
+grep -q '^ADMIN_EMAILS=' .env || echo 'ADMIN_EMAILS=me@example.com,partner@example.com' >> .env
+grep '^ADMIN_EMAILS=' .env                     # 값 확인
+docker compose up -d --no-build                # 재기동해야 반영된다
+```
+- `grep -q`로 이미 있는 줄은 덧붙이지 않는다. 값을 바꾸려면 `.env`를 직접 열어 고친다.
+- 위 예시의 이메일은 자리표시자다. 실제 주소는 `.env`에만 쓰고 README나 커밋에는 적지 않는다.
+- `--no-build`: 이미지를 다시 빌드하지 않고 `.env` 변경만 반영한다(demomo 자동 재배포와 같은 방식).
+
+### 비상용 관리자 비밀번호
+
+- `ADMIN_PASSWORD`는 **12자 이상**을 권장한다. 12자 미만이면 관리자 화면이 경고를 띄운다.
+- 공개 사이트라 약한 비밀번호는 누구나 추측할 수 있다. 추측되면 티켓을 충전해 Claude 비용을 쓸 수 있다.
+- `$`는 쓰지 않는다(compose가 변수로 읽는다). 비밀번호에 `|`와 `&`도 쓰지 않는다(아래 `sed` 명령에서 구분자·치환 문자로 쓰인다).
+
+비밀번호를 바꿀 때는 입력값이 화면이나 셸 기록에 남지 않도록 `read -rsp`로 받는다.
+```
+cd /srv/apps/Woo-MoMo-Project-dev/deploy
+cp .env .env.bak-$(date +%F)                   # 실패하면 되돌릴 백업
+read -rsp '새 관리자 비밀번호: ' P; echo
+sed -i "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$P|" .env
+unset P
+grep -c '^ADMIN_PASSWORD=' .env                # 1 이면 줄이 한 개 남아 있다
+docker compose up -d --no-build
+```
+- 백업 파일도 비밀번호를 담고 있으니 확인이 끝나면 지운다.
+
+### Cloudflare Access 설정 (관리자 화면 앞단)
+
+Access는 로그인하지 않은 요청을 Cloudflare 로그인 화면으로 보낸다. 대시보드에서 아래 순서로 만든다.
+
+1. Cloudflare 대시보드 → **Zero Trust** → **Access** → **Applications** → **Add an application** → **Self-hosted**
+2. Application name: `momo-admin-demomo` (예). Session duration은 기본값으로 둔다.
+3. Application domain: 도메인 `demomo.ssenu.cloud`, 경로(Path) **`admin`** 과 **`api/admin`** 을 **둘 다** 추가한다(경로마다 한 줄씩 Add).
+4. **Policy**: 이름은 자유, Action은 **Allow**.
+   - Include → **Emails**: 본인과 공동 개발자 이메일을 넣는다. 또는
+   - Include → **GitHub organization**: `4thIS`. 이 옵션은 Zero Trust의 Login methods에 GitHub를 먼저 추가해야 보인다.
+5. 저장한다.
+6. momo 운영 배포 때 같은 절차를 `momo.ssenu.cloud` 도메인(경로 `admin`, `api/admin`)으로 한 번 더 한다. 운영은 지시가 있을 때만 한다.
+
+확인:
+```
+curl -sI https://demomo.ssenu.cloud/api/admin/overview
+# 기대: HTTP/2 302 와 Location에 Cloudflare Access 로그인 주소
+# JSON이 바로 나오면 Access 정책이 적용되지 않은 것이다(Application 경로·도메인 확인)
+curl -sI https://demomo.ssenu.cloud/admin
+# 기대: 마찬가지로 302 + Cloudflare Access 로그인 주소
+```
+- `/api/premium/purchase`(목업 결제)는 Access 경로 밖이다. 서버가 관리자인지 검사해 막는다(관리자 전용).
+- Access 로그인을 통과한 뒤에도 관리자 API는 서버가 관리자 여부를 다시 검사한다. 관리자가 아닌 계정은 Access를 통과해도 403이 난다.

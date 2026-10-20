@@ -54,3 +54,9 @@ def test_blank_values_fall_back_to_defaults():
 def test_wildcard_origin_is_rejected():
     with pytest.raises(ValueError, match="CORS_ORIGINS"):
         Settings.from_env({"CORS_ORIGINS": "*"})
+
+
+def test_admin_emails_are_normalized_and_deduplicated():
+    s = Settings.from_env({"ADMIN_EMAILS": " A@b.com, c@d.com ,,a@b.com"})
+    assert s.admin_emails == ("a@b.com", "c@d.com")
+    assert Settings.from_env({}).admin_emails == ()
