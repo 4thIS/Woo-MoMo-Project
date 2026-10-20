@@ -201,14 +201,25 @@ export const useModelStore = defineStore('model', {
     },
     ttsProgress: (s) =>
       s.ttsTotal ? Math.min(100, Math.round((s.ttsReceived / s.ttsTotal) * 100)) : 0,
-    /** 면접을 시작할 수 있는 상태: Gemma ready + (TTS가 있으면) TTS ready + 목소리 교체 중이 아님.
-     *  목소리를 해제하면 교체 중이어도 열린다 — "목소리 없이 시작"이 교체에 막히지 않게 */
+    /** 면접을 시작할 수 있는 상태: Gemma ready. **목소리는 기다리지 않는다** —
+     *  399MB를 더 받느라 실측 회선에서 53초, LTE에서 2분 40초를 더 쓴다(`docs/download-time.md`).
+     *  목소리가 아직이면 자막으로 진행하다 준비되는 턴부터 말한다 (멘토링 2026-10-12) */
     ready(): boolean {
       return (
         this.status === 'ready' &&
         // 벤으로 건너뛴 상태에서 무료 면접관으로 바꾸면 엔진이 없다 — 열어 주면 시작에서 터진다
-        (this.llmSkipped || !this.engineMissing) &&
-        (!this.ttsEnabled || (this.ttsStatus === 'ready' && !this.voiceSwitching))
+        (this.llmSkipped || !this.engineMissing)
+      )
+    },
+    /** 목소리가 아직 **오는 중**인가. 지금 시작하면 자막으로 간다는 안내에 쓴다.
+     *  실패(error)는 오는 중이 아니다 — 그쪽은 ttsError가 따로 알린다 */
+    voicePending(): boolean {
+      if (!this.ttsEnabled) return false
+      if (this.voiceSwitching) return true
+      return (
+        this.ttsStatus === 'idle' ||
+        this.ttsStatus === 'downloading' ||
+        this.ttsStatus === 'initializing'
       )
     },
   },
@@ -519,9 +530,12 @@ export const useModelStore = defineStore('model', {
       await this.checkVoiceCached()
       await this.syncVoice()
     },
-    setVoiceWanted(on: boolean) {
+    /** `remember: false`면 이번 세션만. 기기 사정(WebGPU 없음)으로 끄는 것을 저장하면,
+     *  나중에 가속을 켜거나 다른 기기에서 열어도 목소리가 꺼진 채로 남는다 */
+    setVoiceWanted(on: boolean, remember = true) {
       this.voiceWanted = on
       if (this.manifest) void this.checkCached() // 목소리 선택이 바뀌면 재방문 여부도 달라진다
+      if (!remember) return
       try {
         localStorage.setItem(VOICE_KEY, on ? '1' : '0')
       } catch {

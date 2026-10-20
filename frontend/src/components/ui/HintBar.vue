@@ -9,6 +9,10 @@ import { useHintsStore } from '@/stores/hints'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
 
+/** 'bar' = 화면 아래 떠 있는 띠(랜딩·준비·리포트) · 'note' = 무대 안에 붙는 쪽지(면접).
+ *  쪽지는 **자리를 비우지 않는다** — 면접 화면은 100vh라 자리를 빼면 무대가 눌린다 */
+const props = withDefaults(defineProps<{ variant?: 'bar' | 'note' }>(), { variant: 'bar' })
+
 const hints = useHintsStore()
 const interview = useInterviewStore()
 const iv = useInterviewerStore()
@@ -46,12 +50,15 @@ const el = ref<HTMLElement | null>(null)
 const GAP = 20 // --sp-5, 바와 화면 아래 사이
 let ro: ResizeObserver | null = null
 function space(px: number) {
+  if (props.variant === 'note') return
   document.documentElement.style.setProperty('--hint-space', `${px}px`)
 }
 watch(el, (node) => {
   ro?.disconnect()
   ro = null
-  if (!node) return space(0)
+  // 힌트가 사라져도 **켜져 있는 동안은 자리를 비워 둔다.** 면접 화면은 100vh라
+  // 이 값이 오르내리면 그때마다 무대와 대화창이 늘었다 줄었다 한다(출렁임)
+  if (!node) return hints.enabled ? undefined : space(0)
   if (typeof ResizeObserver === 'undefined') return space(node.offsetHeight + GAP * 2)
   ro = new ResizeObserver(() => space(node.offsetHeight + GAP * 2))
   ro.observe(node)
@@ -61,6 +68,14 @@ onBeforeUnmount(() => {
   space(0)
 })
 
+/** 그만 보기를 누르면 비워 둔 자리를 돌려준다 */
+watch(
+  () => hints.enabled,
+  (on) => {
+    if (!on) space(0)
+  },
+)
+
 function dismiss(key: string) {
   hints.markSeen(key)
   restingAt.value = situation.value
@@ -69,7 +84,7 @@ function dismiss(key: string) {
 
 <template>
   <Transition name="hint">
-    <aside v-if="hint" ref="el" class="bar" role="status" data-test="hint">
+    <aside v-if="hint" ref="el" class="bar" :class="variant" role="status" data-test="hint">
       <p class="text">{{ hint.text }}</p>
       <div class="acts">
         <button type="button" class="ok" data-test="hint-ok" @click="dismiss(hint.key)">
@@ -132,6 +147,55 @@ button:focus-visible {
   text-decoration: underline;
 }
 
+/* 바닥 자막 — 영화 자막 자리라 "내가 듣는 말"로 읽힌다.
+   좌우 판 사이 빈 폭에 들어가야 하므로 너비를 묶는다.
+   가운데 맞추기는 **translate**로 한다 — transform은 떠 있는 움직임이 쓴다 */
+.bar.note {
+  /* 무대(.stage-area)는 지원자가 서 있는 높이에서 끝난다. 그 안에 두면 자막이
+     내 머리 위에 얹히므로 화면 기준으로 띄워 좌우 판 사이 바닥까지 내린다 */
+  position: fixed;
+  left: 50%;
+  translate: -50% 0;
+  right: auto;
+  top: auto;
+  bottom: var(--sp-5);
+  transform: none;
+  width: clamp(220px, 22vw, 330px);
+  z-index: 5;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--caption-veil);
+  border: 0;
+  border-top: 2px solid var(--accent);
+  box-shadow: none;
+  animation: caption-float 3.6s ease-in-out infinite;
+}
+.bar.note .text {
+  font-size: var(--fs-label);
+}
+.bar.note .acts {
+  justify-content: center;
+}
+/* 눈에 걸려야 읽힌다 — 아주 느리게, 아주 조금만 */
+@keyframes caption-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+.bar.note .text {
+  font-size: var(--fs-label);
+}
+.bar.note .acts {
+  justify-content: flex-end;
+}
+
 .hint-enter-active,
 .hint-leave-active {
   transition:
@@ -142,6 +206,15 @@ button:focus-visible {
 .hint-leave-to {
   opacity: 0;
   transform: translate(-50%, var(--sp-3));
+}
+.hint-enter-from.note,
+.hint-leave-to.note {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar.note {
+    animation: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .hint-enter-active,

@@ -4,7 +4,16 @@ from types import SimpleNamespace
 import anthropic
 import pytest
 
-from app.llm.claude import FALLBACK_BETA, MODEL, AnthropicClaude, ClaudeError
+from app.llm.claude import (
+    FALLBACK_BETA,
+    MAX_CONTINUATIONS,
+    MODEL,
+    RESEARCH_TIMEOUT,
+    WEB_SEARCH_TOOL,
+    AnthropicClaude,
+    ClaudeError,
+    ResearchResult,
+)
 from app.main import create_app
 
 SYSTEM = [
@@ -104,3 +113,159 @@ def test_app_builds_real_client_only_with_key(settings):
 
 def test_injected_client_wins(settings, fake_claude):
     assert create_app(settings=settings, claude=fake_claude).state.claude is fake_claude
+
+
+def _text(t):
+    return SimpleNamespace(type="text", text=t)
+
+
+def _results(*pairs):
+    return SimpleNamespace(
+        type="web_search_tool_result",
+        content=[SimpleNamespace(type="web_search_result", title=t, url=u) for t, u in pairs],
+    )
+
+
+def _resp(blocks, stop_reason="end_turn"):
+    return SimpleNamespace(content=blocks, stop_reason=stop_reason)
+
+
+class _Create:
+    def __init__(self, responses=None, error=None):
+        self.calls = []
+        self.options = []
+        self.messages = self  # sdk.messages.create / sdk.with_options(...).messages.create
+        self._responses = list(responses or [])
+        self._error = error
+
+    def with_options(self, **kwargs):
+        self.options.append(kwargs)
+        return self
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        return self._responses.pop(0)
+
+
+def _research_claude(create: _Create) -> AnthropicClaude:
+    return AnthropicClaude(sdk=create)
+
+
+R_MESSAGES = [{"role": "user", "content": "지원 기업: 토스\n지원 직무: 백엔드"}]
+
+
+def test_research_uses_web_search_and_collects_text_and_sources():
+    create = _Create(
+        [
+            _resp(
+                [
+                    SimpleNamespace(type="server_tool_use", name="web_search"),
+                    _results(
+                        ("토스 소개", "https://toss.im"), ("토스 블로그", "https://toss.tech/a")
+                    ),
+                    _text("사업: 간편송금"),
+                    _text(" 최근 소식: 증권"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(
+        system="조사 규칙", messages=R_MESSAGES, max_tokens=8000
+    )
+    assert got == ResearchResult(
+        text="사업: 간편송금 최근 소식: 증권",
+        sources=[
+            {"title": "토스 소개", "url": "https://toss.im"},
+            {"title": "토스 블로그", "url": "https://toss.tech/a"},
+        ],
+    )
+    assert create.options == [{"max_retries": 0}]
+    kw = create.calls[0]
+    assert kw["model"] == MODEL
+    assert kw["tools"] == [WEB_SEARCH_TOOL]
+    assert WEB_SEARCH_TOOL == {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+    assert kw["output_config"] == {"effort": "medium"}
+    assert kw["timeout"] == RESEARCH_TIMEOUT
+    assert kw["extra_body"] == {"fallbacks": "default"}
+    assert kw["extra_headers"] == {"anthropic-beta": FALLBACK_BETA}
+    assert kw["system"] == "조사 규칙"
+    assert kw["messages"] == R_MESSAGES
+
+
+def test_research_resumes_pause_turn_with_the_paused_content():
+    first = _resp([_results(("a", "https://a.com")), _text("앞")], stop_reason="pause_turn")
+    second = _resp([_results(("a", "https://a.com"), ("b", "https://b.com")), _text("뒤")])
+    create = _Create([first, second])
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert got.text == "앞뒤"  # 검색 직전 서술이 없으면 pause 전후 본문 모두 유지
+    assert [s["url"] for s in got.sources] == ["https://a.com", "https://b.com"]  # 중복 제거
+    assert create.calls[1]["messages"] == [
+        *R_MESSAGES,
+        {"role": "assistant", "content": first.content},
+    ]
+
+
+def test_research_stops_after_max_continuations():
+    paused = [_resp([_text("x")], stop_reason="pause_turn") for _ in range(MAX_CONTINUATIONS + 1)]
+    create = _Create(paused)
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert len(create.calls) == MAX_CONTINUATIONS + 1
+    assert got.text == "x" * (MAX_CONTINUATIONS + 1)
+
+
+def test_search_error_block_is_not_a_source():
+    err = SimpleNamespace(
+        type="web_search_tool_result", content=SimpleNamespace(error_code="unavailable")
+    )
+    create = _Create([_resp([err, _text("본문")])])
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert got.sources == []
+
+
+def test_research_refusal_and_api_error_become_claude_error():
+    refused = _Create([_resp([_text("…")], stop_reason="refusal")])
+    with pytest.raises(ClaudeError) as e1:
+        _research_claude(refused).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert e1.value.code == "refused"
+    broken = _Create(error=_ApiFailure())
+    with pytest.raises(ClaudeError) as e2:
+        _research_claude(broken).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert e2.value.code == "claude_error"
+
+
+def test_research_drops_narration_before_a_search():
+    create = _Create(
+        [
+            _resp(
+                [
+                    _text("토스에 대해 검색해 보겠습니다."),
+                    SimpleNamespace(type="server_tool_use", name="web_search"),
+                    _results(("토스", "https://toss.im")),
+                    _text("본문"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert got.text == "본문"
+
+
+def test_research_keeps_body_written_between_searches():
+    create = _Create(
+        [
+            _resp(
+                [
+                    SimpleNamespace(type="server_tool_use", name="web_search"),
+                    _results(("토스", "https://toss.im")),
+                    _text("사업: 간편송금 "),
+                    SimpleNamespace(type="server_tool_use", name="web_search"),
+                    _results(("토스2", "https://toss.tech")),
+                    _text("최근 소식: 증권"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert got.text == "사업: 간편송금 최근 소식: 증권"

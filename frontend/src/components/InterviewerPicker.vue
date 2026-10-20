@@ -104,6 +104,16 @@ const sheet = (id: InterviewerId) => {
         <span v-if="p.premium" class="ribbon" aria-hidden="true"><i /><b>P</b></span>
       </button>
     </div>
+    <!-- 좁은 화면에서 카드가 옆으로 흐르면 몇 명 중 몇 번째인지 보이지 않는다 — 점으로 알린다.
+         넓은 화면에서는 네 장이 다 보이므로 CSS로 감춘다 -->
+    <div class="dots" aria-hidden="true">
+      <i
+        v-for="p in INTERVIEWERS"
+        :key="p.id"
+        data-test="picker-dot"
+        :class="{ on: iv.id === p.id }"
+      />
+    </div>
     <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다 -->
     <div v-if="iv.current?.track === null" class="track" data-test="track-pick">
       <span class="mono q">어느 면접으로 볼까요?</span>
@@ -133,6 +143,10 @@ const sheet = (id: InterviewerId) => {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  /* 둘 다 필요하다 — min-width만으로는 줄어들 수 있을 뿐이고, 세로 flex 안에서 내용이
+     더 넓으면 그대로 삐져나간다. width가 레일을 창 폭에 묶는다 */
+  min-width: 0;
+  width: 100%;
 }
 /* 카드 4장을 한 줄로(약 940px), 그보다 좁으면 2×2, 아주 좁으면 한 줄에 하나.
    카드 폭(캐릭터 184px + 여백 ≈ 220px)이 같아 열이 고르게 선다 */
@@ -147,11 +161,57 @@ const sheet = (id: InterviewerId) => {
     grid-template-columns: repeat(2, auto);
   }
 }
-@media (max-width: 560px) {
+/* 네 장이 다 보이는 화면에서는 점이 알려 줄 것이 없다 */
+.dots {
+  display: none;
+  gap: var(--sp-2);
+  justify-content: center;
+}
+.dots i {
+  width: 8px;
+  height: 8px;
+  background: var(--raise);
+  border: 2px solid var(--line);
+}
+.dots i.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* 휴대폰: 세로로 쌓으면 네 명을 보는 데 1,300px을 내려야 한다 — 한 줄로 세워 옆으로 넘긴다.
+   카드가 화면 폭보다 좁아야 '다음 장이 있다'가 보인다 (멘토링 2026-10-12) */
+@media (max-width: 640px) {
   .picker {
-    grid-template-columns: auto;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    /* 창 폭 기준 — 한 장이 거의 꽉 차되 다음 장 모서리가 보여 '더 있다'를 알린다 */
+    grid-auto-columns: 84%;
+    justify-content: start;
+    gap: var(--sp-3);
+    overflow-x: auto;
+    /* 레일은 창 폭 안에서만 흐른다 — 안 묶으면 그리드가 그대로 넓어져 스크롤이 생기지 않는다 */
+    min-width: 0;
+    max-width: 100%;
+    scroll-snap-type: x mandatory;
+    /* 첫 장과 끝 장도 가운데에 설 수 있게 양끝 여백 */
+    padding: var(--sp-2) 8%;
+    width: 100%;
+    scrollbar-width: none;
+  }
+  .picker::-webkit-scrollbar {
+    display: none;
+  }
+  .card {
+    scroll-snap-align: center;
+  }
+  /* 옆으로 흐를 때는 고르지 않은 카드를 흐리게 하지 않는다 — 넘겨 보는 중이지 버린 게 아니다 */
+  .card.dim {
+    opacity: 1;
+  }
+  .dots {
+    display: flex;
   }
 }
+
 /* 모서리 리본 — 카드 안쪽에 머물러 여백을 먹지 않는다 */
 .ribbon {
   position: absolute;

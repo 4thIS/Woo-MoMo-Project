@@ -77,3 +77,23 @@ describe('PixelProgress', () => {
     expect(w.text()).toContain('42%')
   })
 })
+
+describe('PixelProgress — 받는 속도 (멘토링 보완)', () => {
+  const base = {
+    progress: 46,
+    phase: 'download' as const,
+    received: 1.4e9,
+    total: 3.1e9,
+    fileName: 'gemma-4-E4B',
+  }
+
+  it('속도를 받으면 용량 옆에 보여 준다 — 느린 게 내 회선 때문인지 알 수 있다', () => {
+    const w = mount(PixelProgress, { props: { ...base, speed: '7.2MB/s' } })
+    expect(w.find('[data-test="speed"]').text()).toContain('7.2MB/s')
+  })
+
+  it('속도를 모르면 자리도 만들지 않는다', () => {
+    const w = mount(PixelProgress, { props: base })
+    expect(w.find('[data-test="speed"]').exists()).toBe(false)
+  })
+})

@@ -20,6 +20,7 @@ import {
   progressRate,
   type SceneProp,
   type StageState,
+  formatEta,
 } from './progressStages'
 
 describe('progressStages', () => {
@@ -306,5 +307,25 @@ describe('지나가는 소품', () => {
     } else {
       expect(PROP_KEYS).toContain(spawnProp(320, () => 0)!.key)
     }
+  })
+})
+
+describe('formatEta — 널뛰지 않게 다듬는다', () => {
+  it('분 단위로 반올림한다 — 초 단위로 흔들리면 없느니만 못하다', () => {
+    expect(formatEta(250)).toBe('약 4분')
+    expect(formatEta(260)).toBe('약 4분')
+  })
+
+  it('1분 미만은 분으로 쪼개지 않는다', () => {
+    expect(formatEta(40)).toBe('1분 안')
+    expect(formatEta(0)).toBe('곧 끝납니다')
+  })
+
+  it('한 시간을 넘으면 시간으로', () => {
+    expect(formatEta(4000)).toBe('약 1시간 7분')
+  })
+
+  it('모르면 빈 문자열 — 자리만 비운다', () => {
+    expect(formatEta(null)).toBe('')
   })
 })

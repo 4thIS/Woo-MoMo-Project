@@ -110,9 +110,12 @@ describe('interviewers — 스프라이트(interviewers64 에셋)', () => {
   it('면접관마다 7개 시트가 실제 파일·manifest frames·92×92 프레임과 맞는다(캐릭터마다 다른 프레임 수 포함)', () => {
     for (const iv of INTERVIEWERS)
       for (const r of CENTER_ROLES) expectSheetMatchesAsset(iv.sprites[r], iv.id, `center_${r}`)
-    // 하드코딩이 아니라 manifest를 따른다: m1만 question이 8프레임
-    expect(interviewerById('m1')!.sprites.question.frames).toBe(8)
-    expect(interviewerById('f3')!.sprites.question.frames).toBe(12)
+    // 하드코딩이 아니라 manifest를 따른다 — 캐릭터마다 다를 수 있다
+    for (const iv of INTERVIEWERS)
+      expect(iv.sprites.question.frames, iv.id).toBe(
+        readJson(join(PUBLIC, `sprites/interviewers64/${iv.id}/manifest.json`)).center_question
+          .frames,
+      )
   })
   it('배석자: 왼쪽 sl(idle·pageflip), 오른쪽 sr(idle·writing·pentap)이 실제 에셋과 맞는다', () => {
     expect([...LEFT_ROLES]).toEqual(['idle', 'pageflip'])

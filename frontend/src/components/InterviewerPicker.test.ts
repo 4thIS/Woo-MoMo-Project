@@ -17,10 +17,13 @@ vi.mock('@/services/tts', () => ({
 }))
 
 import { playPreview } from '@/services/preview'
+import { interviewerById } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
 import InterviewerPicker from './InterviewerPicker.vue'
+import PickerSource from './InterviewerPicker.vue?raw'
+import { INTERVIEWERS } from '@/interviewers'
 import { useInterviewStore } from '@/stores/interview'
 
 beforeEach(() => {
@@ -53,7 +56,9 @@ describe('InterviewerPicker', () => {
     for (const id of ['m1', 'f3', 'm2', 'f2']) {
       const st = (card(w, id).find('.sprite').element as HTMLElement).style
       expect([st.width, st.height], id).toEqual(['184px', '184px'])
-      expect(st.backgroundSize, id).toBe('2944px 184px') // idle 16f × 92 × 2
+      // 하드코딩하지 않는다 — 시트 길이는 manifest 프레임 수를 따른다
+      const frames = interviewerById(id)!.sprites.idle.frames
+      expect(st.backgroundSize, id).toBe(`${92 * 2 * frames}px 184px`)
       expect(st.backgroundImage, id).toContain(`/sprites/interviewers64/${id}/center_idle.png`)
     }
   })
@@ -225,5 +230,33 @@ describe('InterviewerPicker', () => {
       await flushPromises()
       expect(w.find('[data-test=track-pick]').exists()).toBe(false)
     })
+  })
+})
+
+describe('InterviewerPicker — 휴대폰에서는 옆으로 넘긴다 (멘토링 보완)', () => {
+  const css = () => PickerSource.split('<style')[1] ?? ''
+
+  it('좁은 화면에서는 한 줄로 세워 가로로 스크롤한다 — 세로로 쌓으면 네 명을 보는 데 1,300px이다', () => {
+    const narrow = css().match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(narrow).toMatch(/\.picker\s*\{[^}]*grid-auto-flow:\s*column/)
+    expect(narrow).toMatch(/overflow-x:\s*auto/)
+    expect(narrow).toMatch(/scroll-snap-type:\s*x/)
+  })
+
+  it('카드마다 멈춤점이 있다 — 손을 떼면 한 명이 가운데 선다', () => {
+    expect(css()).toMatch(/scroll-snap-align/)
+  })
+
+  it('몇 번째를 보고 있는지 점으로 알린다', () => {
+    const w = mount(InterviewerPicker)
+    const dots = w.findAll('[data-test="picker-dot"]')
+    expect(dots).toHaveLength(INTERVIEWERS.length)
+  })
+
+  it('고른 면접관의 점만 켜진다', async () => {
+    const w = mount(InterviewerPicker)
+    await w.find('[data-test="interviewer-f3"]').trigger('click')
+    const on = w.findAll('[data-test="picker-dot"]').filter((d) => d.classes().includes('on'))
+    expect(on).toHaveLength(1)
   })
 })

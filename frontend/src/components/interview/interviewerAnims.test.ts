@@ -13,6 +13,8 @@ import {
   CANDIDATE_BACK,
   CANDIDATE_SCALE,
   DESK_OVERLAP,
+  overlapFor,
+  scaleFor,
   FRAME_PAD,
   LIFE,
   SCALE,
@@ -77,6 +79,25 @@ describe('interviewerAnims', () => {
     expect(CENTER_FRAME_PX * SCALE).toBe(276)
     expect([CANDIDATE_BACK.w, CANDIDATE_BACK.h]).toEqual([32, 32])
     expect(CANDIDATE_BACK.w * CANDIDATE_SCALE).toBe(192)
+  })
+
+  it('창이 높으면 크게, 낮으면 작게 — 정수 배율로만 내린다', () => {
+    expect(scaleFor(1000)).toBe(4)
+    expect(scaleFor(900)).toBe(4)
+    expect(scaleFor(860)).toBe(3)
+    expect(scaleFor(760)).toBe(3)
+    expect(scaleFor(700)).toBe(2)
+    expect(scaleFor(500)).toBe(2)
+  })
+
+  it('어떤 높이에서도 정수다', () => {
+    for (let h = 400; h <= 1400; h += 37)
+      expect(Number.isInteger(scaleFor(h)), String(h)).toBe(true)
+  })
+
+  it('겹침 폭은 배율을 따라간다 — 배율이 바뀌면 책상도 같이 맞아야 한다', () => {
+    expect(overlapFor(2)).toBe(FRAME_PAD * 2)
+    expect(overlapFor(4)).toBe(FRAME_PAD * 4)
   })
 
   it('배율은 정수다 — 픽셀 그림은 반 칸으로 늘리면 뭉개진다', () => {

@@ -82,7 +82,8 @@ function codeOf(raw: unknown): BenErrorCode {
 export interface StartCompany {
   track: Extract<Track, 'company'>
   resumeText: string
-  company: { field: string; job: string }
+  /** `name`(선택, 2026-10-15): 있으면 첫 턴에 서버가 회사명·직무로 웹을 뒤져 브리핑을 만든다 */
+  company: { field: string; job: string; name?: string }
 }
 export interface StartAdmission {
   track: Extract<Track, 'admission'>
@@ -118,10 +119,18 @@ export async function startInterview(req: StartRequest): Promise<Started> {
   return body as Started
 }
 
+/** 회사 브리핑 진행 상황 (`docs/API.md`, 회사명이 있는 면접의 첫 턴만).
+ *  `researching`은 조사 시작(캐시가 있으면 생략), `briefing`은 결과. 모르는 phase도 그대로 넘긴다 */
+export interface BenStatus {
+  phase: string
+  ok?: boolean
+}
+
 /** SSE 본문을 끝까지 읽는다. `done`의 data를 돌려주고, error 이벤트는 던진다 */
 async function readStream(
   res: Response,
   onDelta: (text: string) => void,
+  onStatus?: (s: BenStatus) => void,
 ): Promise<Record<string, unknown>> {
   if (!res.ok) {
     const body = await res.json().catch(() => undefined)
@@ -136,6 +145,9 @@ async function readStream(
     if (e.event === 'delta') {
       const text = (JSON.parse(e.data) as { text?: unknown }).text
       if (typeof text === 'string') onDelta(text)
+    } else if (e.event === 'status') {
+      const s = JSON.parse(e.data || '{}') as BenStatus
+      if (typeof s.phase === 'string') onStatus?.(s)
     } else if (e.event === 'done') {
       done = JSON.parse(e.data || '{}') as Record<string, unknown>
     } else if (e.event === 'error') {
@@ -170,22 +182,45 @@ export async function turnStream(
   answer: string | undefined,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  onStatus?: (s: BenStatus) => void,
 ): Promise<{ ended: boolean }> {
   const res = await post(
     `${BASE}/${interviewId}/turns`,
     answer === undefined ? {} : { answer },
     signal,
   )
-  const done = await readStream(res, onDelta)
+  const done = await readStream(res, onDelta, onStatus)
   return { ended: done.ended === true }
 }
 
-/** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다 */
+/** 브라우저가 잰 답변 하나의 전달력 (`docs/API.md` 리포트 본문, 2026-10-16). **숫자만** 간다 */
+export interface DeliveryMetric {
+  /** 몇 번째 지원자 답변인지 (1부터) */
+  answer: number
+  speechSec: number
+  syllables: number
+  longPauses: number
+  longestPauseSec: number
+  firstWordSec: number
+  fillerLevel: 'low' | 'normal' | 'high' | null
+}
+
+/** 서버가 받는 상한. 넘겨 보내면 통째로 422가 되므로 앞쪽만 보낸다 */
+export const DELIVERY_MAX = 8
+
+/** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다.
+ *  `delivery`는 선택 — 비면 본문을 `{}`로 보내 예전과 같은 요청이 된다 */
 export async function reportStream(
   interviewId: string,
   onDelta: (text: string) => void,
   signal?: AbortSignal,
+  delivery?: DeliveryMetric[],
 ): Promise<void> {
-  const res = await post(`${BASE}/${interviewId}/report`, {}, signal)
+  const metrics = (delivery ?? []).filter((d) => d.answer <= DELIVERY_MAX).slice(0, DELIVERY_MAX)
+  const res = await post(
+    `${BASE}/${interviewId}/report`,
+    metrics.length ? { delivery: metrics } : {},
+    signal,
+  )
   await readStream(res, onDelta)
 }

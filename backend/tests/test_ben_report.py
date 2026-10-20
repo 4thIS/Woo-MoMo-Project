@@ -1,3 +1,5 @@
+import pytest
+
 from app.llm import prompts
 from app.llm.claude import REPORT_MAX_TOKENS, ClaudeError
 from app.repos import premium
@@ -120,3 +122,131 @@ def test_report_counts_an_attempt_and_respects_the_cap(client, fake_claude, sett
     assert res.status_code == 409
     assert res.json() == {"error": "interview_over"}
     assert len(fake_claude.calls) == calls
+
+
+METRIC = {
+    "answer": 1,
+    "speechSec": 60,
+    "syllables": 300,
+    "longPauses": 1,
+    "longestPauseSec": 2.5,
+    "firstWordSec": 1.5,
+    "fillerLevel": "normal",
+}
+
+
+def _answered(client, iid, n=1):
+    _one_turn(client, iid)
+    for i in range(n - 1):
+        client.post(f"/api/premium/interviews/{iid}/turns", json={"answer": f"답 {i}"})
+
+
+def test_report_with_delivery_appends_the_block(client, fake_claude):
+    iid = start_ben(client)
+    _answered(client, iid, 2)  # 사용자 답변 1개
+    fake_claude.replies = [[REPORT_RAW]]
+    res = client.post(f"/api/premium/interviews/{iid}/report", json={"delivery": [METRIC]})
+    assert sse_events(res.text)[-1] == ("done", {})
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    assert content.startswith(prompts.report_instruction())
+    assert prompts.DELIVERY_INSTRUCTION in content
+    assert content.endswith(
+        "답변 1: 분당 300음절(보통), 2초 이상 쉼 1회·말한 1분당 1.0회(적음), "
+        "가장 긴 쉼 2.5초, 첫마디까지 1.5초(보통), 군말 보통"
+    )
+
+
+@pytest.mark.parametrize("body", [None, {}, {"delivery": []}])
+def test_report_without_delivery_is_unchanged(client, fake_claude, body):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    fake_claude.replies = [[REPORT_RAW]]
+    url = f"/api/premium/interviews/{iid}/report"
+    res = client.post(url) if body is None else client.post(url, json=body)
+    assert res.status_code == 200
+    assert fake_claude.calls[-1]["messages"][-1] == {
+        "role": "user",
+        "content": prompts.report_instruction(),
+    }
+
+
+@pytest.mark.parametrize(
+    "delivery",
+    [
+        [{**METRIC, "answer": 2}],  # 실제 답변은 1개
+        [METRIC, METRIC],  # 번호 중복
+        [{**METRIC, "speechSec": -1}],
+        [{**METRIC, "syllables": 5001}],
+        [{**METRIC, "fillerLevel": "loud"}],
+        [{**METRIC, "answer": i} for i in range(1, 10)],  # 9개
+        "nope",
+    ],
+)
+def test_bad_delivery_is_422_without_claude_or_attempt(client, fake_claude, settings, delivery):
+    iid = start_ben(client)
+    _answered(client, iid, 2)
+    calls = len(fake_claude.calls)
+    with open_db(settings) as conn:
+        before = conn.execute(
+            "SELECT attempts FROM premium_interviews WHERE id = ?", (iid,)
+        ).fetchone()[0]
+    res = client.post(f"/api/premium/interviews/{iid}/report", json={"delivery": delivery})
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "delivery"}
+    assert len(fake_claude.calls) == calls
+    with open_db(settings) as conn:
+        after = conn.execute(
+            "SELECT attempts FROM premium_interviews WHERE id = ?", (iid,)
+        ).fetchone()[0]
+    assert after == before
+
+
+def test_non_object_body_is_422_delivery(client, fake_claude):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    res = client.post(f"/api/premium/interviews/{iid}/report", json=[1])
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "delivery"}
+
+
+def test_done_report_ignores_delivery(client, fake_claude):
+    iid = start_ben(client)
+    _one_turn(client, iid)
+    fake_claude.replies = [[REPORT_RAW]]
+    _report(client, iid)
+    calls = len(fake_claude.calls)
+    res = client.post(f"/api/premium/interviews/{iid}/report", json={"delivery": [METRIC]})
+    assert "".join(d["text"] for e, d in sse_events(res.text) if e == "delta") == REPORT_RAW
+    assert len(fake_claude.calls) == calls
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"answer": 0},
+        {"longPauses": 201},
+        {"firstWordSec": 601},
+    ],
+)
+def test_out_of_range_metric_is_422_delivery(client, fake_claude, bad):
+    iid = start_ben(client)
+    _answered(client, iid, 2)
+    res = client.post(
+        f"/api/premium/interviews/{iid}/report", json={"delivery": [{**METRIC, **bad}]}
+    )
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "delivery"}
+
+
+def test_null_filler_level_is_accepted_without_filler_text(client, fake_claude):
+    iid = start_ben(client)
+    _answered(client, iid, 2)
+    fake_claude.replies = [[REPORT_RAW]]
+    res = client.post(
+        f"/api/premium/interviews/{iid}/report",
+        json={"delivery": [{**METRIC, "fillerLevel": None}]},
+    )
+    assert res.status_code == 200
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    block = content.split("[답변별 전달력 측정]", 1)[1]
+    assert "군말" not in block

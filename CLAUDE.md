@@ -7,9 +7,9 @@
 ## 프로젝트 개요
 
 - 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 비로그인 사용자의 이력서·대화·리포트는 기기를 떠나지 않는다(로그인 사용자는 동의 후 서버 보관, 프리미엄 면접관 벤은 Claude API — "절대 하지 말 것" 8번). 포트폴리오 겸 공모전 데모.
-- 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/arm64)
+- 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/amd64, 2026-10-18 파이 → x86 서버 이전)
 - 호스팅: https://github.com/4thIS/Woo-MoMo-Project
-- 배포: 개인 라즈베리파이 웹서버. 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
+- 배포: 개인 웹서버(2026-10-18부터 x86_64 `myserver`, 이전엔 라즈베리파이). 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
 - 설계 문서: `docs/superpowers/specs/2026-09-15-mock-interview-design.md` (전체 아키텍처·화면·LLM 흐름·일정)
 
 ## 역할 분담
@@ -78,7 +78,7 @@ Woo-MoMo-Project/
 4. 매 작업 TDD (실패 테스트 먼저)
 5. 변경 제안 전 검증 + 리뷰 요청
 6. 리뷰 → Squash merge
-7. `dev` 머지 → `demomo.ssenu.cloud`에서 확인 → 묶어서 `main`으로 → CI가 arm64 이미지 빌드·GHCR 푸시 → 파이에서 `docker compose pull && up -d`
+7. `dev` 머지 → `demomo.ssenu.cloud`에서 확인 → 묶어서 `main`으로 → CI가 amd64 이미지 빌드·GHCR 푸시 → 배포 서버가 `docker compose pull && up -d`(demomo는 자동 재배포 타이머)
 
 ### 버그 수정
 

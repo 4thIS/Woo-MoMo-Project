@@ -30,10 +30,12 @@ const props = withDefaults(
     total: number
     fileName: string
     eta?: string
+    /** 지금 받는 속도(예: 7.2MB/s). '내 회선이 느린 건가'에 답한다 */
+    speed?: string
     errorText?: string
     scale?: number
   }>(),
-  { eta: '', errorText: '', scale: 3 },
+  { eta: '', speed: '', errorText: '', scale: 3 },
 )
 
 /** 표시용 정수 % (장면은 소수 progress를 그대로 쓴다) */
@@ -279,6 +281,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
     <div class="mono meta">
       <span
         >{{ formatBytes(received) }} / {{ formatBytes(total) }}
+        <span v-if="speed" class="speed" data-test="speed">· {{ speed }}</span>
         <span class="file">· {{ fileName }}</span></span
       >
       <span class="caption" :class="{ danger: phase === 'error' }">{{ caption }}</span>

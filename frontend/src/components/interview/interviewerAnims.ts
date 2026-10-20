@@ -33,7 +33,9 @@ export const ANIMS: Record<AnimName, { loop: boolean }> = {
   right_pentap: { loop: false },
 }
 export const CANDIDATE_BACK = { file: '/sprites/interviewers/candidate_back.png', w: 32, h: 32 }
-export const FPS = 8
+/** 12fps. 8fps 시절보다 프레임을 1.5배로 뽑아 길이는 그대로 두고 중간 동작만 늘렸다 —
+ *  숫자를 되돌리면 모든 동작이 1.5배 빨라진다 */
+export const FPS = 12
 /** 면접관 배율: 프레임 92(CENTER_FRAME_PX) × 3 = 276px. 대체용 32×32 시트도 SpriteFrame이 시트 전체를 늘려 같은 276px로 그린다.
  *  정수만 쓴다 — 픽셀 그림을 반 칸으로 늘리면 칸마다 두께가 달라져 뭉개진다 */
 export const SCALE = 3
@@ -41,6 +43,22 @@ export const SCALE = 3
 export const FRAME_PAD = 14
 /** 옆 사람과 이만큼 겹쳐야 책상 끝끼리 맞닿아 한 줄로 이어진다 */
 export const DESK_OVERLAP = FRAME_PAD * SCALE
+export const overlapFor = (scale: number): number => FRAME_PAD * scale
+
+/** 창 높이에 맞춘 배율. 낮은 창에서 ×4로 그리면 면접관이 아래 패널에 깔린다.
+ *  **정수만** 쓴다 — 반 칸으로 줄이면 픽셀이 뭉개진다 */
+/** 지원자(뒷모습) 배율. 가까운 쪽이라 면접관보다 크게 — 32px 프레임 기준 */
+export function candidateScaleFor(viewportHeight: number): number {
+  if (viewportHeight >= 900) return 8
+  if (viewportHeight >= 760) return 7
+  return 6
+}
+
+export function scaleFor(viewportHeight: number): number {
+  if (viewportHeight >= 900) return 4
+  if (viewportHeight >= 760) return 3
+  return 2
+}
 export const CANDIDATE_SCALE = 6 // 지원자 ×6(192px) — 가까운 쪽이 커 보이게
 
 export type Trio = Record<Char, AnimName>

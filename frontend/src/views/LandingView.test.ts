@@ -27,6 +27,7 @@ import { downloadModel, hasModel } from '@/services/modelCache'
 import { getManifest } from '@/services/api'
 import { useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
+import { useInterviewerStore } from '@/stores/interviewer'
 import LandingView from './LandingView.vue'
 
 const manifest = {
@@ -67,6 +68,7 @@ beforeEach(() => {
     webgpuReason: null,
     gpuName: 'Test GPU',
     storageFree: 10e9,
+    touch: false,
   })
   Element.prototype.scrollIntoView = vi.fn()
   vi.stubGlobal(
@@ -151,6 +153,7 @@ describe('LandingView', () => {
       webgpuReason: null,
       gpuName: 'Test GPU',
       storageFree: 50 * 1024 ** 3,
+      touch: false,
     })
     const w = mountView()
     await flushPromises()
@@ -176,6 +179,7 @@ describe('LandingView', () => {
       webgpuReason: 'no-api',
       gpuName: null,
       storageFree: null,
+      touch: false,
     })
     const w = mountView()
     await flushPromises()
@@ -192,6 +196,7 @@ describe('LandingView', () => {
       webgpuReason: 'no-adapter',
       gpuName: null,
       storageFree: null,
+      touch: false,
     })
     const w = mountView()
     await flushPromises()
@@ -204,6 +209,7 @@ describe('LandingView', () => {
       webgpuReason: null,
       gpuName: 'Test GPU',
       storageFree: 50 * 1024 ** 3,
+      touch: false,
     })
     await w.find('[data-test=recheck]').trigger('click')
     await flushPromises()
@@ -284,6 +290,7 @@ describe('LandingView — 재방문 (#33)', () => {
       webgpuReason: null,
       gpuName: 'Test GPU',
       storageFree: 100 * 1024 ** 2, // 100MB
+      touch: false,
     })
     const w = mountView()
     await flushPromises()
@@ -297,6 +304,7 @@ describe('LandingView — 재방문 (#33)', () => {
       webgpuReason: 'no-api',
       gpuName: null,
       storageFree: null,
+      touch: false,
     })
     const w = mountView()
     await flushPromises()
@@ -363,5 +371,118 @@ describe('LandingView — 면접관 고르기', () => {
     await flushPromises()
     expect(w.find('[data-test="interviewer-m1"]').attributes('aria-checked')).toBe('true')
     expect(w.find('[data-test="go-prepare"]').attributes('disabled')).toBeUndefined()
+  })
+})
+
+describe('LandingView — 권장 사양 안내 (멘토링 보완)', () => {
+  it('첫 화면에서 바로 사양을 알린다 — 실패한 뒤에 알려 주면 늦다', async () => {
+    const w = mountView()
+    await flushPromises()
+    const line = w.find('[data-test="spec-line"]')
+    expect(line.exists()).toBe(true)
+    expect(line.text()).toMatch(/Chrome/)
+    expect(line.text()).toMatch(/113/)
+  })
+
+  it('세부 사양은 접어 둔다 — 첫 화면이 사양표가 되면 안 된다', async () => {
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="spec-detail"]').exists()).toBe(false)
+    await w.find('[data-test="spec-more"]').trigger('click')
+    const detail = w.find('[data-test="spec-detail"]')
+    expect(detail.text()).toMatch(/WebGPU/)
+    expect(detail.text()).toMatch(/휴대폰|태블릿/)
+  })
+})
+
+describe('LandingView — 휴대폰 안내 (멘토링 보완)', () => {
+  const handheld = {
+    webgpu: false,
+    webgpuReason: 'no-api' as const,
+    gpuName: null,
+    storageFree: 9e12,
+    touch: true,
+  }
+
+  it('휴대폰이면 들어오자마자 배너로 알린다 — 4단계까지 내려가서야 막히면 늦다', async () => {
+    vi.mocked(checkEnvironment).mockResolvedValue(handheld)
+    const w = mountView()
+    await flushPromises()
+    const banner = w.find('[data-test="handheld"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toMatch(/휴대폰|기기/)
+  })
+
+  it('데스크톱에는 배너가 없다', async () => {
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="handheld"]').exists()).toBe(false)
+  })
+
+  it('가속만 꺼진 데스크톱에도 배너가 없다 — 그쪽은 켜면 되는 문제다', async () => {
+    vi.mocked(checkEnvironment).mockResolvedValue({ ...handheld, touch: false })
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test="handheld"]').exists()).toBe(false)
+  })
+
+  it('PC에서 열 주소를 복사할 수 있다', async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    vi.mocked(checkEnvironment).mockResolvedValue(handheld)
+    const w = mountView()
+    await flushPromises()
+    await w.find('[data-test="copy-url"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('http'))
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('LandingView — WebGPU 없이 벤으로 (멘토링 보완)', () => {
+  const noGpu = {
+    webgpu: false,
+    webgpuReason: 'no-api' as const,
+    gpuName: null,
+    storageFree: 50e9,
+    touch: false,
+  }
+
+  beforeEach(() => {
+    // 앞 테스트가 캐시 있음으로 바꿔 두면 동의 단계가 접혀 라디오가 사라진다
+    vi.mocked(hasModel).mockResolvedValue(false)
+  })
+
+  async function withBen() {
+    vi.mocked(checkEnvironment).mockResolvedValue(noGpu)
+    const w = mountView()
+    await flushPromises()
+    useInterviewerStore().select('m2') // 벤
+    await flushPromises()
+    await consentRadios(w)[0].trigger('click') // 장비 확인 창은 동의 뒤에 열린다
+    await flushPromises()
+    return w
+  }
+
+  it('벤을 고르면 WebGPU가 없어도 막지 않는다 — 서버가 답한다', async () => {
+    const w = await withBen()
+    expect(w.find('[data-test="fix-webgpu"]').exists()).toBe(false)
+    expect(w.find('[data-test="server-side"]').exists()).toBe(true)
+  })
+
+  it('무료 면접관은 그대로 막는다 — 이 기기에서 모델을 돌려야 한다', async () => {
+    vi.mocked(checkEnvironment).mockResolvedValue(noGpu)
+    const w = mountView()
+    await flushPromises()
+    useInterviewerStore().select('m1')
+    await flushPromises()
+    await consentRadios(w)[0].trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="fix-webgpu"]').exists()).toBe(true)
+  })
+
+  it('WebGPU가 없으면 목소리는 받지 않는다 — 합성도 WebGPU로 돈다', async () => {
+    await withBen()
+    expect(useModelStore().voiceWanted).toBe(false)
+    expect(useModelStore().downloadSize).toBe(0)
   })
 })

@@ -27,9 +27,11 @@ import {
   reportStream,
   startInterview,
   turnStream,
+  type DeliveryMetric,
   type StartRequest,
 } from '@/services/benInterview'
-import { playClip, setMuted } from '@/services/audio'
+import { decodeClip, playClip, setMuted } from '@/services/audio'
+import { analyzeSpeech, countSyllables, fillerLevelOf } from '@/utils/delivery'
 
 export type Phase = 'landing' | 'prepare' | 'interview' | 'report'
 export type Field = 'it' | 'finance' | 'manufacturing' | 'retail' | 'general'
@@ -76,6 +78,9 @@ let recorder: Recorder | null = null
 /** 답변별 녹음 조각. 기록을 만든 **뒤에** 올려야 하므로 그때까지 들고 있는다.
  *  Blob은 직렬화할 수 없어 Pinia state에 두지 않는다 */
 let clips: { turn: number; blob: Blob }[] = []
+/** 전달력 측정(벤 전용, #99). 답변마다 바로 걸어 두고 리포트 요청 직전에 거둔다 —
+ *  마지막에 몰아 재면 리포트를 누른 뒤 멈춘 것처럼 보인다 */
+let measuring: Promise<DeliveryMetric | null>[] = []
 let recordedBytes = 0
 let session: LlmSession | null = null // 모듈 스코프: Pinia state에 비직렬 객체를 넣지 않는다
 let abortCtl: AbortController | null = null
@@ -89,6 +94,20 @@ let revealTimer: ReturnType<typeof setInterval> | null = null
 let graceTimer: ReturnType<typeof setTimeout> | null = null // onended가 안 올 때의 상한
 let speakText = '' // 재생 중인 발화 전문 — 중단 시 이걸로 revealed를 채운다
 
+/** 답변 조각 하나를 숫자로. 못 재면 null — 그 답변만 빠지고 면접·리포트는 그대로다.
+ *  파형도 받아쓴 텍스트도 여기서 끝난다. 나가는 건 숫자뿐이다(`docs/API.md`) */
+async function measureClip(
+  blob: Blob,
+  answer: number,
+  text: string,
+): Promise<DeliveryMetric | null> {
+  const decoded = await decodeClip(blob)
+  if (!decoded) return null
+  const stats = analyzeSpeech(decoded.samples, decoded.sampleRate)
+  if (!stats) return null
+  return { answer, ...stats, syllables: countSyllables(text), fillerLevel: fillerLevelOf(text) }
+}
+
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
     phase: 'landing' as Phase,
@@ -97,6 +116,8 @@ export const useInterviewStore = defineStore('interview', {
     profile: {
       field: null as Field | null,
       job: '',
+      /** 벤 + 회사에서만 쓰는 선택 입력. 있으면 서버가 웹을 뒤져 브리핑을 만든다 */
+      companyName: '',
       name: '',
       age: null as number | null,
       university: '',
@@ -116,6 +137,9 @@ export const useInterviewStore = defineStore('interview', {
     ttsWarning: null as string | null,
     generating: false,
     genError: null as string | null,
+    /** 벤 회사 브리핑(첫 턴만). `researching`이면 조사 중, `failed`면 못 찾고 그냥 간다.
+     *  성공하면 보여 줄 것이 없으므로 다시 null로 돌아간다 */
+    briefing: null as 'researching' | 'failed' | null,
     reactPending: false,
     ended: false,
     tokenCount: 0,
@@ -160,9 +184,7 @@ export const useInterviewStore = defineStore('interview', {
       // 실패는 대기와 다르게 말한다(#41): 사용자가 위 진행 창의 '다시 시도'를 못 보고 "다 채웠는데 안 열린다"고 느끼기 쉽다
       if (m.status === 'error') return '면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도'
       if (m.status !== 'ready') return '면접관이 자리에 앉으면 열립니다'
-      if (m.ttsEnabled && m.ttsStatus === 'error')
-        return '목소리를 준비하지 못했습니다 — 다시 시도하거나 목소리 없이 시작'
-      if (!m.ready) return '면접관 목소리를 준비하면 열립니다'
+      // 목소리는 더 이상 시작을 막지 않는다 — 자막으로 가다가 준비되면 합류한다(`docs/download-time.md`)
       return '위 항목을 채우면 열립니다'
     },
     overLimit: (s) => s.tokenCount > TOKEN_LIMIT,
@@ -187,6 +209,10 @@ export const useInterviewStore = defineStore('interview', {
     setJob(job: string) {
       this.profile.job = job.slice(0, 40)
     },
+    /** 벤 회사 브리핑용. 서버가 1~100자를 받으므로 여기서 자른다 */
+    setCompanyName(name: string) {
+      this.profile.companyName = name.slice(0, 100)
+    },
     /** 벤에서 고른 트랙. 다른 면접관으로 바꾸면 비운다 */
     setTrack(t: Track | null) {
       this.chosenTrack = t
@@ -203,9 +229,10 @@ export const useInterviewStore = defineStore('interview', {
     },
 
     async start() {
+      // canStart가 트랙별로 필요한 칸을 이미 다 본다. 여기서 회사 전용 칸(field)을
+      // 또 보면 대입은 버튼만 켜지고 열리지 않는다
       if (
         !this.canStart ||
-        !this.profile.field ||
         starting ||
         this.generating ||
         this.speaking ||
@@ -219,14 +246,30 @@ export const useInterviewStore = defineStore('interview', {
         ivStore.stopPreview() // 미리 듣기가 면접관 목소리와 겹치지 않게
         const chosen = ivStore.current ?? interviewerById(DEFAULT_INTERVIEWER)!
         this.interviewerId = chosen.id
-        const prompt = buildSystemPrompt({
-          fieldLabel: FIELD_LABELS[this.profile.field],
-          job: this.profile.job,
+        const common = {
           resumeText: this.resumeText,
           fallbackQuestions: this.fallbackQuestions,
           override: model.manifest?.systemPromptOverride,
           persona: PERSONAS[this.sessionInterviewer.persona],
-        })
+        }
+        const p = this.profile
+        const prompt =
+          this.track === 'admission'
+            ? buildSystemPrompt({
+                ...common,
+                track: 'admission',
+                admission: {
+                  name: p.name,
+                  age: p.age ?? 0,
+                  university: p.university,
+                  department: p.department,
+                },
+              })
+            : buildSystemPrompt({
+                ...common,
+                fieldLabel: FIELD_LABELS[p.field as Field],
+                job: p.job,
+              })
         if (session) await session.dispose().catch(() => undefined)
         systemPrompt = prompt
         benId = null
@@ -259,6 +302,7 @@ export const useInterviewStore = defineStore('interview', {
         this.recordingOn = recorder !== null
         // 지난 면접의 조각을 물려받지 않는다 — 남의 기록에 올라간다
         clips = []
+        measuring = []
         this.recordingCount = 0
         this.recordingWarning = null
         recordedBytes = 0
@@ -308,6 +352,11 @@ export const useInterviewStore = defineStore('interview', {
               userText === KICKOFF ? undefined : userText,
               onDelta,
               abortCtl.signal,
+              (s) => {
+                // 조사는 20~40초 걸린다 — 그동안 가만히 두면 멈춘 것처럼 보인다
+                if (s.phase === 'researching') this.briefing = 'researching'
+                else if (s.phase === 'briefing') this.briefing = s.ok === false ? 'failed' : null
+              },
             )
             serverEnded = r.ended
           } else if (session) {
@@ -481,7 +530,9 @@ export const useInterviewStore = defineStore('interview', {
       try {
         if (benId) {
           // 서버가 쓴다. 이미 받은 면접에 다시 불러도 보관한 원문을 그대로 준다
-          await reportStream(benId, (d) => (this.reportRaw += d))
+          // 걸어 둔 측정을 여기서 거둔다. 못 잰 답변은 빠진다(`docs/API.md`: 빼고 보낸다)
+          const delivery = (await Promise.all(measuring)).filter((m) => m !== null)
+          await reportStream(benId, (d) => (this.reportRaw += d), undefined, delivery)
         } else if (session) {
           this.reportRaw = await session.send(
             buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
@@ -511,6 +562,11 @@ export const useInterviewStore = defineStore('interview', {
       const turn = this.messages.filter((m) => m.role === 'user').length - 1
       clips.push({ turn, blob })
       this.recordingCount = clips.length
+      // 전달력은 벤만 받는다. 기다리지 않는다 — 여기서 await하면 면접관 응답이 그만큼 늦는다
+      if (benId) {
+        const text = this.messages.at(-1)?.text ?? ''
+        measuring.push(measureClip(blob, turn + 1, text))
+      }
     },
 
     async releaseMic() {
@@ -563,10 +619,12 @@ export const useInterviewStore = defineStore('interview', {
             department: p.department,
           },
         }
+      const name = p.companyName.trim()
       return {
         track: 'company',
         resumeText: this.resumeText,
-        company: { field: p.field ?? '', job: p.job },
+        // 비었으면 아예 보내지 않는다 — 서버가 "없는 것"으로 친다
+        company: { field: p.field ?? '', job: p.job, ...(name ? { name } : {}) },
       }
     },
 
@@ -622,7 +680,16 @@ export const useInterviewStore = defineStore('interview', {
       this.report = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = { field: null, job: '', name: '', age: null, university: '', department: '' }
+      this.profile = {
+        field: null,
+        job: '',
+        companyName: '',
+        name: '',
+        age: null,
+        university: '',
+        department: '',
+      }
+      this.briefing = null
       this.chosenTrack = null
       this.resumeText = ''
       this.resumeName = null
@@ -635,6 +702,7 @@ export const useInterviewStore = defineStore('interview', {
       await this.releaseMic()
       recordedBytes = 0
       clips = []
+      measuring = []
       this.recordingCount = 0
       this.recordingWarning = null
       this.phase = 'prepare'

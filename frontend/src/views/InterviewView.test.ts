@@ -15,6 +15,8 @@ vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmU
 import { RECORDING_FULL, useInterviewStore } from '@/stores/interview'
 import { useModelStore } from '@/stores/model'
 import InterviewView from './InterviewView.vue'
+import InterviewViewSource from './InterviewView.vue?raw'
+import InterviewStageSource from '@/components/interview/InterviewStage.vue?raw'
 
 beforeEach(() => {
   localStorage.clear()
@@ -203,5 +205,75 @@ describe('InterviewView — 녹음 표시', () => {
     s.$patch({ phase: 'interview', recordingOn: false, recordingWarning: RECORDING_FULL })
     const w = mount(InterviewView)
     expect(w.find('[data-test="rec-warn"]').text()).toContain('녹음')
+  })
+})
+
+describe('InterviewView — 회사 브리핑', () => {
+  it('조사 중이면 회사명과 함께 알린다 — 20~40초 동안 멈춘 것처럼 보이면 안 된다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', briefing: 'researching' })
+    s.setCompanyName('토스(비바리퍼블리카)')
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing"]').text()).toContain('토스(비바리퍼블리카)')
+  })
+
+  it('조사에 실패하면 이력서 중심으로 간다고 한 줄 알린다', () => {
+    useInterviewStore().$patch({ phase: 'interview', briefing: 'failed' })
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing-failed"]').text()).toContain('이력서 중심')
+    expect(w.find('[data-test="briefing"]').exists()).toBe(false)
+  })
+
+  it('브리핑이 없으면 아무 말도 하지 않는다 — 회사명을 안 적은 사람에게는 보이지 않는다', () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = mount(InterviewView)
+    expect(w.find('[data-test="briefing"]').exists()).toBe(false)
+    expect(w.find('[data-test="briefing-failed"]').exists()).toBe(false)
+  })
+})
+
+describe('면접장 — 방이 곧 화면이다', () => {
+  const css = () => InterviewViewSource.split('<style')[1] ?? ''
+
+  it('방이 화면 전체를 쓴다 — 무대를 창으로 감싸지 않는다', () => {
+    expect(css()).toMatch(/\.interview\s*\{[^}]*height:\s*100vh/)
+    expect(css()).toMatch(/\.stage-area\s*\{[^}]*inset:\s*0/)
+    expect(css()).not.toMatch(/\.interview\s*\{[^}]*grid-template/)
+  })
+
+  it('힌트 자리를 더 이상 비우지 않는다 — 안내는 무대 안에 뜬다', () => {
+    expect(css()).not.toMatch(/\.interview\s*\{[^}]*--hint-space/)
+  })
+
+  it('대화·답변은 아래 양 구석에 뜬다 — 가운데는 지원자 자리다', () => {
+    expect(css()).toMatch(/\.dock\.left\s*\{[^}]*left:/)
+    expect(css()).toMatch(/\.dock\.right\s*\{[^}]*right:/)
+    const w = mount(InterviewView)
+    expect(w.find('.dock.left').exists()).toBe(true)
+    expect(w.find('.dock.right').exists()).toBe(true)
+  })
+
+  it('무대에 창 테두리를 두르지 않는다', () => {
+    const stageCss = InterviewStageSource.split('<style')[1] ?? ''
+    expect(stageCss).not.toMatch(/\.stage\s*\{[^}]*border:\s*var\(--win-border\)/)
+  })
+
+  it('안내는 무대 안에 쪽지로 뜬다 — 바깥 바가 아니다', () => {
+    const w = mount(InterviewView)
+    expect(w.findComponent({ name: 'HintBar' }).exists()).toBe(true)
+  })
+})
+
+describe('면접장 — 알림이 답변 버튼을 밀어내지 않는다', () => {
+  const css = () => InterviewViewSource.split('<style')[1] ?? ''
+
+  it('알림은 한 상자에 모여 스스로 접힌다 — 알림마다 판 전체를 아래로 밀면 버튼이 카드를 벗어난다', () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'interview', briefing: 'researching', recordingOn: true })
+    const w = mount(InterviewView)
+    expect(w.find('.notes [data-test="rec"]').exists()).toBe(true)
+    expect(w.find('.notes [data-test="briefing"]').exists()).toBe(true)
+    expect(css()).toMatch(/\.notes\s*\{[^}]*max-height:/)
+    expect(css()).toMatch(/\.notes\s*\{[^}]*overflow-y:\s*auto/)
   })
 })

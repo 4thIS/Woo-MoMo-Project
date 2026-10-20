@@ -1,7 +1,9 @@
 # 배포 (라즈베리파이, docker-compose)
 
-파이에는 리포를 **git clone**해서 올리고, 이미지는 파이에서 직접 빌드한다(GHCR 불필요).
-프론트 빌드 산출물이 없어도 `web` 이미지는 플레이스홀더 페이지로 기동한다.
+> **2026-10-18 서버 이전:** 라즈베리파이(arm64)에서 `myserver`(Ubuntu, x86_64, Tailscale `ssenu@myserver`)로 옮겼다. 폴더 구조(`/srv/apps/Woo-MoMo-Project`, `/srv/apps/Woo-MoMo-Project-dev`, `/srv/momo-dev/data`)와 compose 프로젝트 이름은 그대로다. 아래 "파이"는 배포 서버로 읽는다.
+
+배포 서버에는 리포를 **git clone**해서 올린다. 이미지는 CI가 **amd64**로 빌드해 GHCR에 올리고(main=`:latest`, dev=`:dev`), 서버는 받기만 한다.
+demomo(dev)는 자동 재배포 타이머가 2분마다 확인해 반영한다(아래 "자동 재배포"). 파이에서 직접 빌드(`--build`)도 여전히 된다.
 
 > **2026-09-17: 모델·TTS 다운로드는 Hugging Face로 전환됐다.** 매니페스트가 HF 주소를 가리키므로 브라우저는 파이에서 모델을 받지 않는다.
 > 파이 볼륨 `/srv/momo/models`의 파일과 nginx `/models/` 규칙은 **복귀용으로 지우지 말고 유지**한다(HF 장애 롤백, 파인튜닝 모델 배포).
@@ -195,7 +197,7 @@ WEB_BIND=0.0.0.0:80
 - Tailscale IP로 직접 열려면 `WEB_BIND=0.0.0.0:8080`이 필요하다(기본은 127.0.0.1). 외부 노출은 터널로만 되므로 0.0.0.0 바인딩도 안전하다.
 
 ## GHCR 이미지 사용 (선택)
-CI(`.github/workflows/ci.yml`)가 main push마다 arm64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
+CI(`.github/workflows/ci.yml`)가 main push마다 amd64 이미지를 `ghcr.io/4this/woo-momo-{web,api}`로 푸시한다.
 파이에서 빌드하지 않고 받아 쓰려면:
 ```
 docker login ghcr.io          # read:packages 토큰
@@ -236,8 +238,41 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml down
 
 `deploy/models/`와 `*.litertlm`은 이미 루트 `.gitignore`에 걸려 있어 커밋되지 않는다.
 
-## 로컬에서 직접 빌드(arm64 크로스)
+## 로컬에서 직접 빌드(amd64)
 ```
-docker buildx build --platform linux/arm64 -f deploy/api.Dockerfile -t ghcr.io/4this/woo-momo-api:latest backend
-docker buildx build --platform linux/arm64 -f deploy/web.Dockerfile -t ghcr.io/4this/woo-momo-web:latest .
+docker buildx build --platform linux/amd64 -f deploy/api.Dockerfile -t ghcr.io/4this/woo-momo-api:latest backend
+docker buildx build --platform linux/amd64 -f deploy/web.Dockerfile -t ghcr.io/4this/woo-momo-web:latest .
 ```
+
+## 자동 재배포 (demomo, 2026-10-14~)
+
+dev에 머지되면 CI가 `ghcr.io/4this/woo-momo-{web,api}:dev`를 올리고, 파이의 사용자 타이머가 2분마다 `deploy/autodeploy/autodeploy.sh`를 돌린다.
+스크립트는 ① dev 새 커밋을 fast-forward로 받고 ② 이미지를 pull해서 ③ 둘 중 하나라도 바뀌면 `docker compose up -d --no-build`(바뀐 컨테이너만 재시작) 후 태그 빠진 옛 이미지를 지운다. 파이로 들어오는 경로(웹훅·SSH 키)는 만들지 않는다.
+운영(momo)에는 설치하지 않는다 — 운영 반영은 지시가 있을 때 수동으로 한다.
+
+### 최초 설치 (한 번)
+```
+# 1) GHCR 로그인 — 리포가 private라 이미지도 private. read:packages 권한만 준 classic 토큰
+read -rsp 'token: ' T; echo "$T" | docker login ghcr.io -u ssenu --password-stdin; unset T
+
+# 2) demomo 클론이 :dev 이미지를 쓰게
+cd /srv/apps/Woo-MoMo-Project-dev/deploy
+grep -q '^IMAGE_TAG=' .env || echo 'IMAGE_TAG=dev' >> .env
+docker compose pull && docker compose up -d --no-build
+
+# 3) 타이머 설치 (sudo 불필요, linger=yes라 로그아웃 뒤에도 돈다)
+mkdir -p ~/.config/systemd/user
+cp autodeploy/momo-dev-autodeploy.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now momo-dev-autodeploy.timer
+```
+
+### 확인·운영
+```
+systemctl --user list-timers momo-dev-autodeploy.timer     # 다음 실행 시각
+journalctl --user -u momo-dev-autodeploy -n 50              # 최근 실행 로그(바뀐 게 없으면 조용하다)
+systemctl --user start momo-dev-autodeploy                  # 지금 바로 한 번
+systemctl --user disable --now momo-dev-autodeploy.timer    # 끄기
+```
+- CI 빌드가 끝나기 전에 커밋을 먼저 받으면, 이미지는 다음 확인 때 바뀐다(머지 후 보통 5분 안쪽 반영).
+- 유닛 파일을 고쳤으면 다시 `cp` 후 `daemon-reload`.

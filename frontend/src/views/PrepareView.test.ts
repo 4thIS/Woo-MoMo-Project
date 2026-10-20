@@ -371,14 +371,17 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
     await flushPromises()
   }
-  it('TTS 실패: 버튼 문구가 실패를 말하고, "진행 창으로" 링크와 "목소리 없이 시작"이 보인다', async () => {
+  it('TTS 실패: 시작은 열려 있고 왜 자막인지 알린다. "진행 창으로" 링크와 "목소리 없이 시작"도 보인다', async () => {
     const m = useModelStore()
     m.manifest = manifestWithTts
     m.status = 'ready'
     m.$patch({ ttsStatus: 'error', ttsError: 'boom' })
     const w = mountView()
     await filled(w)
-    expect(w.find('[data-test=start]').text()).toContain('목소리를 준비하지 못했습니다')
+    // 목소리는 더 이상 시작을 막지 않는다 — 버튼은 열리고, 실패는 문구가 설명한다
+    expect(w.find('[data-test=start]').text()).toBe('면접 시작')
+    expect(w.find('[data-test=start]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test=voice-failed]').text()).toContain('자막으로 진행')
     expect(w.find('[data-test=start-scroll-top]').exists()).toBe(true)
     const voiceless = w.find('[data-test=start-voiceless]')
     expect(voiceless.exists()).toBe(true)
@@ -461,6 +464,32 @@ describe('PrepareView — 면접관', () => {
     expect(w.findComponent({ name: 'InterviewerPicker' }).exists()).toBe(true)
     expect(w.find('[data-test="change-interviewer"]').text()).toBe('닫기')
   })
+  it('바꾸기를 누르면 고르기 패널이 다 보이게 스크롤한다 — 화면 밖에서 열리면 못 찾는다', async () => {
+    const into = vi.fn()
+    // jsdom에는 scrollIntoView가 없다
+    Element.prototype.scrollIntoView = into
+    const w = mountView()
+    expect(into).not.toHaveBeenCalled()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    expect(into).toHaveBeenCalled()
+    // 스크롤한 대상이 고르기 패널을 담은 상자여야 한다
+    const el = into.mock.instances[0] as HTMLElement
+    expect(el.contains(w.findComponent({ name: 'InterviewerPicker' }).element)).toBe(true)
+  })
+
+  it('닫을 때는 스크롤하지 않는다 — 보던 자리에서 움직이면 거슬린다', async () => {
+    const into = vi.fn()
+    Element.prototype.scrollIntoView = into
+    const w = mountView()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    into.mockClear()
+    await w.find('[data-test="change-interviewer"]').trigger('click')
+    await flushPromises()
+    expect(into).not.toHaveBeenCalled()
+  })
+
   it('선택이 없으면 칩은 실제로 쓰일 기본 면접관 이름을 보인다', () => {
     const w = mountView()
     expect(w.find('[data-test="interviewer-chip"]').text()).toBe('면접관: 데이빗')
@@ -546,6 +575,51 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(w.find('[data-test=ad-name]').exists()).toBe(false)
   })
 
+  it('회사명 칸은 벤 + 회사일 때만 — 조사는 벤만 한다', async () => {
+    pick('m1')
+    const w = mountView()
+    expect(w.find('[data-test=company-name]').exists()).toBe(false)
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    await flushPromises()
+    expect(w.find('[data-test=company-name]').exists()).toBe(true)
+    // 벤이어도 대입이면 쓰지 않는다
+    useInterviewStore().setTrack('admission')
+    await flushPromises()
+    expect(w.find('[data-test=company-name]').exists()).toBe(false)
+  })
+
+  it('회사명은 선택 입력이다 — 비워도 시작을 막지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    vi.mocked(extractPdfText).mockResolvedValue('이력서 '.repeat(100))
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    const w = mountView()
+    await flushPromises()
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    interview.setField('it')
+    interview.setResume('cv.pdf', '가'.repeat(200))
+    await flushPromises()
+    expect(interview.profile.companyName).toBe('')
+    expect(interview.canStart).toBe(true)
+    await w.find('[data-test=company-name]').setValue('토스(비바리퍼블리카)')
+    expect(interview.profile.companyName).toBe('토스(비바리퍼블리카)')
+  })
+
+  it('벤이면 웹 검색을 쓴다고 시작 전에 알린다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').text()).toContain('웹을 검색')
+    useInterviewerStore().select('m1')
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').exists()).toBe(false)
+  })
+
   it('대입 면접관이면 다섯 칸 중 네 칸이 1단계에 나온다', () => {
     pick('f3')
     const w = mountView()
@@ -582,6 +656,36 @@ describe('PrepareView — 트랙별 입력', () => {
     expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('대입은 네 칸을 채우면 자기소개서 단계로 넘어가는 화살표가 열린다', async () => {
+    pick('f3')
+    const w = mountView()
+    const next = () => w.find('[data-test=step-next]').element as HTMLButtonElement
+    expect(next().disabled).toBe(true)
+    for (const [k, v] of [
+      ['ad-name', '홍길동'],
+      ['ad-age', '19'],
+      ['ad-university', '한국대학교'],
+      ['ad-department', '컴퓨터공학과'],
+    ])
+      await w.find(`[data-test=${k}]`).setValue(v)
+    await flushPromises()
+    expect(next().disabled).toBe(false)
+  })
+
+  it('대입에서 네 칸을 채우면 입력 완료 표시가 뜬다', async () => {
+    pick('f3')
+    const w = mountView()
+    for (const [k, v] of [
+      ['ad-name', '홍길동'],
+      ['ad-age', '19'],
+      ['ad-university', '한국대학교'],
+      ['ad-department', '컴퓨터공학과'],
+    ])
+      await w.find(`[data-test=${k}]`).setValue(v)
+    await flushPromises()
+    expect(w.text()).toContain('입력 완료')
+  })
+
   it('면접관을 회사→대입으로 바꾸면 앞 입력으로는 시작할 수 없다', async () => {
     pick('m1')
     const m = useModelStore()
@@ -596,5 +700,35 @@ describe('PrepareView — 트랙별 입력', () => {
     pick('f3')
     await flushPromises()
     expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('PrepareView — 목소리를 기다리지 않고 시작 (멘토링 보완)', () => {
+  async function filledForm(w: ReturnType<typeof mountView>) {
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+  }
+
+  it('목소리를 받는 중에도 시작할 수 있고, 자막으로 간다고 알린다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
+    const w = mountView()
+    await filledForm(w)
+    expect(w.find('[data-test=start]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-test=voice-pending]').text()).toContain('자막으로 진행')
+  })
+
+  it('목소리가 준비되면 안내가 사라진다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'ready' })
+    const w = mountView()
+    await filledForm(w)
+    expect(w.find('[data-test=voice-pending]').exists()).toBe(false)
+    expect(w.find('[data-test=voice-failed]').exists()).toBe(false)
   })
 })

@@ -8,7 +8,8 @@ from typing import Any
 from app.db import transaction
 from app.ids import new_id
 
-MAX_MODEL_TURNS = 15
+# 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1. 모델이 규칙을 넘겨도 서버가 여기서 끊는다
+MAX_MODEL_TURNS = 9
 # 면접 하나의 Claude 호출 시도(턴·리포트, 실패 포함) 상한 — 재시도 반복으로 비용이 불지 않게
 MAX_ATTEMPTS = 2 * MAX_MODEL_TURNS + 3
 
@@ -25,6 +26,8 @@ class PremiumInterview:
     created_at: str
     attempts: int = 0
     report_raw: str | None = None
+    briefing: str | None = None
+    briefing_status: str = "none"
 
 
 class NoTickets(Exception):
@@ -36,7 +39,7 @@ class DailyLimitReached(Exception):
 
 
 class TurnConflict(Exception):
-    """다른 요청이 먼저 턴을 기록했거나, 면접이 이미 끝났거나, 15번을 채웠다."""
+    """다른 요청이 먼저 턴을 기록했거나, 면접이 이미 끝났거나, 상한(MAX_MODEL_TURNS)을 채웠다."""
 
 
 def _interview(row: sqlite3.Row) -> PremiumInterview:
@@ -51,6 +54,8 @@ def _interview(row: sqlite3.Row) -> PremiumInterview:
         created_at=row["created_at"],
         attempts=row["attempts"],
         report_raw=row["report_raw"],
+        briefing=row["briefing"],
+        briefing_status=row["briefing_status"],
     )
 
 
@@ -63,6 +68,7 @@ def start_interview(
     created_at: str,
     day_start: str,
     daily_limit: int,
+    briefing_status: str = "none",
 ) -> str:
     """하루 상한 확인 → 티켓 차감 → 행 생성을 한 트랜잭션으로."""
     interview_id = new_id("pi")
@@ -78,9 +84,17 @@ def start_interview(
         if cur.rowcount == 0:
             raise NoTickets
         conn.execute(
-            "INSERT INTO premium_interviews (id, user_id, track, inputs_json, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (interview_id, user_id, track, json.dumps(inputs, ensure_ascii=False), created_at),
+            "INSERT INTO premium_interviews"
+            " (id, user_id, track, inputs_json, created_at, briefing_status)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                interview_id,
+                user_id,
+                track,
+                json.dumps(inputs, ensure_ascii=False),
+                created_at,
+                briefing_status,
+            ),
         )
     return interview_id
 
@@ -154,4 +168,13 @@ def mark_done(conn: sqlite3.Connection, *, interview_id: str, report_raw: str) -
     conn.execute(
         "UPDATE premium_interviews SET status = 'done', report_raw = ? WHERE id = ?",
         (report_raw, interview_id),
+    )
+
+
+def set_briefing(conn: sqlite3.Connection, *, interview_id: str, briefing: str | None) -> None:
+    """첫 턴 조사 결과를 기록한다. pending일 때만 바꾼다 — 겹친 요청이 덮어쓰지 않게."""
+    conn.execute(
+        "UPDATE premium_interviews SET briefing = ?, briefing_status = ?"
+        " WHERE id = ? AND briefing_status = 'pending'",
+        (briefing, "ok" if briefing is not None else "failed", interview_id),
     )
