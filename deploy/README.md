@@ -281,12 +281,21 @@ systemctl --user disable --now momo-dev-autodeploy.timer    # 끄기
 
 관리자 화면(`/admin`)과 관리자 API(`/api/admin/*`)는 **관리자 계정만** 쓸 수 있다. 관리자는 두 가지 방법으로 정해진다.
 
-- `ADMIN_EMAILS`에 적힌 이메일의 계정: 가입하는 순간 관리자가 되고, 이미 가입한 계정은 api 재기동 때 관리자로 맞춰진다. 목록에서 빼면 재기동 때 관리자 권한이 해제된다.
+- `ADMIN_EMAILS`에 적힌 이메일의 계정: **목록 반영은 재기동 때만** 이뤄진다(가입만으로는 관리자가 되지 않는다). 목록에서 빼면 재기동 때 관리자 권한이 해제된다.
 - `ADMIN_LOGIN` / `ADMIN_PASSWORD`(비상용): 기존 방식 그대로 유지한다. 이메일 목록이 망가졌을 때 들어가는 통로다.
 
 Cloudflare Access는 바깥 1차 관문이고, 서버는 관리자 권한을 따로 검사한다(2차). Access만 믿지 않는다.
 
 ### `ADMIN_EMAILS` 설정 (`deploy/.env`, 커밋 금지)
+
+순서가 중요하다. 가입에는 이메일 인증이 없어서, 목록에 먼저 넣으면 아직 가입 안 한 그 이메일을 **남이 먼저 가입해 선점**할 수 있다. 그래서 반드시 이 순서로 한다.
+
+1. **본인이 먼저 그 이메일로 가입한다.**
+2. **계정이 본인 것인지 확인한다**(그 이메일·비밀번호로 로그인해 본다).
+3. **`ADMIN_EMAILS`에 추가한다.**
+4. **`docker compose up -d --no-build`** 로 api를 재기동한다(이때 관리자로 반영).
+
+demomo와 momo는 DB가 따로라 각각 먼저 가입해야 한다.
 
 쉼표로 구분한 이메일 목록이다. `.env`는 `.gitignore`가 막으니 직접 편집한다.
 
@@ -337,5 +346,8 @@ Access는 로그인하지 않은 요청을 Cloudflare 로그인 화면으로 보
 curl -sI https://demomo.ssenu.cloud/api/admin/overview
 # 기대: HTTP/2 302 와 Location에 Cloudflare Access 로그인 주소
 # JSON이 바로 나오면 Access 정책이 적용되지 않은 것이다(Application 경로·도메인 확인)
+curl -sI https://demomo.ssenu.cloud/admin
+# 기대: 마찬가지로 302 + Cloudflare Access 로그인 주소
 ```
+- `/api/premium/purchase`(목업 결제)는 Access 경로 밖이다. 서버가 관리자인지 검사해 막는다(관리자 전용).
 - Access 로그인을 통과한 뒤에도 관리자 API는 서버가 관리자 여부를 다시 검사한다. 관리자가 아닌 계정은 Access를 통과해도 403이 난다.

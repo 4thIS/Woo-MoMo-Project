@@ -1,5 +1,6 @@
 """벤의 Claude 호출 (spec 4.4). 라우터는 ClaudeClient만 알고, 테스트는 가짜를 넣는다."""
 
+import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -63,8 +64,8 @@ def _report(on_usage: UsageSink | None, usage: Usage, outcome: str) -> None:
         return
     try:
         on_usage(usage, outcome)
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).warning("claude usage record failed: %s", type(exc).__name__)
 
 
 @dataclass(frozen=True)

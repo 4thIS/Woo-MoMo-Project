@@ -4,7 +4,7 @@ import sqlite3
 from collections import defaultdict
 from datetime import datetime
 
-from app.llm.pricing import MODEL_PRICING, cost_usd
+from app.llm.pricing import MODEL_PRICING, cost_usd_raw
 from app.repos import audit, sessions, usage
 from app.timefmt import KST, iso, kst_day_start
 
@@ -178,7 +178,7 @@ def user_detail(conn: sqlite3.Connection, user_id: str) -> dict | None:
 
 
 def _cost(row: sqlite3.Row) -> float:
-    return cost_usd(
+    return cost_usd_raw(
         row["input_tokens"],
         row["output_tokens"],
         row["cache_read_tokens"],

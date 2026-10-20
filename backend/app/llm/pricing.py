@@ -10,13 +10,14 @@ MODEL_PRICING = {
 }
 
 
-def cost_usd(
+def cost_usd_raw(
     input_tokens: int,
     output_tokens: int,
     cache_read_tokens: int,
     cache_write_tokens: int,
     web_searches: int,
 ) -> float:
+    """반올림 전 비용. 합계는 이 값을 더한 뒤 한 번만 반올림한다."""
     p = MODEL_PRICING
     total = (
         input_tokens * p["inputPerMTok"]
@@ -24,4 +25,19 @@ def cost_usd(
         + cache_read_tokens * p["cacheReadPerMTok"]
         + cache_write_tokens * p["cacheWritePerMTok"]
     ) / 1_000_000 + web_searches * p["webSearch"]
-    return round(total, 4)
+    return total
+
+
+def cost_usd(
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int,
+    cache_write_tokens: int,
+    web_searches: int,
+) -> float:
+    return round(
+        cost_usd_raw(
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, web_searches
+        ),
+        4,
+    )

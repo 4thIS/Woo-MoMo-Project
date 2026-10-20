@@ -365,7 +365,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 ### 권한
 
 - 모든 `/api/admin/*`는 로그인 + 관리자만. 비로그인 `401 {"error":"unauthorized"}`, 관리자가 아니면 `403 {"error":"admin_required"}`.
-- 관리자 = 비상용 `ADMIN_LOGIN` 계정 ∪ 환경변수 `ADMIN_EMAILS`(쉼표 구분, 공백 제거·소문자)에 있는 이메일로 가입한 계정. 목록 밖 계정은 기동 때 관리자에서 해제되고 세션이 지워진다. 목록 이메일로 가입하면 재시작 없이 즉시 관리자. `Session.isAdmin`이 이 값을 따른다.
+- 관리자 = 비상용 `ADMIN_LOGIN` 계정 ∪ 환경변수 `ADMIN_EMAILS`(쉼표 구분, 공백 제거·소문자)에 있는 이메일로 가입한 계정. 목록 밖 계정은 기동 때 관리자에서 해제되고 세션이 지워진다. 목록은 api 기동 때에만 반영된다 — 가입만으로는 관리자가 되지 않는다(이메일 인증이 없어, 즉시 승격하면 아직 가입 안 한 이메일을 남이 선점할 수 있다). `Session.isAdmin`이 이 값을 따른다.
 - 시각은 UTC ISO 문자열, "오늘"·일별 묶음은 한국 날짜(KST, 벤 하루 상한과 같은 기준).
 - 이력서·대화·리포트·녹음 **본문은 어떤 관리자 응답에도 없다**(개수·메타데이터만). 계정 등급(`tier`)도 보여 주거나 바꾸지 않는다.
 
@@ -434,10 +434,10 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
               "cacheReadTokens": 0, "cacheWriteTokens": 0, "webSearches": 3,
               "errors": 1, "refusals": 0, "costUsd": 0.42 }],   // days개, 오래된 날부터
   "byKind": [{ "kind": "turn" | "report" | "research", "calls": 0, "costUsd": 0.0 }],  // 기록 있는 종류만
-  "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…", "calls": 12, "costUsd": 0.31 }] }  // 비용 상위 10
+  "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…" | null, "calls": 12, "costUsd": 0.31 }] }  // 비용 상위 10 (면접 id 없는 행 제외)
 ```
 
-비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다.
+비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
 
 ### GET /api/admin/audit?page=
 
