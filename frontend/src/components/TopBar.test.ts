@@ -59,9 +59,10 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const w = bar()
     await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
     await flushPromises()
-    const keys = [...w.element.querySelectorAll('[data-test^=top-]')].map(
-      (e) => (e as HTMLElement).dataset.test,
-    )
+    // 목업 가입 계정은 관리자라 top-admin도 나온다 — 순서는 나머지 셋만 본다
+    const keys = [...w.element.querySelectorAll('[data-test^=top-]')]
+      .map((e) => (e as HTMLElement).dataset.test)
+      .filter((k) => k !== 'top-admin')
     expect(keys).toEqual(['top-premium', 'top-archive', 'top-me'])
   })
 
@@ -123,5 +124,58 @@ describe('TopBar — 모달', () => {
     useInterviewStore().phase = 'interview'
     await flushPromises()
     expect(document.querySelector('[data-test=modal]')).toBeNull()
+  })
+})
+
+describe('TopBar — 관리자 진입', () => {
+  const asUser = (isAdmin: boolean) => {
+    setAccountApi({
+      ...makeMockAccount({ delayMs: 0 }),
+      me: async () => ({
+        userId: 'u_1',
+        email: 'a@b.com',
+        tier: 'member' as const,
+        tickets: 0,
+        isAdmin,
+        profile: { name: 'x', age: null },
+        createdAt: '2026-10-01T00:00:00Z',
+      }),
+    })
+  }
+
+  it('관리자는 /admin 링크가 보인다', async () => {
+    asUser(true)
+    const w = bar()
+    await settle()
+    const a = w.get('[data-test=top-admin]')
+    expect(a.attributes('href')).toBe('/admin')
+    expect(a.element.tagName).toBe('A')
+  })
+
+  it('일반 로그인 사용자에게는 없다', async () => {
+    asUser(false)
+    const w = bar()
+    await settle()
+    expect(w.find('[data-test=top-me]').exists()).toBe(true)
+    expect(w.find('[data-test=top-admin]').exists()).toBe(false)
+  })
+
+  it('비로그인에게는 없다', async () => {
+    const w = bar()
+    await settle()
+    expect(w.find('[data-test=top-admin]').exists()).toBe(false)
+  })
+
+  it('/admin 화면에서는 모모로 링크가 대신 나온다', async () => {
+    history.pushState({}, '', '/admin')
+    try {
+      asUser(true)
+      const w = bar()
+      await settle()
+      expect(w.get('[data-test=top-home]').attributes('href')).toBe('/')
+      expect(w.find('[data-test=top-admin]').exists()).toBe(false)
+    } finally {
+      history.pushState({}, '', '/')
+    }
   })
 })
