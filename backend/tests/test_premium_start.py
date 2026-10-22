@@ -148,3 +148,16 @@ def test_admission_has_no_briefing(client, settings):
     _admin_with_tickets(client)
     assert client.post(URL, json=ADMISSION_START).status_code == 201
     assert _row(settings)["briefing_status"] == "none"
+
+
+def test_usage_sink_failure_logs_only_exception_type(tmp_path, caplog):
+    from app.llm.claude import Usage
+    from app.routers.premium import _usage_sink
+
+    sink = _usage_sink(tmp_path / "missing" / "x.db", lambda: 0.0, "u_1", "pi_1", "turn")
+    with caplog.at_level("WARNING"):
+        sink(Usage(), "ok")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert len(msgs) == 1
+    assert msgs[0].startswith("claude usage record failed: ")
+    assert "u_1" not in msgs[0] and "pi_1" not in msgs[0] and "missing" not in msgs[0]

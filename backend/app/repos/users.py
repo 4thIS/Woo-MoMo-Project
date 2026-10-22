@@ -86,38 +86,47 @@ def update_profile(
 
 
 def sync_admin(
-    conn: sqlite3.Connection, *, login: str | None, password_hash: str | None, created_at: str
+    conn: sqlite3.Connection,
+    *,
+    login: str | None,
+    password_hash: str | None,
+    created_at: str,
+    emails: tuple[str, ...] = (),
 ) -> None:
-    """ADMIN_LOGIN 계정 하나만 관리자로 맞춘다(spec 4.4). 값이 없으면 관리자는 없다.
+    """관리자 집합 = 비상용 ADMIN_LOGIN 계정 ∪ ADMIN_EMAILS 계정을 맞춘다(spec 4.4).
 
-    비밀번호 해시가 바뀐 계정과 관리자에서 해제되는 계정은 세션을 지운다(옛 로그인 무효화).
+    비상용 계정은 없으면 만들고 비밀번호를 동기화한다. emails 계정은 이미 있을 때만 관리자로 올린다
+    (비밀번호는 건드리지 않음). 집합 밖의 관리자와 비밀번호 해시가 바뀐 비상용 계정은 세션을 지운다.
     """
-    if login is None or password_hash is None:
-        conn.execute(
-            "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_admin = 1)"
-        )
-        conn.execute("UPDATE users SET is_admin = 0 WHERE is_admin = 1")
-        return
-    existing = get_by_email(conn, login)
-    if existing is None:
-        conn.execute(
-            "INSERT INTO users (id, email, password_hash, is_admin, created_at)"
-            " VALUES (?, ?, ?, 1, ?)",
-            (new_id("u"), login, password_hash, created_at),
-        )
+    keep: set[str] = set(emails)
+    if login is not None and password_hash is not None:
+        keep.add(login)
+        existing = get_by_email(conn, login)
+        if existing is None:
+            conn.execute(
+                "INSERT INTO users (id, email, password_hash, is_admin, created_at)"
+                " VALUES (?, ?, ?, 1, ?)",
+                (new_id("u"), login, password_hash, created_at),
+            )
+        else:
+            if existing.password_hash != password_hash:
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (existing.id,))
+            conn.execute(
+                "UPDATE users SET password_hash = ?, is_admin = 1 WHERE id = ?",
+                (password_hash, existing.id),
+            )
+    if emails:
+        marks = ",".join("?" * len(emails))
+        conn.execute(f"UPDATE users SET is_admin = 1 WHERE email IN ({marks})", emails)
+    ordered = tuple(keep)
+    if ordered:
+        outside = f"is_admin = 1 AND email NOT IN ({','.join('?' * len(ordered))})"
     else:
-        if existing.password_hash != password_hash:
-            conn.execute("DELETE FROM sessions WHERE user_id = ?", (existing.id,))
-        conn.execute(
-            "UPDATE users SET password_hash = ?, is_admin = 1 WHERE id = ?",
-            (password_hash, existing.id),
-        )
+        outside = "is_admin = 1"
     conn.execute(
-        "DELETE FROM sessions WHERE user_id IN"
-        " (SELECT id FROM users WHERE is_admin = 1 AND email != ?)",
-        (login,),
+        f"DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE {outside})", ordered
     )
-    conn.execute("UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND email != ?", (login,))
+    conn.execute(f"UPDATE users SET is_admin = 0 WHERE {outside}", ordered)
 
 
 def grant_tickets(

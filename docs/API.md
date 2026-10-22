@@ -128,7 +128,7 @@
   "email": "a@b.com",            // 관리자는 ADMIN_LOGIN 값(이메일 형식이 아닐 수 있다)
   "tier": "member",              // "member" | "premium"
   "tickets": 0,                  // 벤 면접 남은 횟수
-  "isAdmin": false,              // true면 목업 결제 버튼을 켠다. 일반 계정은 "준비 중"
+  "isAdmin": false,              // true면 목업 결제 버튼을 켠다. 일반 계정은 "준비 중". 비상용 ADMIN_LOGIN 또는 ADMIN_EMAILS 목록의 이메일 계정이 true
   "profile": { "name": "이우진", "age": null },
   "createdAt": "2026-10-13T04:00:00.000Z"
 }
@@ -358,6 +358,97 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 
 본인만. 오디오 바이트(저장한 MIME 그대로), `Range` 지원(`206`). `404 not_found`.
 
+## 관리자 (2026-10-17)
+
+> 설계: `docs/specs/backend/2026-10-17-admin-dashboard-design.md`. 새 엔드포인트만 추가된다. 기존 엔드포인트·`backend/data/manifest.json`은 바뀌지 않는다.
+
+### 권한
+
+- 모든 `/api/admin/*`는 로그인 + 관리자만. 비로그인 `401 {"error":"unauthorized"}`, 관리자가 아니면 `403 {"error":"admin_required"}`.
+- 관리자 = 비상용 `ADMIN_LOGIN` 계정 ∪ 환경변수 `ADMIN_EMAILS`(쉼표 구분, 공백 제거·소문자)에 있는 이메일로 가입한 계정. 목록 밖 계정은 기동 때 관리자에서 해제되고 세션이 지워진다. 목록은 api 기동 때에만 반영된다 — 가입만으로는 관리자가 되지 않는다(이메일 인증이 없어, 즉시 승격하면 아직 가입 안 한 이메일을 남이 선점할 수 있다). `Session.isAdmin`이 이 값을 따른다.
+- 시각은 UTC ISO 문자열, "오늘"·일별 묶음은 한국 날짜(KST, 벤 하루 상한과 같은 기준).
+- 이력서·대화·리포트·녹음 **본문은 어떤 관리자 응답에도 없다**(개수·메타데이터만). 계정 등급(`tier`)도 보여 주거나 바꾸지 않는다.
+
+### GET /api/admin/overview
+
+```jsonc
+{
+  "users": { "total": 42, "last7Days": 5, "last30Days": 18, "withTickets": 7, "admins": 3 },  // withTickets: 티켓 1장 이상
+  "tickets": { "outstanding": 61 },                 // 모든 사용자 남은 티켓 합
+  "ben": { "today": 4, "dailyLimit": 30,
+           "byDay": [{ "date": "2026-10-17", "count": 4 }] },  // 최근 30일(오래된 날부터), 없는 날은 0
+  "archive": { "entries": 120, "ben": 15 },         // ben: 벤(프리미엄 면접관) 기록
+  "recordings": { "count": 33, "bytes": 51200000 },
+  "briefings": { "cached": 6 },                     // 7일 안의 회사 브리핑 캐시 행
+  "weakEmergencyPassword": true                     // ADMIN_PASSWORD가 설정돼 있고 12자 미만(로그인은 막지 않는다)
+}
+```
+
+### GET /api/admin/users?q=&page=
+
+`q`: 이메일·이름 부분 일치(대소문자 무시, 최대 100자). `page`: 1부터, 한 페이지 50명, 가입 최신순. `page` < 1 또는 `q` 101자 이상은 `422 invalid`.
+
+```jsonc
+{ "page": 1, "pageSize": 50, "total": 42,
+  "items": [{ "id": "u_…", "email": "…", "name": "…" | null, "createdAt": "…",
+              "tickets": 3, "isAdmin": false,
+              "archiveCount": 4, "benCount": 2, "lastActiveAt": "…" | null }] }
+```
+
+`lastActiveAt`: 가장 최근 세션 생성·보관 기록·벤 면접 시각 중 최댓값(세션 시각은 만료 시각에서 거꾸로 계산).
+
+### GET /api/admin/users/{id}
+
+```jsonc
+{ "user": { /* 위 items 항목과 같은 칸 */ },
+  "ben": [{ "id": "pi_…", "createdAt": "…", "track": "company", "status": "active" | "done",
+            "modelTurns": 9, "briefingStatus": "ok" }],                // 최신순 최대 50
+  "archive": [{ "id": "…", "startedAt": "…", "interviewerId": "m2", "premium": true,
+                "track": "company", "questionCount": 5, "hasRecording": true }],  // 최신순 최대 50
+  "ticketLog": [{ "at": "…", "adminEmail": "…", "delta": 5, "reason": "…" }] }     // 최신순 최대 50
+```
+
+없는 사용자 `404 {"error":"not_found"}`.
+
+### POST /api/admin/users/{id}/tickets
+
+본문 `{ "delta": 5, "reason": "이벤트 보상" }` — `delta` 정수 −100~100(0 불가), `reason` 공백 제거 후 1~200자. 위반은 `422 invalid`(+`field`).
+
+```jsonc
+// 200 { "tickets": 8 }                       // 조정 뒤 남은 티켓
+// 404 { "error": "not_found" }               // 없는 사용자
+// 409 { "error": "insufficient_tickets" }    // 결과가 0 미만 — 바꾸지 않고 감사 로그도 남기지 않는다
+```
+
+티켓 변경과 감사 로그 기록은 한 트랜잭션이다.
+
+### GET /api/admin/usage?days=30
+
+`days` 1~90(기본 30), 범위 밖은 `422 invalid`.
+
+```jsonc
+{ "pricing": { "model": "claude-sonnet-5-5", "inputPerMTok": 2.0, "outputPerMTok": 10.0,
+               "cacheReadPerMTok": 0.2, "cacheWritePerMTok": 2.5, "webSearch": 0.01 },
+  "since": "2026-10-17" | null,                     // 사용량을 기록하기 시작한 한국 날짜(기록 없으면 null)
+  "byDay": [{ "date": "…", "calls": 40, "inputTokens": 0, "outputTokens": 0,
+              "cacheReadTokens": 0, "cacheWriteTokens": 0, "webSearches": 3,
+              "errors": 1, "refusals": 0, "costUsd": 0.42 }],   // days개, 오래된 날부터
+  "byKind": [{ "kind": "turn" | "report" | "research", "calls": 0, "costUsd": 0.0 }],  // 기록 있는 종류만
+  "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…" | null, "calls": 12, "costUsd": 0.31 }] }  // 비용 상위 10 (면접 id 없는 행 제외)
+```
+
+비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
+
+### GET /api/admin/audit?page=
+
+최신순 50개. `page` 1부터(`< 1`은 `422 invalid`).
+
+```jsonc
+{ "page": 1, "pageSize": 50, "total": 3,
+  "items": [{ "at": "…", "adminEmail": "…", "action": "tickets", "targetUserId": "u_…",
+              "targetEmail": "…", "delta": 5, "reason": "…" }] }
+```
+
 ## 참고
 
 `tts`는 additive로 추가됨(2026-09-17). 기존 필드 불변.
@@ -369,6 +460,8 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 2026-10-13: 계정·이력서·보관함·프리미엄·녹음 엔드포인트 additive 추가. 기존 엔드포인트·매니페스트 불변. `docs/specs/backend/2026-10-13-accounts-backend-design.md`
 
 2026-10-14(최종 리뷰 반영): 벤 턴·리포트 `429`(사용자당 분당 6회)·시도 상한 `409 interview_over`, `done` 면접 리포트 재요청은 `409` 대신 보관 원문 재전송, SSE `: ping` 주석·`server_error` 코드, 턴 본문 생략 허용, 보관함 크기 상한, 녹음 0바이트 `422`.
+
+2026-10-17: 관리자 대시보드 엔드포인트(`/api/admin/*`) additive 추가, `ADMIN_EMAILS`. 기존 엔드포인트 불변. `docs/specs/backend/2026-10-17-admin-dashboard-design.md`
 
 ## 하지 않는 것
 

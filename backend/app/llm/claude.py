@@ -1,6 +1,7 @@
 """벤의 Claude 호출 (spec 4.4). 라우터는 ClaudeClient만 알고, 테스트는 가짜를 넣는다."""
 
-from collections.abc import Iterator
+import logging
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -16,6 +17,55 @@ MAX_CONTINUATIONS = 2
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 
 Effort = Literal["low", "medium"]
+
+
+@dataclass(frozen=True)
+class Usage:
+    """호출 한 번의 토큰·웹 검색 사용량. 본문은 담지 않는다."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    web_searches: int = 0
+
+    def __add__(self, other: "Usage") -> "Usage":
+        return Usage(
+            self.input_tokens + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+            self.cache_read_tokens + other.cache_read_tokens,
+            self.cache_write_tokens + other.cache_write_tokens,
+            self.web_searches + other.web_searches,
+        )
+
+
+# (사용량, 결과) — 결과는 ok | error | refused
+UsageSink = Callable[[Usage, str], None]
+
+
+def _usage_of(message: Any) -> Usage:
+    """SDK 응답의 usage를 Usage로. 없거나 None인 칸은 0."""
+    raw = getattr(message, "usage", None)
+    if raw is None:
+        return Usage()
+    server = getattr(raw, "server_tool_use", None)
+    return Usage(
+        input_tokens=getattr(raw, "input_tokens", None) or 0,
+        output_tokens=getattr(raw, "output_tokens", None) or 0,
+        cache_read_tokens=getattr(raw, "cache_read_input_tokens", None) or 0,
+        cache_write_tokens=getattr(raw, "cache_creation_input_tokens", None) or 0,
+        web_searches=getattr(server, "web_search_requests", None) or 0,
+    )
+
+
+def _report(on_usage: UsageSink | None, usage: Usage, outcome: str) -> None:
+    """기록 실패가 면접을 막지 않게 콜백 예외는 삼킨다."""
+    if on_usage is None:
+        return
+    try:
+        on_usage(usage, outcome)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("claude usage record failed: %s", type(exc).__name__)
 
 
 @dataclass(frozen=True)
@@ -40,10 +90,16 @@ class ClaudeClient(Protocol):
         messages: list[dict[str, Any]],
         effort: Effort,
         max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> Iterator[str]: ...
 
     def research(
-        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> ResearchResult: ...
 
 
@@ -60,6 +116,7 @@ class AnthropicClaude:
         messages: list[dict[str, Any]],
         effort: Effort,
         max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> Iterator[str]:
         try:
             with self._sdk.messages.stream(
@@ -76,12 +133,20 @@ class AnthropicClaude:
                 yield from stream.text_stream
                 final = stream.get_final_message()
         except anthropic.APIError as exc:
+            _report(on_usage, Usage(), "error")
             raise ClaudeError("claude_error") from exc
-        if final.stop_reason == "refusal":
+        refused = final.stop_reason == "refusal"
+        _report(on_usage, _usage_of(final), "refused" if refused else "ok")
+        if refused:
             raise ClaudeError("refused")
 
     def research(
-        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> ResearchResult:
         """웹 검색 서버 도구로 조사한다. 본문은 text 블록, 출처는 검색 결과 블록에서 모은다."""
         convo = list(messages)
@@ -92,6 +157,7 @@ class AnthropicClaude:
         searched = False
         sources: list[dict[str, str]] = []
         seen: set[str] = set()
+        total = Usage()
         try:
             for _ in range(MAX_CONTINUATIONS + 1):
                 # 재시도 끝: 90초 기한 안에서 조사가 여러 번 도는 것을 막는다
@@ -106,7 +172,9 @@ class AnthropicClaude:
                     extra_headers={"anthropic-beta": FALLBACK_BETA},
                     timeout=RESEARCH_TIMEOUT,
                 )
+                total += _usage_of(resp)
                 if resp.stop_reason == "refusal":
+                    _report(on_usage, total, "refused")
                     raise ClaudeError("refused")
                 for block in resp.content:
                     if block.type == "text":
@@ -129,6 +197,8 @@ class AnthropicClaude:
                     break
                 convo = [*convo, {"role": "assistant", "content": resp.content}]
         except anthropic.APIError as exc:
+            _report(on_usage, total, "error")
             raise ClaudeError("claude_error") from exc
+        _report(on_usage, total, "ok")
         texts.extend(preamble)  # 검색이 한 번도 없었다면 머리말도 본문이다
         return ResearchResult(text="".join(texts), sources=sources)

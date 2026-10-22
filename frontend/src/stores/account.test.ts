@@ -10,6 +10,25 @@ beforeEach(() => {
 })
 
 describe('account 스토어 — 세션', () => {
+  it('load()를 겹쳐 부르면 /me는 한 번만 읽는다', async () => {
+    let calls = 0
+    const mock = makeMockAccount({ delayMs: 0 })
+    setAccountApi({
+      ...mock,
+      me: async () => {
+        calls++
+        return mock.me()
+      },
+    })
+    const a = useAccountStore()
+    const p1 = a.load()
+    const p2 = a.load()
+    await Promise.all([p1, p2])
+    expect(calls).toBe(1)
+    await a.load()
+    expect(calls).toBe(2)
+  })
+
   it('처음에는 비로그인이다', async () => {
     const a = useAccountStore()
     await a.load()

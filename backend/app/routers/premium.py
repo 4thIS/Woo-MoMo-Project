@@ -1,8 +1,9 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
+import logging
 import sqlite3
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -16,9 +17,17 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts
-from app.llm.claude import REPORT_MAX_TOKENS, TURN_MAX_TOKENS, ClaudeClient, ClaudeError
+from app.llm.claude import (
+    MODEL,
+    REPORT_MAX_TOKENS,
+    TURN_MAX_TOKENS,
+    ClaudeClient,
+    ClaudeError,
+    Usage,
+    UsageSink,
+)
 from app.presenters import to_session
-from app.repos import briefings, premium, users
+from app.repos import briefings, premium, usage, users
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import InterviewStart, InterviewStarted, ReportBody, Session, TurnBody
@@ -112,6 +121,41 @@ def _count_attempt(conn: sqlite3.Connection, interview: PremiumInterview) -> Non
         raise ApiError(409, "interview_over") from None
 
 
+def _usage_sink(
+    db_path: Path,
+    clock: Callable[[], float],
+    user_id: str,
+    interview_id: str,
+    kind: str,
+) -> UsageSink:
+    """Claude 호출 사용량을 claude_usage에 남기는 콜백. 워커 스레드에서도 불리므로
+    쓸 때마다 자기 연결을 연다. 실패는 삼킨다 — 기록이 면접을 막지 않는다(본문은 남기지 않는다)."""
+
+    def sink(used: Usage, outcome: str) -> None:
+        try:
+            with db.connection(db_path) as c:
+                usage.record(
+                    c,
+                    at=iso(clock()),
+                    user_id=user_id,
+                    interview_id=interview_id,
+                    kind=kind,
+                    model=MODEL,
+                    input_tokens=used.input_tokens,
+                    output_tokens=used.output_tokens,
+                    cache_read_tokens=used.cache_read_tokens,
+                    cache_write_tokens=used.cache_write_tokens,
+                    web_searches=used.web_searches,
+                    outcome=outcome,
+                )
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "claude usage record failed: %s", type(exc).__name__
+            )
+
+    return sink
+
+
 def _research_and_store(
     claude: ClaudeClient,
     db_path: Path,
@@ -120,13 +164,14 @@ def _research_and_store(
     name: str,
     job: str,
     created_at: str,
+    on_usage: UsageSink | None = None,
 ) -> briefing_llm.Briefing | None:
     """워커 스레드: 조사하고 성공하면 바로 저장한다(캐시 + 면접).
 
     스트림이 포기했거나 클라이언트가 끊겨도 결과는 버려지지 않는다.
     예상 못 한 예외는 실패(None)로 접는다 — 본문은 로그에 남기지 않는다."""
     try:
-        made = briefing_llm.make_briefing(claude, name, job)
+        made = briefing_llm.make_briefing(claude, name, job, on_usage)
         if made is None:
             return None
         with db.connection(db_path) as c:
@@ -153,11 +198,12 @@ def _research_with_pings(
     name: str,
     job: str,
     created_at: str,
+    on_usage: UsageSink | None = None,
 ) -> Generator[str, None, briefing_llm.Briefing | None]:
     """조사를 다른 스레드에서 돌리며 ping을 흘린다. 기한을 넘기면 None(스레드는 알아서 끝난다)."""
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="briefing")
     future = pool.submit(
-        _research_and_store, claude, db_path, interview_id, key, name, job, created_at
+        _research_and_store, claude, db_path, interview_id, key, name, job, created_at, on_usage
     )
     pool.shutdown(wait=False)
     deadline = time.monotonic() + RESEARCH_DEADLINE
@@ -171,7 +217,11 @@ def _research_with_pings(
 
 
 def _resolve_briefing(
-    claude: ClaudeClient, db_path: Path, interview: PremiumInterview, now: float
+    claude: ClaudeClient,
+    db_path: Path,
+    interview: PremiumInterview,
+    now: float,
+    on_usage: UsageSink | None = None,
 ) -> Generator[str, None, str | None]:
     """첫 턴: 캐시 → 없으면 조사. status 이벤트를 흘리고 브리핑 본문(없으면 None)을 돌려준다."""
     if interview.briefing_status != "pending":  # 첫 질문 실패 뒤 재시도 — 결과만 다시 알린다
@@ -191,7 +241,9 @@ def _resolve_briefing(
         except premium.TooManyAttempts:
             pass
         else:
-            yield from _research_with_pings(claude, db_path, interview.id, key, name, job, iso(now))
+            yield from _research_with_pings(
+                claude, db_path, interview.id, key, name, job, iso(now), on_usage
+            )
     with db.connection(db_path) as c:
         premium.set_briefing(c, interview_id=interview.id, briefing=text)
         # 먼저 끝난 쪽이 이긴다 — 워커가 방금 저장했다면 그 결과를 쓴다
@@ -249,16 +301,23 @@ def take_turn(
     db_path = request.app.state.settings.db_path
     now = request.app.state.clock()
     first_with_briefing = interview.model_turns == 0 and interview.briefing_status != "none"
+    clock = request.app.state.clock
+    turn_sink = _usage_sink(db_path, clock, user.id, interview.id, "turn")
+    research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research")
 
     def events() -> Iterator[str]:
         brief = interview.briefing
         if first_with_briefing:
-            brief = yield from _resolve_briefing(claude, db_path, interview, now)
+            brief = yield from _resolve_briefing(claude, db_path, interview, now, research_sink)
         system = prompts.build_system(interview.track, interview.inputs, brief)
         chunks: list[str] = []
         try:
             for text in claude.stream_text(
-                system=system, messages=messages, effort="low", max_tokens=TURN_MAX_TOKENS
+                system=system,
+                messages=messages,
+                effort="low",
+                max_tokens=TURN_MAX_TOKENS,
+                on_usage=turn_sink,
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})
@@ -341,12 +400,17 @@ def make_report(
     system = prompts.build_system(interview.track, interview.inputs)
     messages = prompts.report_messages(interview.messages, block)
     db_path = request.app.state.settings.db_path
+    report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
 
     def events() -> Iterator[str]:
         chunks: list[str] = []
         try:
             for text in claude.stream_text(
-                system=system, messages=messages, effort="medium", max_tokens=REPORT_MAX_TOKENS
+                system=system,
+                messages=messages,
+                effort="medium",
+                max_tokens=REPORT_MAX_TOKENS,
+                on_usage=report_sink,
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})

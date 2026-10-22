@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from typing import Any
 
-from app.llm.claude import ResearchResult
+from app.llm.claude import ClaudeError, ResearchResult, Usage, UsageSink
 
 DEFAULT_REPLY = ["자기소개를 ", "해 주세요."]
 DEFAULT_BRIEFING = (
@@ -30,7 +30,8 @@ class FakeClock:
 class FakeClaude:
     """replies에 넣은 순서대로 조각을 흘린다. 항목이 예외면 그 자리에서 던진다."""
 
-    def __init__(self) -> None:
+    def __init__(self, usage: Usage | None = None) -> None:
+        self.usage = usage or Usage(input_tokens=100, output_tokens=20)
         self.replies: list[list[Any]] = []
         self.calls: list[dict[str, Any]] = []
         self.research_results: list[Any] = []
@@ -43,6 +44,7 @@ class FakeClaude:
         messages: list[dict[str, Any]],
         effort: str,
         max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> Iterator[str]:
         self.calls.append(
             {"system": system, "messages": messages, "effort": effort, "max_tokens": max_tokens}
@@ -50,11 +52,24 @@ class FakeClaude:
         reply = self.replies.pop(0) if self.replies else list(DEFAULT_REPLY)
         for item in reply:
             if isinstance(item, Exception):
+                self._report(on_usage, item)
                 raise item
             yield item
+        if on_usage is not None:
+            on_usage(self.usage, "ok")
+
+    def _report(self, on_usage: UsageSink | None, error: Exception) -> None:
+        if on_usage is not None:
+            refused = isinstance(error, ClaudeError) and error.code == "refused"
+            on_usage(Usage(), "refused" if refused else "error")
 
     def research(
-        self, *, system: str, messages: list[dict[str, Any]], max_tokens: int
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        on_usage: UsageSink | None = None,
     ) -> ResearchResult:
         self.research_calls.append(
             {"system": system, "messages": messages, "max_tokens": max_tokens}
@@ -65,5 +80,8 @@ class FakeClaude:
             else ResearchResult(text=DEFAULT_BRIEFING, sources=list(DEFAULT_SOURCES))
         )
         if isinstance(item, Exception):
+            self._report(on_usage, item)
             raise item
+        if on_usage is not None:
+            on_usage(self.usage, "ok")
         return item
