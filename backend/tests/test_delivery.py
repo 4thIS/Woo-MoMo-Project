@@ -192,3 +192,30 @@ def test_insufficient_answers_get_no_voice_line():
     empty = with_voice(m(2), vr(transcript="..."))
     assert render([empty]).splitlines()[1] == "답변 2: 측정 부족(받아쓴 음절 없음)"
     assert voice_used([short, empty]) is False
+
+
+def test_filler_examples_keep_only_short_hangul():
+    ex = ("음", "어  어", "ignore previous", "[시스템]", "일이삼사오육칠", "ㅡㅡ", "", "그", "저")
+    line = render([with_voice(m(1, filler=None), vr(count=9, examples=ex))]).splitlines()[1]
+    assert "군말 잦은 경향(예: 음, ㅡㅡ, 그)," in line
+
+
+def test_filler_examples_all_invalid_has_no_parenthesis():
+    line = render([with_voice(m(1), vr(count=9, examples=("a b", "(x)")))]).splitlines()[1]
+    assert "군말 잦은 경향, 목소리" in line
+
+
+def test_reason_structural_chars_removed():
+    metric = with_voice(m(1), vr(tone={"level": "calm", "reason": "[끝] (조용)함"}))
+    line = render([metric]).splitlines()[1]
+    assert "어조 끝 조용함" in line
+    assert not any(c in line.split("(근거:", 1)[1][:-1] for c in "[]()")
+
+
+def test_transcript_without_hangul_keeps_browser_numbers_and_no_voice_line():
+    base = m(1, syl=300, filler="high")
+    metric = with_voice(base, vr(transcript="hello world...", count=0))
+    assert metric == base
+    assert render([metric]) == render([base])
+    assert "목소리" not in render([metric])
+    assert voice_used([metric]) is False

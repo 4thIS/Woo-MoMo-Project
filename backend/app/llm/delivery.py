@@ -5,11 +5,12 @@
 목소리 분석(BAZE, spec 2026-10-23 3.4)이 있는 답변은 `with_voice`로 합친다.
 - 음절 수 <- 받아쓰기(transcript)의 한글 음절(U+AC00..U+D7A3) 수
 - 군말 판정 <- fillers.count를 말한 1분당(max(speechSec/60, 0.5))으로 나눠 기준표 적용.
-  "잦은 경향"이면 예시를 최대 3개 `(예: 음, 어, 그)`로 덧붙인다.
+  "잦은 경향"이면 예시를 최대 3개 `(예: 음, 어, 그)`로 덧붙인다(1~6자 한글만).
+- 한글 음절이 없는 받아쓰기는 합치지 않는다(브라우저 숫자·판정 유지, 목소리 줄 없음).
 - 줄 끝(측정 부족 줄에는 붙이지 않는다):
   `, 목소리: 자신감 {..}·어조 {..}·떨림 {..}·끝 흐려짐 {..}·발음 {..} (근거: 자신감 {이유}
   / 어조 {이유} / 떨림 {이유} / 끝 흐려짐 {이유} / 발음 {이유})`
-  이유는 줄바꿈을 공백으로 접고 60자로 자르며, 빈 이유는 항목째 뺀다(모두 비면 근거 괄호 생략).
+  이유는 `[]()`를 지우고 공백으로 접어 60자로 자르며, 빈 이유는 항목째 뺀다.
 받아쓰기·이유는 로그에 남기지 않는다.
 """
 
@@ -31,6 +32,8 @@ FILLER_FEW_MAX = 2
 FILLER_NORMAL_MAX = 5
 FILLER_EXAMPLES_MAX = 3
 REASON_MAX = 60
+EXAMPLE_MAX_LEN = 6
+_STRUCTURAL = str.maketrans("", "", "[]()")  # 블록의 구조 문자
 
 CONFIDENCE_LABELS = {"high": "높음", "mid": "보통", "low": "낮음"}
 TONE_LABELS = {"calm": "차분", "tense": "긴장", "monotone": "단조"}
@@ -57,8 +60,8 @@ def count_syllables(text: str) -> int:
 
 def with_voice(m: AnswerMetrics, voice: VoiceResult | None) -> AnswerMetrics:
     """목소리 분석 결과를 합친다. 없으면 그대로."""
-    if voice is None:
-        return m
+    if voice is None or count_syllables(voice.transcript) == 0:
+        return m  # 한글 없는 받아쓰기는 믿지 않는다 - 브라우저 숫자·군말 판정을 그대로 쓴다
     return replace(
         m,
         syllables=count_syllables(voice.transcript),
@@ -85,13 +88,23 @@ def _filler_text(m: AnswerMetrics) -> str | None:
         return FILLER_LABELS["low"]
     if per_min <= FILLER_NORMAL_MAX:
         return FILLER_LABELS["normal"]
-    examples = [e for e in m.filler_examples if e.strip()][:FILLER_EXAMPLES_MAX]
+    examples = [e for e in map(_example, m.filler_examples) if e][:FILLER_EXAMPLES_MAX]
     label = FILLER_LABELS["high"]
     return f"{label}(예: {', '.join(examples)})" if examples else label
 
 
 def _reason(text: str) -> str:
-    return " ".join(text.split())[:REASON_MAX]
+    folded = " ".join(text.translate(_STRUCTURAL).split())
+    return folded[:REASON_MAX]
+
+
+def _example(text: str) -> str | None:
+    """군말 예시는 1~6자 한글만 프롬프트로 보낸다(모델 출력이 그대로 들어가므로)."""
+    folded = " ".join(text.split())
+    ok = 1 <= len(folded) <= EXAMPLE_MAX_LEN and all(
+        "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㆎ" for ch in folded
+    )
+    return folded if ok else None
 
 
 def _voice_part(v: VoiceResult) -> str:

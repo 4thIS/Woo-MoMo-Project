@@ -420,11 +420,6 @@ def _metrics(
     return out
 
 
-def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
-    """목소리 없이 만든 전달력 블록. 없으면 None(지금과 같음)."""
-    return delivery.render(_metrics(_parse_delivery(body, interview)))
-
-
 def _await_voice(
     db_path: Path, interview_id: str, wanted: set[int]
 ) -> Generator[str, None, dict[int, tuple[str, VoiceResult | None]]]:
