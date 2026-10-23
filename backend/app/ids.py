@@ -4,7 +4,7 @@ import os
 import time
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-PREFIXES = frozenset({"u", "r", "a", "rec", "pi", "cu", "ad"})
+PREFIXES = frozenset({"u", "r", "a", "rec", "pi", "cu", "ad", "bu"})
 
 
 def ulid(now_ms: int | None = None) -> str:
