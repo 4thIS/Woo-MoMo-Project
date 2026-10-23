@@ -178,16 +178,19 @@ def _research_and_store(
         made = briefing_llm.make_briefing(claude, name, job, on_usage, posting_url)
         if made is None:
             return None
+        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다
+        posting_failed = bool(posting_url) and prompts.POSTING_MISSING_STEM in made.text
         with db.connection(db_path) as c:
-            briefings.put(
-                c,
-                key=key,
-                company=name,
-                job=job,
-                briefing=made.text,
-                sources=made.sources,
-                created_at=created_at,
-            )
+            if not posting_failed:
+                briefings.put(
+                    c,
+                    key=key,
+                    company=name,
+                    job=job,
+                    briefing=made.text,
+                    sources=made.sources,
+                    created_at=created_at,
+                )
             premium.set_briefing(c, interview_id=interview_id, briefing=made.text)
         return made
     except Exception:

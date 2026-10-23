@@ -62,11 +62,23 @@ BRIEFING_FOCUS = (
     "질문 중 1~2개는 [지원 기업 최신 정보]의 최근 사업·소식을 지원 직무와 연결해 묻습니다."
 )
 POSTING_MARK = "모집공고 요구사항"
-POSTING_MISSING = "공고를 확인하지 못함"
+POSTING_MISSING_STEM = "공고를 확인하지 못"  # 못함·못했습니다 모두
+POSTING_MIN_BODY = 20  # 소제목 뒤에 이만큼은 본문이 있어야 한다(잘림 방어)
 POSTING_FOCUS = (
     '질문 중 1~2개는 [지원 기업 최신 정보]의 "모집공고 요구사항"(기술 스택·업무)을 '
-    "지원자 이력서와 연결해 묻고, 회사 소식 질문보다 먼저 합니다."
+    "지원자 이력서와 연결해 묻고, 회사 소식 질문보다 먼저 합니다. "
+    "공고·회사 정보로 묻는 질문은 합쳐 2~3개로 하고 나머지는 이력서로 묻습니다."
 )
+
+
+def _has_posting(briefing: str) -> bool:
+    """공고 소제목 뒤에 실제 본문이 있고 실패 문구가 없을 때만 참."""
+    head, mark, tail = briefing.partition(POSTING_MARK)
+    return (
+        bool(mark)
+        and POSTING_MISSING_STEM not in briefing
+        and len(tail.strip()) >= POSTING_MIN_BODY
+    )
 
 
 def _one_line(value: str, limit: int = 60) -> str:
@@ -127,7 +139,7 @@ def build_system(
         focus, heading = COMPANY_FOCUS, "[지원자 이력서]"
         if briefing:
             focus = f"{focus} {BRIEFING_FOCUS}"
-            if POSTING_MARK in briefing and POSTING_MISSING not in briefing:
+            if _has_posting(briefing):
                 focus = f"{focus} {POSTING_FOCUS}"
     else:
         intro = _admission_intro(inputs["admission"])

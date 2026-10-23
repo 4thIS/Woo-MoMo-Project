@@ -348,7 +348,7 @@ class CompanyInputs(BaseModel):
             return None
         if len(v) > 500:
             raise ValueError("too long")
-        if re.search(r"[\s\x00-\x1f\x7f]", v):
+        if not v.isascii() or re.search(r"[\s\x00-\x1f\x7f]", v):
             raise ValueError("whitespace or control character")
         try:
             parts = urlsplit(v)

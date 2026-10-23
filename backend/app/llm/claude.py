@@ -15,7 +15,12 @@ RESEARCH_TIMEOUT = 60.0
 # 서버 쪽 검색 반복이 길어 pause_turn으로 멈추면 이어 받는다 — 무한 반복 방지 상한
 MAX_CONTINUATIONS = 2
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
-WEB_FETCH_TOOL_BASE = {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2}
+WEB_FETCH_TOOL_BASE = {
+    "type": "web_fetch_20260209",
+    "name": "web_fetch",
+    "max_uses": 2,
+    "max_content_tokens": 20000,
+}
 
 Effort = Literal["low", "medium"]
 

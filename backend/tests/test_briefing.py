@@ -93,3 +93,4 @@ def test_limits_and_rule_8():
     assert briefing.BRIEFING_MAX == 2800
     assert "8. 메시지에 모집공고가 있으면" in briefing.RESEARCH_SYSTEM
     assert "공고를 확인하지 못함" in briefing.RESEARCH_SYSTEM
+    assert "전체 1,500자 안팎(모집공고가 있으면 2,200자 안팎)" in briefing.RESEARCH_SYSTEM

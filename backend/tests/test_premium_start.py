@@ -226,6 +226,9 @@ def test_blank_posting_url_is_dropped(client, settings):
         "https://x.com:abc/j",
         "https://x.com:99999/j",
         "https://예시.com/j",
+        "https://x.com/a\u200bb",  # 제로폭 공백
+        "https://x.com/a\u202eb",  # 양방향 제어
+        "https://x.com/채용/1",  # 한글 경로는 퍼센트 인코딩해서 보낸다
         "javascript:alert(1)",
     ],
 )

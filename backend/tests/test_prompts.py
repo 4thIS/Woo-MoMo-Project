@@ -189,7 +189,7 @@ def test_report_messages_append_delivery_after_the_instruction():
 
 
 def test_posting_requirements_add_the_posting_rule():
-    brief = "사업: 간편송금\n## 모집공고 요구사항\n- Kotlin, 결제 도메인"
+    brief = "사업: 간편송금\n## 모집공고 요구사항\n- Kotlin, 결제 도메인, 대용량 트래픽 처리"
     rules = prompts.build_system("company", NAMED, brief)[0]["text"]
     assert prompts.BRIEFING_FOCUS in rules
     assert prompts.POSTING_FOCUS in rules
@@ -210,6 +210,26 @@ def test_briefing_without_posting_section_has_only_briefing_focus():
 
 
 def test_posting_only_interview_intro_falls_back_to_the_field_label():
-    rules = prompts.build_system("company", COMPANY, "## 모집공고 요구사항\n- Kotlin")[0]["text"]
+    rules = prompts.build_system(
+        "company", COMPANY, "## 모집공고 요구사항\n- Kotlin, 결제 도메인, 대용량 처리"
+    )[0]["text"]
     assert '당신은 IT 분야 기업의 채용 면접관입니다. 지원 직무는 "백엔드 개발자"입니다.' in rules
     assert prompts.POSTING_FOCUS in rules
+
+
+def test_failed_posting_stem_matches_variants():
+    brief = "사업: 간편송금\n## 모집공고 요구사항\n공고를 확인하지 못했습니다."
+    rules = prompts.build_system("company", NAMED, brief)[0]["text"]
+    assert prompts.POSTING_FOCUS not in rules
+
+
+def test_truncated_posting_section_does_not_add_the_posting_rule():
+    for tail in ("", "\n- Kotlin", "\n\n   "):
+        brief = "사업: 간편송금\n## 모집공고 요구사항" + tail
+        rules = prompts.build_system("company", NAMED, brief)[0]["text"]
+        assert prompts.BRIEFING_FOCUS in rules
+        assert prompts.POSTING_FOCUS not in rules
+
+
+def test_posting_focus_states_the_shared_budget():
+    assert "합쳐 2~3개" in prompts.POSTING_FOCUS

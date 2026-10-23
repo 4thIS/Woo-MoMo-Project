@@ -226,6 +226,7 @@ def test_research_adds_web_fetch_limited_to_domains():
             "type": "web_fetch_20260209",
             "name": "web_fetch",
             "max_uses": 2,
+            "max_content_tokens": 20000,
             "allowed_domains": ["www.wanted.co.kr"],
         },
     ]

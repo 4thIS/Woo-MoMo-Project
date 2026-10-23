@@ -232,3 +232,36 @@ def test_cache_depends_on_the_posting_url(client, fake_claude):
 def test_name_only_research_has_no_fetch_domains(client, fake_claude):
     _turn(client, start_ben(client, NAMED))
     assert fake_claude.research_calls[0]["fetch_domains"] is None
+
+
+FAILED_POSTING = ResearchResult(
+    text="사업: 간편송금 서비스 운영 " * 20 + "\n## 모집공고 요구사항\n공고를 확인하지 못함",
+    sources=[{"title": "t", "url": "https://example.com/a"}],
+)
+
+
+def test_failed_posting_read_is_not_cached(client, fake_claude, settings):
+    fake_claude.research_results = [FAILED_POSTING]
+    iid = start_ben(client, URL_ONLY)
+    assert sse_events(_turn(client, iid).text) == [RESEARCHING, OK, *QUESTION]
+    _join_workers()
+    assert _row(settings, iid)["briefing"] == FAILED_POSTING.text
+    # 같은 URL의 다음 면접은 캐시 없이 다시 조사한다
+    assert sse_events(_turn(client, _start_again(client, URL_ONLY)).text)[0] == RESEARCHING
+    assert len(fake_claude.research_calls) == 2
+
+
+def test_name_and_posting_url_are_both_researched_and_keyed(client, fake_claude):
+    both = {
+        **URL_ONLY,
+        "company": {**URL_ONLY["company"], "name": "토스(비바리퍼블리카)"},
+    }
+    _turn(client, start_ben(client, both))
+    content = fake_claude.research_calls[0]["messages"][0]["content"]
+    assert "토스(비바리퍼블리카)" in content and POSTING in content
+    assert "(공고에서 확인)" not in content
+    # 같은 이름+URL은 캐시, 이름이 없으면 다른 키라 새로 조사
+    assert sse_events(_turn(client, _start_again(client, both)).text) == [OK, *QUESTION]
+    assert len(fake_claude.research_calls) == 1
+    sse_events(_turn(client, _start_again(client, URL_ONLY)).text)
+    assert len(fake_claude.research_calls) == 2
