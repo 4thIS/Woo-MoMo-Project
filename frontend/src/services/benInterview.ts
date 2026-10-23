@@ -91,23 +91,33 @@ function codeOf(raw: unknown): BenErrorCode {
   return (typeof raw === 'string' && KNOWN.has(raw) ? raw : 'unknown') as BenErrorCode
 }
 
-export interface StartCompany {
+/** 두 트랙이 함께 쓰는 선택 칸 */
+interface StartCommon {
+  /** 목소리 분석 동의(2026-10-23, 기본 false). 켠 면접만 녹음을 올릴 수 있다 */
+  voiceAnalysisConsent?: boolean
+}
+export interface StartCompany extends StartCommon {
   track: Extract<Track, 'company'>
   resumeText: string
   /** `name`(선택, 2026-10-15): 있으면 첫 턴에 서버가 회사명·직무로 웹을 뒤져 브리핑을 만든다 */
   company: { field: string; job: string; name?: string }
 }
-export interface StartAdmission {
+export interface StartAdmission extends StartCommon {
   track: Extract<Track, 'admission'>
   resumeText: string
   admission: { name: string; age: number; university: string; department: string }
 }
 export type StartRequest = StartCompany | StartAdmission
 
+/** 목소리 분석이 실제로 도는가. `on`일 때만 녹음을 올린다 */
+export type VoiceAnalysis = 'on' | 'off' | 'unavailable'
+
 export interface Started {
   interviewId: string
   /** 티켓 1장이 빠진 세션 */
   session: Session
+  /** 2026-10-23. 없는 서버(옛 배포)는 off로 친다 */
+  voiceAnalysis?: VoiceAnalysis
 }
 
 async function post(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
@@ -239,6 +249,30 @@ export const DELIVERY_MAX = 8
 
 /** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다.
  *  `delivery`는 선택 — 비면 본문을 `{}`로 보내 예전과 같은 요청이 된다 */
+/**
+ * 답변 녹음 한 조각을 목소리 분석에 올린다. **실패해도 던지지 않는다** — 면접 중에 끼어드는
+ * 일이라, 분석이 안 되는 것과 면접이 끊기는 것은 무게가 다르다(`docs/API.md`: 조용히 넘어간다).
+ */
+export async function uploadVoice(
+  interviewId: string,
+  answer: number,
+  wav: ArrayBuffer,
+): Promise<boolean> {
+  const form = new FormData()
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), `answer-${answer}.wav`)
+  try {
+    // Content-Type을 직접 붙이지 않는다 — 브라우저가 경계(boundary)를 넣어야 한다
+    const res = await fetch(`${BASE}/${interviewId}/voice/${answer}`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function reportStream(
   interviewId: string,
   onDelta: (text: string) => void,

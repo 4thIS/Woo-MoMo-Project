@@ -30,11 +30,13 @@ import {
   reportStream,
   startInterview,
   turnStream,
+  uploadVoice,
   type DeliveryMetric,
   type StartRequest,
 } from '@/services/benInterview'
 import { decodeClip, playClip, setMuted } from '@/services/audio'
 import { analyzeSpeech, countSyllables, fillerLevelOf } from '@/utils/delivery'
+import { toWav16k } from '@/utils/wav'
 
 export type Phase = 'landing' | 'prepare' | 'interview' | 'report'
 export type Field = 'it' | 'finance' | 'manufacturing' | 'retail' | 'general'
@@ -103,9 +105,12 @@ async function measureClip(
   blob: Blob,
   answer: number,
   text: string,
+  onWav?: (wav: ArrayBuffer) => void,
 ): Promise<DeliveryMetric | null> {
   const decoded = await decodeClip(blob)
   if (!decoded) return null
+  // 같은 디코드 결과로 올릴 WAV까지 만든다 — 파형을 두 번 풀 이유가 없다
+  onWav?.(toWav16k(decoded.samples, decoded.sampleRate))
   const stats = analyzeSpeech(decoded.samples, decoded.sampleRate)
   if (!stats) return null
   return { answer, ...stats, syllables: countSyllables(text), fillerLevel: fillerLevelOf(text) }
@@ -130,6 +135,10 @@ export const useInterviewStore = defineStore('interview', {
     },
     /** 서버가 공고 링크를 퇴짜 놓았을 때의 안내. 그 칸 옆에만 붙는다 */
     postingError: null as string | null,
+    /** 목소리 분석에 동의했나(2026-10-23). 기본 꺼짐 — 켜야 녹음이 서버로 간다 */
+    voiceConsent: false,
+    /** 서버가 실제로 분석할 수 있는가. `on`일 때만 올린다 */
+    voiceAnalysis: 'off' as 'on' | 'off' | 'unavailable',
     /** 벤처럼 둘 다 보는 면접관에서만 쓴다. 다른 면접관은 자기 트랙이 이긴다 */
     chosenTrack: null as Track | null,
     resumeText: '',
@@ -222,6 +231,10 @@ export const useInterviewStore = defineStore('interview', {
     setCompanyName(name: string) {
       this.profile.companyName = name.slice(0, 100)
     },
+    /** 목소리 분석 동의. 면접마다 다시 묻는다(기본 꺼짐) */
+    setVoiceConsent(on: boolean) {
+      this.voiceConsent = on
+    },
     /** 모집공고 링크. 적힌 그대로 둔다 — 형식 검사와 인코딩은 보낼 때 한 번만 한다 */
     setPostingUrl(url: string) {
       this.profile.postingUrl = url.slice(0, 500)
@@ -294,6 +307,8 @@ export const useInterviewStore = defineStore('interview', {
           try {
             const started = await startInterview(this.benRequest())
             benId = started.interviewId
+            // 옛 배포는 이 칸이 없다 — 없으면 올리지 않는다
+            this.voiceAnalysis = started.voiceAnalysis ?? 'off'
             account.session = started.session
           } catch (e) {
             // 서버가 짚어 준 칸이 있으면 그 칸 옆에 붙인다 — 어디를 고쳐야 하는지 알 수 있게
@@ -592,7 +607,14 @@ export const useInterviewStore = defineStore('interview', {
       // 전달력은 벤만 받는다. 기다리지 않는다 — 여기서 await하면 면접관 응답이 그만큼 늦는다
       if (benId) {
         const text = this.messages.at(-1)?.text ?? ''
-        measuring.push(measureClip(blob, turn + 1, text))
+        const id = benId
+        const answer = turn + 1
+        // 기다리지 않는다 — 분석이 안 되는 것과 면접이 끊기는 것은 무게가 다르다
+        const onWav =
+          this.voiceAnalysis === 'on'
+            ? (wav: ArrayBuffer) => void uploadVoice(id, answer, wav)
+            : undefined
+        measuring.push(measureClip(blob, answer, text, onWav))
       }
     },
 
@@ -637,6 +659,7 @@ export const useInterviewStore = defineStore('interview', {
       const p = this.profile
       if (this.track === 'admission')
         return {
+          ...(this.voiceConsent ? { voiceAnalysisConsent: true as const } : {}),
           track: 'admission',
           resumeText: this.resumeText,
           admission: {
@@ -646,11 +669,13 @@ export const useInterviewStore = defineStore('interview', {
             department: p.department,
           },
         }
+      const consent = this.voiceConsent ? { voiceAnalysisConsent: true as const } : {}
       const name = p.companyName.trim()
       // 형식이 틀리면 싣지 않는다 — 422를 받고 나면 티켓이 이미 빠진 뒤다
       const posting = normalizePostingUrl(p.postingUrl)
       const postingUrl = posting.ok ? posting.url : null
       return {
+        ...consent,
         track: 'company',
         resumeText: this.resumeText,
         // 비었으면 아예 보내지 않는다 — 서버가 "없는 것"으로 친다

@@ -597,6 +597,20 @@ async function clearAndRetry() {
             </template>
           </template>
         </p>
+        <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
+             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다 -->
+        <label v-if="iv.current?.premium" class="mono voice-consent" data-test="voice-consent-row">
+          <input
+            type="checkbox"
+            data-test="voice-consent"
+            :checked="interview.voiceConsent"
+            @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
+          />
+          <span>
+            답변 녹음을 목소리 분석을 위해 외부 AI(학교 BAZE 게이트웨이 경유 Google Gemini)로
+            보냅니다. 분석 후 서버에서 지웁니다.
+          </span>
+        </label>
         <div class="start-row">
           <ul class="mono checklist">
             <li>
@@ -832,6 +846,20 @@ async function clearAndRetry() {
   margin: 0 0 var(--sp-2);
   color: var(--dim);
   font-size: var(--fs-label);
+}
+.voice-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  line-height: 1.7;
+  cursor: pointer;
+}
+.voice-consent input {
+  margin-top: 0.25em;
+  flex: none;
 }
 .start-row {
   display: flex;
