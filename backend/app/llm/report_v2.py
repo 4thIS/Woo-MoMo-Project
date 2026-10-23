@@ -74,32 +74,81 @@ def answer_count(messages: list[Message]) -> int:
 def parse(raw: str) -> dict[str, Any] | None:
     try:
         obj = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return obj if isinstance(obj, dict) else None
 
 
-def _refs_ok(points: Any, n: int) -> bool:
-    for p in points:
-        for a in p["answers"]:
-            if not 1 <= a <= n:
-                return False
-    return True
+def _is_int(v: Any) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _is_str_list(v: Any) -> bool:
+    return isinstance(v, list) and all(isinstance(x, str) for x in v)
+
+
+def _opt_str(v: Any) -> bool:
+    return v is None or isinstance(v, str)
+
+
+def _item_ok(it: Any) -> bool:
+    return (
+        isinstance(it, dict)
+        and _is_int(it.get("answer"))
+        and it.get("kind") in ("main", "follow")
+        and all(isinstance(it.get(k), str) for k in ("question", "answerSummary", "feedback"))
+        and "delivery" in it
+        and _opt_str(it["delivery"])
+    )
+
+
+def _points_ok(points: Any) -> bool:
+    return isinstance(points, list) and all(
+        isinstance(p, dict)
+        and isinstance(p.get("point"), str)
+        and isinstance(p.get("answers"), list)
+        and all(_is_int(a) for a in p["answers"])
+        for p in points
+    )
+
+
+def _shape_ok(obj: Any) -> bool:
+    if not isinstance(obj, dict):
+        return False
+    items, summary = obj.get("items"), obj.get("summary")
+    if not isinstance(items, list) or not all(_item_ok(i) for i in items):
+        return False
+    if not isinstance(summary, dict):
+        return False
+    if not (_points_ok(summary.get("strengths")) and _points_ok(summary.get("improvements"))):
+        return False
+    if "delivery" not in summary or not _opt_str(summary["delivery"]):
+        return False
+    fit = summary.get("postingFit", ...)
+    return fit is None or (
+        isinstance(fit, dict) and _is_str_list(fit.get("met")) and _is_str_list(fit.get("gaps"))
+    )
+
+
+def _refs_ok(points: list[dict[str, Any]], n: int) -> bool:
+    return all(1 <= a <= n for p in points for a in p["answers"])
 
 
 def validate(obj: dict[str, Any], n: int) -> str | None:
-    """실패 사유 코드(`answers`·`first_kind`·`refs`), 정상이면 None. 형태가 어긋나도 `answers`."""
-    try:
-        items = obj["items"]
-        if [i["answer"] for i in items] != list(range(1, n + 1)):
-            return "answers"
-        if items[0]["kind"] != "main":
-            return "first_kind"
-        summary = obj["summary"]
-        if not (_refs_ok(summary["strengths"], n) and _refs_ok(summary["improvements"], n)):
-            return "refs"
-    except (KeyError, TypeError, IndexError):
+    """실패 사유 코드(`shape`·`answers`·`first_kind`·`refs`), 정상이면 None.
+
+    None이면 `build`가 예외 없이 돈다(형식을 전부 확인한다).
+    """
+    if not _shape_ok(obj):
+        return "shape"
+    items = obj["items"]
+    if n < 1 or [i["answer"] for i in items] != list(range(1, n + 1)):
         return "answers"
+    if items[0]["kind"] != "main":
+        return "first_kind"
+    summary = obj["summary"]
+    if not (_refs_ok(summary["strengths"], n) and _refs_ok(summary["improvements"], n)):
+        return "refs"
     return None
 
 

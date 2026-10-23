@@ -160,6 +160,10 @@ def _pause(rate: float) -> str:
     return "보통" if rate <= PAUSE_NORMAL_MAX else "잦음"
 
 
+def _first_word(sec: float) -> str:
+    return "보통" if sec <= FIRST_WORD_MAX else "망설임 긺"
+
+
 def _far(ratio: float) -> bool:
     return ratio >= RATIO_HIGH or ratio <= RATIO_LOW
 
@@ -171,7 +175,7 @@ def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
         return f"답변 {m.answer}: 측정 부족(받아쓴 음절 없음)"
     spm = _per_minute(m)
     rate = _pause_rate(m)
-    first = "보통" if m.first_word_sec <= FIRST_WORD_MAX else "망설임 긺"
+    first = _first_word(m.first_word_sec)
     parts = [
         f"분당 {spm}음절({_speed(spm)})",
         f"2초 이상 쉼 {m.long_pauses}회·말한 1분당 {rate:.1f}회({_pause(round(rate, 1))})",
@@ -249,7 +253,7 @@ def judge(m: AnswerMetrics) -> dict[str, Any]:
         "pause": _pause(rate),
         "longestPauseSec": round(m.longest_pause_sec, 1),
         "firstWordSec": round(m.first_word_sec, 1),
-        "firstWord": "보통" if m.first_word_sec <= FIRST_WORD_MAX else "망설임 긺",
+        "firstWord": _first_word(m.first_word_sec),
         "filler": None if f is None else {"level": f[0], "count": m.filler_count, "examples": f[1]},
         "voice": None if m.voice is None else _voice_dict(m.voice),
         "insufficient": False,

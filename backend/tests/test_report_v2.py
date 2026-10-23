@@ -223,3 +223,36 @@ def test_judge_matches_line():
     assert f"({j['speed']})" in line and f"({j['pause']})" in line
     assert f"({j['firstWord']})" in line
     assert f"군말 {j['filler']['level']}" in line
+
+
+def test_parse_deep_json():
+    assert report_v2.parse("[" * 100000) is None
+
+
+def test_validate_shape():
+    def bad(mutate, n=5):
+        o = obj()
+        mutate(o)
+        return report_v2.validate(o, n)
+
+    assert report_v2.validate([], 1) == "shape"  # type: ignore[arg-type]
+    assert bad(lambda o: o["items"][1].__setitem__("answer", 2.0)) == "shape"
+    assert bad(lambda o: o["items"][1].__setitem__("answer", True)) == "shape"
+    assert bad(lambda o: o["items"][0].pop("question")) == "shape"
+    assert bad(lambda o: o["items"][3].__setitem__("kind", "other")) == "shape"
+    assert bad(lambda o: o["items"][2].__setitem__("feedback", 3)) == "shape"
+    assert bad(lambda o: o["items"][2].__setitem__("delivery", 3)) == "shape"
+    assert bad(lambda o: o["items"].__setitem__(1, "x")) == "shape"
+    assert bad(lambda o: o.__setitem__("items", "x")) == "shape"
+    assert bad(lambda o: o["summary"].pop("strengths")) == "shape"
+    assert bad(lambda o: o["summary"].__setitem__("delivery", 1)) == "shape"
+    assert bad(lambda o: o["summary"]["strengths"].append({"point": "x"})) == "shape"
+    assert bad(lambda o: o["summary"]["strengths"].append("x")) == "shape"
+    assert bad(lambda o: o["summary"]["strengths"][0].__setitem__("answers", [1.5])) == "shape"
+    assert bad(lambda o: o["summary"]["strengths"][0].__setitem__("answers", [True])) == "shape"
+    assert bad(lambda o: o["summary"].__setitem__("postingFit", {"met": ["a"]})) == "shape"
+    assert (
+        bad(lambda o: o["summary"].__setitem__("postingFit", {"met": [1], "gaps": []})) == "shape"
+    )
+    assert bad(lambda o: o["summary"].__setitem__("postingFit", None)) is None
+    assert report_v2.validate({"items": [], "summary": summary()}, 0) == "answers"
