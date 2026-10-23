@@ -60,3 +60,14 @@ def test_admin_emails_are_normalized_and_deduplicated():
     s = Settings.from_env({"ADMIN_EMAILS": " A@b.com, c@d.com ,,a@b.com"})
     assert s.admin_emails == ("a@b.com", "c@d.com")
     assert Settings.from_env({}).admin_emails == ()
+
+
+def test_baze_settings_parse():
+    s = Settings.from_env(
+        {"BAZE_API_KEYS": " a, ,b,c ", "BAZE_VOICE_MODEL": "m", "BAZE_MIN_REMAINING": "7"}
+    )
+    assert s.baze_api_keys == ("a", "b", "c")
+    assert (s.baze_voice_model, s.baze_min_remaining) == ("m", 7.0)
+    d = Settings.from_env({})
+    assert d.baze_api_keys == () and d.baze_voice_model == "gemini-3.8-flash"
+    assert d.baze_min_remaining == 50.0

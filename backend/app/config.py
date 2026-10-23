@@ -12,6 +12,8 @@ DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173",
 )
 DEFAULT_BEN_DAILY_LIMIT = 30
+DEFAULT_BAZE_VOICE_MODEL = "gemini-3.8-flash"
+DEFAULT_BAZE_MIN_REMAINING = 50.0
 # DATA_DIR = 사용자 데이터(DB·녹음). 정적 계약 데이터(MOMO_DATA_DIR)와 다르다.
 DEFAULT_STORAGE_DIR = Path(__file__).resolve().parents[1] / "var"
 
@@ -44,6 +46,12 @@ def _parse_emails(value: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(e for e in emails if e))
 
 
+def _parse_keys(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    return tuple(k for k in (p.strip() for p in value.split(",")) if k)
+
+
 @dataclass(frozen=True)
 class Settings:
     storage_dir: Path
@@ -54,6 +62,9 @@ class Settings:
     admin_password: str | None = None
     ben_daily_limit: int = DEFAULT_BEN_DAILY_LIMIT
     admin_emails: tuple[str, ...] = ()
+    baze_api_keys: tuple[str, ...] = ()
+    baze_voice_model: str = DEFAULT_BAZE_VOICE_MODEL
+    baze_min_remaining: float = DEFAULT_BAZE_MIN_REMAINING
 
     @property
     def db_path(self) -> Path:
@@ -68,6 +79,7 @@ class Settings:
         e = os.environ if env is None else env
         storage = _stripped(e.get("DATA_DIR"))
         limit = _stripped(e.get("BEN_DAILY_LIMIT"))
+        min_remaining = _stripped(e.get("BAZE_MIN_REMAINING"))
         return cls(
             storage_dir=Path(storage) if storage else DEFAULT_STORAGE_DIR,
             cors_origins=_parse_origins(e.get("CORS_ORIGINS")),
@@ -78,4 +90,9 @@ class Settings:
             admin_password=e.get("ADMIN_PASSWORD") or None,
             ben_daily_limit=int(limit) if limit else DEFAULT_BEN_DAILY_LIMIT,
             admin_emails=_parse_emails(e.get("ADMIN_EMAILS")),
+            baze_api_keys=_parse_keys(e.get("BAZE_API_KEYS")),
+            baze_voice_model=_stripped(e.get("BAZE_VOICE_MODEL")) or DEFAULT_BAZE_VOICE_MODEL,
+            baze_min_remaining=float(min_remaining)
+            if min_remaining
+            else DEFAULT_BAZE_MIN_REMAINING,
         )
