@@ -22,6 +22,7 @@ import { canStartWith, trackOf } from '@/utils/track'
 import type { ArchiveDraft, Track } from '@/services/account'
 import { useAccountStore } from './account'
 import { parseReport, type ReportItem } from '@/utils/reportParser'
+import { type ReportV2 } from '@/utils/reportV2'
 import { synthesize } from '@/services/tts'
 import { startRecording, type Recorder } from '@/services/recorder'
 import {
@@ -150,6 +151,8 @@ export const useInterviewStore = defineStore('interview', {
     ended: false,
     tokenCount: 0,
     report: null as ReportItem[] | null,
+    /** 벤 리포트 버전 2. 있으면 화면은 이것으로 그린다(없으면 report = 버전 1) */
+    reportV2: null as ReportV2 | null,
     reportRaw: '',
     reportStatus: 'idle' as 'idle' | 'writing' | 'done' | 'error',
     startedAt: null as number | null,
@@ -307,6 +310,7 @@ export const useInterviewStore = defineStore('interview', {
         this.ended = false
         this.genError = null
         this.report = null
+        this.reportV2 = null
         this.reportRaw = ''
         this.reportStatus = 'idle'
         this.startedAt = Date.now()
@@ -547,14 +551,22 @@ export const useInterviewStore = defineStore('interview', {
           // 서버가 쓴다. 이미 받은 면접에 다시 불러도 보관한 원문을 그대로 준다
           // 걸어 둔 측정을 여기서 거둔다. 못 잰 답변은 빠진다(`docs/API.md`: 빼고 보낸다)
           const delivery = (await Promise.all(measuring)).filter((m) => m !== null)
-          await reportStream(benId, (d) => (this.reportRaw += d), undefined, delivery)
+          await reportStream(benId, (d) => (this.reportRaw += d), undefined, delivery, {
+            // 서버가 다시 쓴다 — 쓰다 만 원문을 남겨 두면 로딩 글자가 뒤죽박죽이 된다
+            onReset: () => {
+              this.reportRaw = ''
+              this.reportV2 = null
+            },
+            onReport: (r) => (this.reportV2 = r),
+          })
         } else if (session) {
           this.reportRaw = await session.send(
             buildReportInstruction(override ? null : PERSONAS[this.sessionInterviewer.persona]),
             (d) => (this.reportRaw += d),
           )
         }
-        this.report = parseReport(this.reportRaw)
+        // 버전 2가 왔으면 그것으로 그린다. 안 왔으면(플래그 꺼짐·로컬 면접관) 예전 파서로
+        if (!this.reportV2) this.report = parseReport(this.reportRaw)
         this.reportStatus = 'done'
       } catch (e) {
         this.genError = e instanceof Error ? e.message : String(e)
@@ -662,7 +674,7 @@ export const useInterviewStore = defineStore('interview', {
         track,
         startedAt: new Date(this.startedAt ?? Date.now()).toISOString(),
         endedAt: new Date(this.endedAt ?? Date.now()).toISOString(),
-        questionCount: this.report?.length ?? 0,
+        questionCount: this.reportV2?.items.length ?? this.report?.length ?? 0,
         hasRecording: clips.length > 0,
         ...(track === 'company'
           ? { field: p.field ?? undefined, job: p.job }
@@ -675,6 +687,8 @@ export const useInterviewStore = defineStore('interview', {
         messages: this.messages.map((m) => ({ role: m.role, text: m.text, at: m.at })),
         report: this.report ?? [],
         reportRaw: this.reportRaw,
+        // 버전 2는 받은 그대로 보관한다 — 보관함 상세가 같은 화면을 다시 그린다
+        ...(this.reportV2 ? { reportV2: this.reportV2 } : {}),
         // 녹음은 기록을 만든 뒤에 따로 올린다 — 서버가 이 칸을 무시한다
         recordings: [],
         // 프리미엄 기록은 어느 벤 면접인지 서버에 증명해야 한다
@@ -701,6 +715,7 @@ export const useInterviewStore = defineStore('interview', {
       this.ended = false
       this.tokenCount = 0
       this.report = null
+      this.reportV2 = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
       this.profile = {

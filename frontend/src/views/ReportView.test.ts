@@ -45,6 +45,36 @@ describe('ReportView', () => {
     expect(w.find('.strong').text()).toBe('근거')
     expect(w.text()).toContain('질문 2 · 꼬리질문 1')
   })
+  it('버전 2 리포트가 있으면 그 카드로 그린다 — 예전 카드는 쓰지 않는다', () => {
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      reportV2: {
+        version: 2,
+        items: [
+          {
+            id: 'Q1',
+            parent: null,
+            answer: 1,
+            kind: 'main',
+            question: '버전 2 질문',
+            answerSummary: '요약',
+            feedback: '피드백',
+            delivery: null,
+            measurements: null,
+          },
+        ],
+        summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+      },
+      profile: { field: 'it', job: '백엔드' },
+    })
+    const w = mount(ReportView)
+    expect(w.findAll('[data-test="v2-card"]')).toHaveLength(1)
+    expect(w.findAll('[data-test="card"]')).toHaveLength(0)
+    expect(w.text()).toContain('버전 2 질문')
+  })
+
   it('파싱 실패면 원문 창 하나', () => {
     useInterviewStore().$patch({
       phase: 'report',

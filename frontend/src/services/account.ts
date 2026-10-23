@@ -5,6 +5,7 @@
  */
 
 import type { ReportItem } from '@/utils/reportParser'
+import type { ReportV2 } from '@/utils/reportV2'
 
 export type Tier = 'member' | 'premium'
 /** 면접의 갈래. 고른 면접관이 정한다 — 둘 다 보는 벤만 사용자가 고른다 */
@@ -119,6 +120,8 @@ export interface ArchiveDetail extends ArchiveEntry {
   messages: { role: 'user' | 'model'; text: string; at?: number }[]
   report: ReportItem[]
   reportRaw: string
+  /** 벤 리포트 버전 2(2026-10-23). 받은 그대로 보관하고 그대로 돌려받는다. 없으면 null */
+  reportV2?: ReportV2 | null
   /** 프리미엄 면접만 */
   recordings: { turn: number; url: string }[]
 }

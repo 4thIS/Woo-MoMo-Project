@@ -11,10 +11,15 @@ import { FIELD_LABELS, type Field } from '@/stores/interview'
 import { formatDuration } from '@/utils/timing'
 import { answersForReport } from '@/utils/reportAnswers'
 import ReportCards from '@/components/report/ReportCards.vue'
+import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
+import { asReportV2 } from '@/utils/reportV2'
 import PixelButton from '@/components/ui/PixelButton.vue'
 
 const props = defineProps<{ entry: ArchiveDetail }>()
 defineEmits<{ back: []; remove: [] }>()
+
+/** 서버가 받은 그대로 돌려주므로 여기서 다시 모양을 본다 — 옛 기록에는 아예 없다 */
+const reportV2 = computed(() => asReportV2(props.entry.reportV2))
 
 const iv = computed(
   () => interviewerById(props.entry.interviewerId) ?? interviewerById(DEFAULT_INTERVIEWER)!,
@@ -87,7 +92,8 @@ function answerIndex(i: number): number {
 
       <section class="pane">
         <h3 class="mono ttl">리포트</h3>
-        <ReportCards v-if="entry.report.length" :report="entry.report" :answers="answers" />
+        <ReportV2Cards v-if="reportV2" :report="reportV2" />
+        <ReportCards v-else-if="entry.report.length" :report="entry.report" :answers="answers" />
         <p v-else class="mono none">리포트가 남지 않았습니다.</p>
       </section>
     </div>

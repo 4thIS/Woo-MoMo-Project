@@ -237,6 +237,76 @@ describe('reportStream', () => {
     expect(e.code).toBe('interview_not_started')
   })
 
+  it('버전 2 report 이벤트를 넘겨준다 — 화면은 원문이 아니라 이것으로 그린다', async () => {
+    const payload = {
+      version: 2,
+      items: [
+        {
+          id: 'Q1',
+          parent: null,
+          answer: 1,
+          kind: 'main',
+          question: '자기소개',
+          answerSummary: '요약',
+          feedback: '피드백',
+          delivery: null,
+          measurements: null,
+        },
+      ],
+      summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+    }
+    next = [
+      {
+        sse: [
+          'event: delta\ndata: {"text":"{\\"items\\""}\n\n',
+          `event: report\ndata: ${JSON.stringify(payload)}\n\n`,
+          'event: done\ndata: {}\n\n',
+        ],
+      },
+    ]
+    let got: unknown = null
+    await reportStream('pi_1', () => {}, undefined, undefined, { onReport: (r) => (got = r) })
+    expect(got).toEqual(payload)
+  })
+
+  it('reset이 오면 그때까지 받은 원문을 버리라고 알린다', async () => {
+    next = [
+      {
+        sse: [
+          'event: delta\ndata: {"text":"쓰다 만 것"}\n\n',
+          'event: reset\ndata: {}\n\n',
+          'event: delta\ndata: {"text":"다시"}\n\n',
+          'event: done\ndata: {}\n\n',
+        ],
+      },
+    ]
+    const seen: string[] = []
+    let resets = 0
+    await reportStream('pi_1', (t) => seen.push(t), undefined, undefined, {
+      onReset: () => {
+        resets++
+        seen.length = 0
+      },
+    })
+    expect(resets).toBe(1)
+    expect(seen.join('')).toBe('다시')
+  })
+
+  it('버전 2 전용 오류도 코드로 알린다', async () => {
+    for (const code of ['bad_report', 'too_long']) {
+      next = [{ sse: [`event: error\ndata: {"code":"${code}"}\n\n`] }]
+      const e = await reportStream('pi_1', () => {}).catch((x) => x)
+      expect(e.code).toBe(code)
+    }
+  })
+
+  it('답변이 하나도 없으면 no_answers', async () => {
+    next = [{ status: 409, json: { error: 'no_answers' } }]
+    const e = await reportStream('pi_1', () => {}).catch((x) => x)
+    expect(e.code).toBe('no_answers')
+    expect(e.message).toMatch(/\S/)
+  })
+
   const ok = () => [{ sse: ['event: delta\ndata: {"text":"[]"}\n\n', 'event: done\ndata: {}\n\n'] }]
   const metric = (answer: number) => ({
     answer,

@@ -6,6 +6,7 @@
  * `EventSource`를 못 쓴다(POST라서). fetch 스트림을 직접 읽어 `SseParser`에 넣는다.
  */
 import { SseParser } from '@/utils/sse'
+import { asReportV2, type ReportV2 } from '@/utils/reportV2'
 import type { Session, Track } from './account'
 
 const BASE = '/api/premium/interviews'
@@ -23,6 +24,10 @@ export type BenErrorCode =
   | 'invalid'
   | 'not_found'
   | 'rate_limited'
+  /** 리포트 버전 2 (2026-10-23) */
+  | 'no_answers'
+  | 'bad_report'
+  | 'too_long'
   /** 스트림 안에서 온 것 */
   | 'claude_error'
   | 'refused'
@@ -46,6 +51,9 @@ const MESSAGES: Record<BenErrorCode, string> = {
   invalid: '입력한 값을 다시 확인해 주세요',
   not_found: '없는 면접입니다',
   rate_limited: '요청이 너무 잦습니다 — 잠시 뒤 다시 시도하세요',
+  no_answers: '답변이 하나도 없어 리포트를 만들 수 없습니다',
+  bad_report: '리포트를 제대로 만들지 못했습니다 — 다시 시도해 주세요',
+  too_long: '리포트가 너무 길어 끊겼습니다',
   claude_error: '응답이 끊겼습니다',
   refused: '이 내용으로는 답할 수 없습니다',
   turn_conflict: '같은 면접이 두 번 겹쳐 들어왔습니다',
@@ -134,10 +142,19 @@ export interface BenStatus {
 }
 
 /** SSE 본문을 끝까지 읽는다. `done`의 data를 돌려주고, error 이벤트는 던진다 */
+/** 리포트 버전 2에서만 오는 것들 (`docs/API.md` 벤 3) */
+export interface ReportHooks {
+  /** 검증에 실패해 서버가 다시 만든다 — 지금까지 받은 원문 버퍼를 비운다 */
+  onReset?: () => void
+  /** 검증·정리를 마친 리포트. 화면은 원문이 아니라 이것으로 그린다 */
+  onReport?: (report: ReportV2) => void
+}
+
 async function readStream(
   res: Response,
   onDelta: (text: string) => void,
   onStatus?: (s: BenStatus) => void,
+  hooks?: ReportHooks,
 ): Promise<Record<string, unknown>> {
   if (!res.ok) {
     const body = await res.json().catch(() => undefined)
@@ -155,6 +172,11 @@ async function readStream(
     } else if (e.event === 'status') {
       const s = JSON.parse(e.data || '{}') as BenStatus
       if (typeof s.phase === 'string') onStatus?.(s)
+    } else if (e.event === 'reset') {
+      hooks?.onReset?.()
+    } else if (e.event === 'report') {
+      const r = asReportV2(JSON.parse(e.data || 'null'))
+      if (r) hooks?.onReport?.(r)
     } else if (e.event === 'done') {
       done = JSON.parse(e.data || '{}') as Record<string, unknown>
     } else if (e.event === 'error') {
@@ -222,6 +244,7 @@ export async function reportStream(
   onDelta: (text: string) => void,
   signal?: AbortSignal,
   delivery?: DeliveryMetric[],
+  hooks?: ReportHooks,
 ): Promise<void> {
   const metrics = (delivery ?? []).filter((d) => d.answer <= DELIVERY_MAX).slice(0, DELIVERY_MAX)
   const res = await post(
@@ -229,5 +252,5 @@ export async function reportStream(
     metrics.length ? { delivery: metrics } : {},
     signal,
   )
-  await readStream(res, onDelta)
+  await readStream(res, onDelta, undefined, hooks)
 }
