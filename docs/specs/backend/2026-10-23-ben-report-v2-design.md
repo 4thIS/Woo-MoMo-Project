@@ -77,6 +77,7 @@ data: { "version": 2,
                      "improvements": [...], "delivery": "…" | null,
                      "postingFit": { "met": [...], "gaps": [...] } | null } }
 ```
+- 검증 실패로 다시 생성할 때는 그 전에 **`event: reset`**(`{}`)을 보낸다 — 프론트는 그때까지 받은 원문 조각을 버린다.
 - `done` 면접 재요청: 저장한 원문 `delta` + 저장한 `report` + `done`(Claude 미호출).
 - 버전 2가 꺼져 있으면 지금과 똑같다(`report` 이벤트 없음).
 
