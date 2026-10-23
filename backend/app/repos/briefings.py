@@ -20,8 +20,9 @@ def _fold(value: str) -> str:
     return " ".join(value.split()).lower()
 
 
-def cache_key(company: str, job: str) -> str:
-    return f"{_fold(company)}\n{_fold(job)}"
+def cache_key(company: str, job: str, posting_url: str | None = None) -> str:
+    key = f"{_fold(company)}\n{_fold(job)}"
+    return f"{key}\n{posting_url.strip()}" if posting_url else key
 
 
 def get_fresh(conn: sqlite3.Connection, *, key: str, since: str) -> CachedBriefing | None:

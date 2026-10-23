@@ -65,11 +65,14 @@ def start_interview(
     if group is None:
         raise ApiError(422, "missing_field", field=body.track)
     inputs = {"resumeText": body.resumeText, body.track: group.model_dump(exclude_none=True)}
-    has_company_name = bool(
+    # 회사명 또는 모집공고 링크가 있으면 첫 턴에 조사한다(대입 트랙은 무시)
+    research = bool(
         body.track == "company"
         and body.company is not None
-        and body.company.name
-        and prompts._one_line(body.company.name)
+        and (
+            (body.company.name and prompts._one_line(body.company.name))
+            or body.company.postingUrl is not None
+        )
     )
     now = request.app.state.clock()
     try:
@@ -81,7 +84,7 @@ def start_interview(
             created_at=iso(now),
             day_start=kst_day_start(now),
             daily_limit=request.app.state.settings.ben_daily_limit,
-            briefing_status="pending" if has_company_name else "none",
+            briefing_status="pending" if research else "none",
         )
     except premium.DailyLimitReached:
         raise ApiError(503, "daily_limit") from None
@@ -165,25 +168,29 @@ def _research_and_store(
     job: str,
     created_at: str,
     on_usage: UsageSink | None = None,
+    posting_url: str | None = None,
 ) -> briefing_llm.Briefing | None:
     """워커 스레드: 조사하고 성공하면 바로 저장한다(캐시 + 면접).
 
     스트림이 포기했거나 클라이언트가 끊겨도 결과는 버려지지 않는다.
     예상 못 한 예외는 실패(None)로 접는다 — 본문은 로그에 남기지 않는다."""
     try:
-        made = briefing_llm.make_briefing(claude, name, job, on_usage)
+        made = briefing_llm.make_briefing(claude, name, job, on_usage, posting_url)
         if made is None:
             return None
+        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다
+        posting_failed = bool(posting_url) and prompts.POSTING_MISSING_STEM in made.text
         with db.connection(db_path) as c:
-            briefings.put(
-                c,
-                key=key,
-                company=name,
-                job=job,
-                briefing=made.text,
-                sources=made.sources,
-                created_at=created_at,
-            )
+            if not posting_failed:
+                briefings.put(
+                    c,
+                    key=key,
+                    company=name,
+                    job=job,
+                    briefing=made.text,
+                    sources=made.sources,
+                    created_at=created_at,
+                )
             premium.set_briefing(c, interview_id=interview_id, briefing=made.text)
         return made
     except Exception:
@@ -199,11 +206,21 @@ def _research_with_pings(
     job: str,
     created_at: str,
     on_usage: UsageSink | None = None,
+    posting_url: str | None = None,
 ) -> Generator[str, None, briefing_llm.Briefing | None]:
     """조사를 다른 스레드에서 돌리며 ping을 흘린다. 기한을 넘기면 None(스레드는 알아서 끝난다)."""
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="briefing")
     future = pool.submit(
-        _research_and_store, claude, db_path, interview_id, key, name, job, created_at, on_usage
+        _research_and_store,
+        claude,
+        db_path,
+        interview_id,
+        key,
+        name,
+        job,
+        created_at,
+        on_usage,
+        posting_url,
     )
     pool.shutdown(wait=False)
     deadline = time.monotonic() + RESEARCH_DEADLINE
@@ -228,8 +245,9 @@ def _resolve_briefing(
         yield sse("status", {"phase": "briefing", "ok": interview.briefing_status == "ok"})
         return interview.briefing
     company = interview.inputs["company"]
-    name, job = company["name"], company["job"]
-    key = briefings.cache_key(name, job)
+    name, job = company.get("name") or "", company["job"]
+    posting_url = company.get("postingUrl")
+    key = briefings.cache_key(name, job, posting_url)
     with db.connection(db_path) as c:
         cached = briefings.get_fresh(c, key=key, since=iso(now - briefings.FRESH_SECONDS))
     text: str | None = cached.briefing if cached is not None else None
@@ -242,7 +260,7 @@ def _resolve_briefing(
             pass
         else:
             yield from _research_with_pings(
-                claude, db_path, interview.id, key, name, job, iso(now), on_usage
+                claude, db_path, interview.id, key, name, job, iso(now), on_usage, posting_url
             )
     with db.connection(db_path) as c:
         premium.set_briefing(c, interview_id=interview.id, briefing=text)
