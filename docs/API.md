@@ -318,7 +318,7 @@ data: {"ended":false}
 - SSE `error` 코드 `turn_conflict`: 같은 면접에 턴 요청이 겹쳐 뒤의 것을 기록하지 않음. 새로 고쳐 이어 가면 된다.
 - SSE `error` 코드 `server_error`: 서버 내부 오류. 그 턴은 기록되지 않았을 수 있으니 `claude_error`처럼 같은 요청으로 다시 시도한다.
 
-SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `refused`, `turn_conflict`(턴만), `server_error`.
+SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `refused`, `turn_conflict`(턴만), `bad_report`(리포트 버전 2만), `server_error`.
 
 **3) 리포트 — POST /api/premium/interviews/{id}/report**
 
@@ -338,6 +338,38 @@ SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `ref
 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 21번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
 SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 되고 서버가 원문을 보관한다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
 **이미 리포트를 받은(`done`) 면접에 다시 요청하면** Claude를 부르지 않고 보관한 원문을 그대로 다시 보낸다(`delta` 한 번 + `done`). 리포트 스트림이 끊겼거나 새로 고친 뒤 원문을 다시 받을 때 쓴다. 요청 수 제한(`429`)은 똑같이 센다.
+**버전 2 (`BEN_REPORT_V2`, 기본 꺼짐 — 2026-10-23)**: 서버 환경변수 `BEN_REPORT_V2=true`이면 벤이 구조화 JSON 객체를 쓴다(원문은 `{"items":[…],"summary":{…}}` 형태라 예전 `parseReport`로는 읽을 수 없다 — 프론트 버전 2 화면을 배포한 뒤 켠다). 꺼져 있으면 위의 설명 그대로다. 켜면 SSE 순서는 `delta…` → (검증 실패 시 `reset` → `delta…`) → `report` → `done`이다.
+- `event: reset` / `data: {}` — 첫 시도의 결과가 형식 검증(JSON 파싱·답변 번호 1..n 오름차순·첫 항목 `main`·`summary` 참조 범위)에 실패해 서버가 같은 요청으로 한 번 더 만든다. 프론트는 지금까지 받은 `delta` 원문 버퍼를 비운다. 재생성은 Claude 호출 시도로 한 번 더 센다(상한에 닿았으면 재생성 없이 `bad_report`).
+- `event: report` — 서버가 검증·정리한 리포트(`delta` 원문과 별개로 이것을 그린다):
+```jsonc
+{ "version": 2,
+  "items": [{
+    "id": "Q1",                // main: Q1, Q2… / follow: 앞 main 아래 Q1-1, Q1-2…
+    "parent": null,            // follow면 "Q1"
+    "answer": 1, "kind": "main",   // main | follow
+    "question": "...", "answerSummary": "...", "feedback": "...",
+    "delivery": "..." ,        // 전달력 측정이 없으면 null
+    "measurements": {          // 측정이 없으면 null. 값은 서버 판정(모델 숫자 아님)
+      "syllablesPerMin": 300, "speed": "느림|보통|빠름",
+      "longPauses": 1, "pausesPerMin": 1.0, "pause": "적음|보통|잦음",
+      "longestPauseSec": 2.5, "firstWordSec": 1.5, "firstWord": "보통|망설임 긺",
+      "filler": { "level": "적음|보통|잦은 경향", "count": 3, "examples": ["음"] },   // 또는 null
+      "voice": { "confidence": {"level": "...", "reason": "..."}, "tone": {"level": "...", "reason": "..."},
+                 "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
+                 "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
+      "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
+    } }],
+  "summary": {
+    "strengths":    [{ "point": "...", "refs": ["Q1", "Q1-1"] }],   // 최대 3개, refs는 항목 id(답변 순)
+    "improvements": [{ "point": "...", "refs": ["Q2"] }],
+    "delivery": "..." ,        // 측정이 없으면 null
+    "postingFit": { "met": ["..."], "gaps": ["..."] }               // 모집공고가 있는 회사 면접만, 아니면 null
+  } }
+```
+- `error` 코드 `bad_report` — 두 번 만들어도 형식 검증을 통과하지 못했다. 면접은 `active` 그대로라 같은 요청으로 다시 시도할 수 있다(`claude_error`·`refused`는 이전과 같다).
+- 저장·재요청: 성공하면 원문과 `report` 데이터를 함께 보관한다. `done` 면접에 다시 요청하면 `delta`(보관 원문) → `report`(보관본이 있을 때만) → `done`이며 Claude를 부르지 않는다. 이 재요청은 플래그가 꺼져 있어도 같다.
+- 로그에는 리포트 원문·측정값·목소리 이유를 남기지 않는다.
+
 프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.
 
 **목소리 분석 업로드 — POST /api/premium/interviews/{id}/voice/{answer}** (2026-10-23)

@@ -33,6 +33,7 @@ services:
       BAZE_API_KEYS: ${BAZE_API_KEYS:-}
       BAZE_VOICE_MODEL: ${BAZE_VOICE_MODEL:-gemini-3.8-flash}
       BAZE_MIN_REMAINING: ${BAZE_MIN_REMAINING:-50}
+      BEN_REPORT_V2: ${BEN_REPORT_V2:-false}
     volumes:
       # 계정 DB·녹음. 운영 /srv/momo/data, demomo는 deploy/.env의 DATA_HOST_DIR=/srv/momo-dev/data
       - ${DATA_HOST_DIR:-/srv/momo/data}:/data

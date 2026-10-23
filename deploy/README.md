@@ -103,6 +103,16 @@ sudo mkdir -p /srv/momo/data /srv/momo-dev/data && sudo chown -R 10001:10001 /sr
 
 `ADMIN_LOGIN`·`ADMIN_PASSWORD` 중 하나라도 비우면 다음 기동 때 관리자 표시가 지워지고 목업 결제는 아무도 못 쓴다. 비밀번호를 바꾸려면 `.env`를 고치고 `docker compose up -d`로 api를 다시 띄운다(기동 때 맞춘다).
 
+### 벤 리포트 버전 2 켜기 (`BEN_REPORT_V2`)
+
+기본은 꺼짐(`false`)이다. 켜면 리포트 원문이 JSON 객체(구조화 출력)라 예전 프론트의 리포트 파서가 읽지 못한다. **프론트의 버전 2 리포트 화면이 배포된 뒤에만** 켠다.
+```
+# deploy/.env 에 한 줄 추가
+BEN_REPORT_V2=true
+docker compose up -d --no-build     # api만 다시 뜬다. 끄려면 false(또는 줄 삭제) 후 같은 명령
+```
+이미 만든 리포트는 켜고 꺼도 그대로 다시 받을 수 있다.
+
 ### 반영(demomo)
 ```
 cd /srv/apps/Woo-MoMo-Project-dev/deploy

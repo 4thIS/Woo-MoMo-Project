@@ -1,5 +1,6 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
+import json
 import logging
 import secrets
 import sqlite3
@@ -18,7 +19,7 @@ from app import db
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
-from app.llm import delivery, prompts
+from app.llm import delivery, prompts, report_v2
 from app.llm.baze import StoredVoice, VoiceAnalyzer
 from app.llm.claude import (
     MODEL,
@@ -445,6 +446,85 @@ def _await_voice(
             yield PING
 
 
+def _generate_report_once(
+    claude: ClaudeClient,
+    system: list[dict[str, Any]],
+    msgs: list[prompts.Message],
+    sink: UsageSink,
+) -> Generator[str, None, str]:
+    """리포트 한 번을 스트리밍하며 delta를 흘리고 원문을 돌려준다. ClaudeError는 던진다."""
+    chunks: list[str] = []
+    for text in claude.stream_text(
+        system=system,
+        messages=msgs,
+        effort="medium",
+        max_tokens=REPORT_MAX_TOKENS,
+        on_usage=sink,
+        output_format=report_v2.REPORT_V2_SCHEMA,
+    ):
+        chunks.append(text)
+        yield sse("delta", {"text": text})
+    return "".join(chunks)
+
+
+def _report_v2_events(
+    claude: ClaudeClient,
+    interview: PremiumInterview,
+    parsed: list[DeliveryMetric],
+    system: list[dict[str, Any]],
+    db_path: Path,
+    sink: UsageSink,
+    *,
+    voice_wait: bool,
+) -> Iterator[str]:
+    """버전 2 리포트: 구조화 출력을 검증하고 실패하면 한 번 더 만든다(원문·측정값은 로그 금지)."""
+    voices = None
+    if voice_wait:
+        voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
+    merged = _metrics(parsed, voices)
+    briefing = interview.briefing
+    has_posting = bool(interview.track == "company" and briefing and prompts._has_posting(briefing))
+    has_delivery = bool(parsed)
+    msgs = prompts.report_messages_v2(
+        interview.messages,
+        delivery.render(merged),
+        voice=delivery.voice_used(merged),
+        posting=has_posting,
+    )
+    n = report_v2.answer_count(interview.messages)
+    for attempt in (1, 2):
+        if attempt == 2:
+            try:
+                with db.connection(db_path) as c:
+                    premium.count_attempt(c, interview_id=interview.id)
+            except premium.TooManyAttempts:
+                yield sse("error", {"code": "bad_report"})
+                return
+            yield sse("reset", {})
+        try:
+            raw = yield from _generate_report_once(claude, system, msgs, sink)
+        except ClaudeError as exc:
+            yield sse("error", {"code": exc.code})
+            return
+        if not raw.strip():
+            yield sse("error", {"code": "claude_error"})
+            return
+        obj = report_v2.parse(raw)
+        if obj is not None and report_v2.validate(obj, n) is None:
+            data = report_v2.build(obj, merged, has_delivery=has_delivery, has_posting=has_posting)
+            with db.connection(db_path) as c:
+                premium.mark_done(
+                    c,
+                    interview_id=interview.id,
+                    report_raw=raw,
+                    report_v2_json=json.dumps(data, ensure_ascii=False),
+                )
+            yield sse("report", data)
+            yield sse("done", {})
+            return
+    yield sse("error", {"code": "bad_report"})
+
+
 @router.post("/premium/interviews/{interview_id}/report")
 def make_report(
     interview_id: str,
@@ -463,6 +543,8 @@ def make_report(
         def replay() -> Iterator[str]:
             # 이미 받은 리포트를 다시 보낸다 — Claude를 부르지 않는다
             yield sse("delta", {"text": stored})
+            if interview.report_v2_json:
+                yield sse("report", json.loads(interview.report_v2_json))
             yield sse("done", {})
 
         return _stream(replay())
@@ -471,16 +553,30 @@ def make_report(
     parsed = _parse_delivery(body, interview)
     # 동의한 면접의 측정이 있으면 목소리 결과를 기다려 합쳐야 해서 스트림 안에서 만든다
     with_voice = interview.voice_consent and bool(parsed)
+    v2_on = request.app.state.settings.ben_report_v2
     messages = (
         None
-        if with_voice
+        if with_voice or v2_on
         else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
     )
     claude = _claude(request)
     _count_attempt(conn, interview)
-    system = prompts.build_system(interview.track, interview.inputs)
-    db_path = request.app.state.settings.db_path
+    settings = request.app.state.settings
+    v2 = settings.ben_report_v2
+    system = (
+        prompts.report_system(interview.track, interview.inputs, interview.briefing)
+        if v2
+        else prompts.build_system(interview.track, interview.inputs)
+    )
+    db_path = settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
+
+    if v2:
+        return _stream(
+            _report_v2_events(
+                claude, interview, parsed, system, db_path, report_sink, voice_wait=with_voice
+            )
+        )
 
     def events() -> Iterator[str]:
         msgs = messages
