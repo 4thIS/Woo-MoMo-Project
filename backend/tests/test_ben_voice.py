@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -112,7 +113,9 @@ def test_upload_success_runs_analysis_and_cleans_up(
     with open_db(settings) as conn:
         row = conn.execute("SELECT result_json FROM voice_analysis").fetchone()
         usage = conn.execute("SELECT * FROM baze_usage").fetchall()
-    assert "백엔드 개발자" in row["result_json"]
+    # 받아쓰기 본문은 저장하지 않고 한글 음절 수만 남는다
+    assert "백엔드" not in row["result_json"] and "transcript" not in row["result_json"]
+    assert json.loads(row["result_json"])["syllables"] == 17
     assert len(usage) == 1
     assert usage[0]["key_index"] == 1
     assert usage[0]["outcome"] == "ok"
@@ -278,7 +281,7 @@ def test_reupload_race_latest_wins_and_files_cleaned(
     entered = threading.Event()
     first = VoiceOutcome(
         "ok",
-        result=VoiceResult.model_validate({**DEFAULT_VOICE_RESULT, "transcript": "첫번째업로드"}),
+        result=VoiceResult.model_validate({**DEFAULT_VOICE_RESULT, "transcript": "첫번째"}),
         key_index=1,
     )
     second = VoiceOutcome(
@@ -310,8 +313,8 @@ def test_reupload_race_latest_wins_and_files_cleaned(
         row = conn.execute("SELECT status, result_json FROM voice_analysis").fetchone()
         n_usage = conn.execute("SELECT COUNT(*) FROM baze_usage").fetchone()[0]
     assert row["status"] == "done"
-    assert "두번째업로드" in row["result_json"]
-    assert n_usage == 1
+    assert json.loads(row["result_json"])["syllables"] == 6
+    assert n_usage == 2  # 밀려난 첫 실행도 호출 비용은 나갔다
     assert _wait_tmp_empty(settings) == []
 
 
@@ -328,3 +331,43 @@ def test_submit_failure_marks_failed(voice_client: TestClient, settings: Setting
         row = conn.execute("SELECT status, error_code FROM voice_analysis").fetchone()
     assert (row["status"], row["error_code"]) == ("failed", "submit_failed")
     assert _tmp_files(settings) == []
+
+
+def test_per_interview_cap_429_without_baze_call_or_file(
+    voice_client: TestClient, settings: Settings, fake_baze: FakeBaze
+) -> None:
+    from app.routers.premium import VOICE_MAX_PER_INTERVIEW
+
+    interview_id, _ = _start(voice_client)
+    _answer(voice_client, interview_id)
+    with open_db(settings) as conn:
+        for _ in range(VOICE_MAX_PER_INTERVIEW):
+            conn.execute(
+                "INSERT INTO baze_usage (id, at, user_id, interview_id, key_index, model, outcome)"
+                " SELECT lower(hex(randomblob(6))), 'x', 'u', ?, 1, 'm', 'ok'",
+                (interview_id,),
+            )
+        conn.commit()
+    res = _upload(voice_client, interview_id)
+    assert res.status_code == 429
+    assert res.json()["error"] == "voice_limit"
+    assert fake_baze.calls == []
+    assert _tmp_files(settings) == []
+    with open_db(settings) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM voice_analysis").fetchone()[0] == 0
+
+
+def test_startup_marks_leftover_queued_failed(
+    make_client: Callable[..., TestClient], settings: Settings
+) -> None:
+    from app.repos import voice as voice_repo
+
+    c1 = make_client(settings)
+    interview_id, _ = _start(c1)
+    with open_db(settings) as conn:
+        voice_repo.queue(conn, interview_id=interview_id, answer=1, now="2026-10-23T00:00:00.000Z")
+        conn.commit()
+    make_client(settings)
+    with open_db(settings) as conn:
+        row = conn.execute("SELECT status, error_code FROM voice_analysis").fetchone()
+    assert (row["status"], row["error_code"]) == ("failed", "restart")

@@ -102,13 +102,13 @@ def test_no_syllables_is_insufficient_not_slow():
 
 # ── 목소리 분석 합치기 (spec 2026-10-23 3.4) ──
 
-from app.llm.baze import VoiceResult  # noqa: E402
+from app.llm.baze import StoredVoice  # noqa: E402
 from app.llm.delivery import count_syllables, voice_used, with_voice  # noqa: E402
 
 
 def vr(transcript="가" * 300, count=3, examples=("음",), **over):
     data = {
-        "transcript": transcript,
+        "syllables": count_syllables(transcript),
         "fillers": {"count": count, "examples": list(examples)},
         "confidence": {"level": "high", "reason": "또박또박"},
         "tone": {"level": "calm", "reason": "일정함"},
@@ -117,7 +117,7 @@ def vr(transcript="가" * 300, count=3, examples=("음",), **over):
         "clarity": {"level": "ok", "reason": "대체로 또렷"},
     }
     data.update(over)
-    return VoiceResult.model_validate(data)
+    return StoredVoice.model_validate(data)
 
 
 def test_count_syllables_counts_only_hangul():

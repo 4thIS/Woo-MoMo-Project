@@ -362,7 +362,7 @@ curl -sI https://demomo.ssenu.cloud/admin
 |------|--------|------|
 | `BAZE_API_KEYS` | (없음) | 학교 키를 쉼표로 구분해 넣는다. 앞 키부터 쓰고, 소진되면 다음 키로 넘어간다. |
 | `BAZE_VOICE_MODEL` | `gemini-3.8-flash` | 분석에 쓰는 모델 이름. |
-| `BAZE_MIN_REMAINING` | `50` | 키의 남은 크레딧이 이 값 이하이면 그 키를 쓰지 않는다. |
+| `BAZE_MIN_REMAINING` | `50` | 키의 남은 크레딧이 이 값 미만이면 그 키는 `low`가 되어, 쓸 수 있는 키(`ok`)가 있는 동안은 건너뛴다. `ok` 키가 하나도 없을 때만 마지막 수단으로 `low` 키를 쓴다. |
 
 키는 셸 기록이나 화면에 남지 않게 `read -rsp`로 넣는다.
 

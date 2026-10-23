@@ -31,7 +31,7 @@
 
 추가 문장(공동 승인 필요):
 
-> **프리미엄 면접관(벤)** 사용자가 면접을 시작할 때 **목소리 분석에 동의한 경우에 한해**, 답변 녹음을 학교 BAZE 게이트웨이(외부 AI, Google Gemini)로 보내 분석한다. 서버의 임시 녹음은 분석이 끝나면 바로 지운다. 분석 결과(받아쓰기·등급)는 그 면접의 리포트 생성에만 쓴다.
+> **프리미엄 면접관(벤)** 사용자가 면접을 시작할 때 **목소리 분석에 동의한 경우에 한해**, 답변 녹음을 학교 BAZE 게이트웨이(외부 AI, Google Gemini)로 보내 분석한다. 서버의 임시 녹음은 분석이 끝나면 바로 지운다. 분석 결과(등급·근거·군말 수와 받아쓰기의 한글 음절 수)는 그 면접의 리포트 생성에만 쓴다. 받아쓰기 본문은 저장하지 않는다.
 
 - 동의는 면접 단위(`voiceAnalysisConsent`)다. 가입 동의나 녹음 보관 동의와 별개다.
 - 서버·외부로 가는 것: 그 답변의 녹음(16kHz 모노 WAV)과 분석 지시문. 이력서·다른 답변은 넣지 않는다.
@@ -47,20 +47,20 @@
 
 ### 3.2 `POST /api/premium/interviews/{id}/voice/{answer}` (신규)
 - 본문: `multipart/form-data`, 칸 `file`. `Content-Type: audio/wav`(16kHz 모노 PCM 16비트 권장), 최대 **5MB**(약 2분 40초). `answer`는 1부터, 이 면접의 실제 답변 수 이하.
-- 오류: `401`(비로그인), `404`(남의/없는 면접), `403 {"error":"voice_consent_required"}`(동의 안 한 면접), `409 {"error":"interview_over"}`(리포트까지 끝난 면접), `413 too_large`, `415 unsupported_media`(WAV 아님 — RIFF/WAVE 머리 확인), `422 invalid`(`answer` 범위), `429 rate_limited`(벤 분당 6회와 별개로 사용자당 분당 20회), `503 {"error":"voice_unavailable"}`(키 없음·모두 사용 불가).
+- 오류: `401`(비로그인), `404`(남의/없는 면접), `403 {"error":"voice_consent_required"}`(동의 안 한 면접), `409 {"error":"interview_over"}`(리포트까지 끝난 면접), `413 too_large`, `415 unsupported_media`(WAV 아님 — RIFF/WAVE 머리 확인), `422 invalid`(`answer` 범위), `429 rate_limited`(벤 분당 6회와 별개로 사용자당 분당 20회), `429 {"error":"voice_limit"}`(면접당 분석 상한 16회 = 답변 최대 8 × 2), `503 {"error":"voice_unavailable"}`(키 없음·모두 사용 불가).
 - 성공: `202 {"status":"queued"}`. 같은 답변을 다시 보내면 이전 결과를 지우고 다시 분석한다.
 - 분석은 백그라운드 스레드에서 돈다(회사 조사 작업 스레드와 같은 방식, 자기 DB 연결). 결과는 `voice_analysis`에 저장하고 **임시 파일을 지운다**(성공·실패 모두).
 
 ### 3.3 저장 (마이그레이션 1개)
 - `premium_interviews.voice_consent INTEGER NOT NULL DEFAULT 0`
-- `voice_analysis`: `interview_id, answer, status(queued|done|failed|unavailable), result_json, error_code, created_at, updated_at`, 기본키 `(interview_id, answer)`. `result_json`은 4절 스키마(받아쓰기 포함, 녹음 없음).
+- `voice_analysis`: `interview_id, answer, status(queued|done|failed|unavailable), result_json, error_code, created_at, updated_at`, 기본키 `(interview_id, answer)`. `result_json`은 4절 스키마에서 **`transcript`를 뺀** 것에 `syllables`(받아쓰기의 한글 음절 수)를 더한 값이다. 받아쓰기 본문과 녹음은 저장하지 않는다(데이터 최소화) — 워커가 음절 수만 세고 본문은 버린다.
 - `baze_usage`: `id, at, user_id, interview_id, key_index, model, input_tokens, output_tokens, outcome(ok|error|exhausted|refused)` — 키 값이 아니라 **순번**만.
 - 임시 녹음: `DATA_DIR/voice_tmp/{id}-{answer}.wav`, 분석 끝나면 삭제. 기동 시 남은 파일 정리.
 
 ### 3.4 리포트 (`POST …/report`) — 합치기
 - 기존 `delivery` 본문(브라우저 숫자)은 그대로 받는다.
 - 동의한 면접이면 서버가 답변별로 합친다:
-  - `syllables` → Gemini `transcript`의 한글 음절 수(군말 포함)로 교체
+  - `syllables` → 저장된 `syllables`(Gemini 받아쓰기의 한글 음절 수, 군말 포함)로 교체. 0이면 브라우저 숫자를 그대로 둔다
   - `fillerLevel` → Gemini `fillers.count`를 말한 1분당 횟수로 환산해 판정(2 이하 적음, 5 이하 보통, 초과 잦은 경향)
   - 측정 블록 줄 끝에 `자신감 높음·어조 차분·떨림 없음·끝 흐려짐 있음·발음 좋음` 과 근거(각 60자 이내로 잘라) 덧붙임
 - 분석이 `queued`인 답변이 있으면 **최대 20초** 기다리며 `: ping`을 보낸다. 끝나지 않은 답변은 기존 브라우저 숫자만 쓴다.
@@ -100,7 +100,7 @@
 - 호출 결과에 따라:
   - `402`("Credit balance exhausted") → 그 키 `exhausted`(만료 = `renewal_date`, 모르면 다음 달 1일 0시 KST), **다음 키로 즉시 재시도**
   - `401` → `dead`, 다음 키로 재시도
-  - `429` → 다음 키로 재시도(모든 키가 429면 `Retry-After`만큼 1회 기다린 뒤 실패)
+  - `429` → 다음 키로 재시도(모든 키가 429면 기다리지 않고 바로 `failed`)
   - `5xx`·시간 초과 → 같은 키로 1회 재시도 후 `failed`
 - 모든 키를 쓸 수 없으면 `unavailable`. 상태는 메모리에만 둔다(재기동 시 잔액 확인으로 복구).
 - 키 값은 로그·응답·DB에 남기지 않는다. 순번(1부터)으로만 표시.
@@ -119,7 +119,7 @@
 
 ## 8. 성공 기준
 
-- 테스트(가짜 BAZE 클라이언트): 동의·미동의 분기, 업로드 검증(크기·WAV 머리·답변 범위·동의), 202 후 백그라운드 결과 저장과 임시 파일 삭제, 스키마 불일치 `failed`, 키 풀(402 다음 키·만료 후 복귀, 401 dead, 429 다음 키, 전부 불가 `unavailable`, 잔액 기준 건너뛰기), 리포트 합치기(음절·군말 교체, 등급 덧붙임, 20초 대기·미완료 제외), 키 값 비노출.
+- 테스트(가짜 BAZE 클라이언트): 동의·미동의 분기, 업로드 검증(크기·WAV 머리·답변 범위·동의), 202 후 백그라운드 결과 저장과 임시 파일 삭제, 스키마 불일치 `failed`, 면접당 상한 `429 voice_limit`, 받아쓰기 본문 미저장(음절 수만), 재시작 시 `queued` 정리, 키 풀(402 다음 키·만료 후 복귀, 401 dead, 429 다음 키, 전부 불가 `unavailable`, 잔액 기준 건너뛰기), 리포트 합치기(음절·군말 교체, 등급 덧붙임, 20초 대기·미완료 제외), 키 값 비노출.
 - demomo: 실제 키로 벤 면접 1회 — 답변마다 `voice_analysis`가 `done`, 리포트 `delivery`에 자신감·어조 등 근거가 들어감, 임시 녹음이 남지 않음.
 
 ## 9. 추후 방안

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 동의(`voiceAnalysisConsent`)하지 않은 면접, BAZE 키가 없는 서버는 1단계와 바이트 단위로 같다(요청·프롬프트·리포트). 기존 테스트 그대로 통과.
-- 녹음·받아쓰기·키 값은 로그·응답·DB에 남기지 않는다(키는 순번 1부터만). 예외 로그는 `type(exc).__name__`만.
+- 녹음·받아쓰기 본문·키 값은 로그·응답·DB에 남기지 않는다(키는 순번 1부터만). DB에는 받아쓰기의 한글 음절 수(`syllables`)만 둔다. 예외 로그는 `type(exc).__name__`만.
 - 임시 녹음 `DATA_DIR/voice_tmp/{interview_id}-{answer}.wav`는 분석 성공·실패와 관계없이 지운다. 기동 시 남은 파일 삭제.
 - BAZE: 기본 URL `https://factchat-cloud.mindlogic.ai/v1/gateway`, 헤더 `Authorization: Bearer <key>`, `User-Agent: woo-momo/1.0`. Gemini: `POST {base}/gemini/v1beta/models/{model}:generateContent`, 잔액: `GET {base}/credits/`.
 - 설정: `BAZE_API_KEYS`(쉼표, 공백 제거, 빈 항목 제거, 순서 유지), `BAZE_VOICE_MODEL`(기본 `gemini-3.8-flash`), `BAZE_MIN_REMAINING`(기본 50).
@@ -22,7 +22,7 @@
 - 결과 스키마(모두 필수): `transcript`(str), `fillers:{count:int≥0, examples:[str]}`, `confidence:{level: high|mid|low, reason}`, `tone:{level: calm|tense|monotone, reason}`, `tremor:{present: bool, reason}`, `trailingOff:{present: bool, reason}`, `clarity:{level: good|ok|poor, reason}`. 어긋나면 `failed`(`bad_output`).
 - 업로드 API `POST /api/premium/interviews/{id}/voice/{answer}`: multipart `file`, RIFF/WAVE 머리, 최대 5MB, `answer` 1..실제 답변 수. 오류: 401·404·`403 voice_consent_required`·`409 interview_over`(done)·`413 too_large`·`415 unsupported_media`·`422 invalid(field answer)`·`429 rate_limited`(사용자당 분당 20회, 키 `voice:{user}`)·`503 voice_unavailable`. 성공 `202 {"status":"queued"}`. 같은 답변 재업로드는 덮어쓰기.
 - 시작 응답 `voiceAnalysis`: 동의 안 함 `off`, 동의 + BAZE 사용 가능 `on`, 동의 + 키 없음/모두 불가 `unavailable`.
-- 리포트 합치기: 동의 면접이고 결과 `done`인 답변만 — `syllables` ← `transcript`의 한글 음절 수, 군말 판정 ← `fillers.count`를 말한 1분당(`÷ max(speechSec/60, 0.5)`)으로: 2 이하 "적음", 5 이하 "보통", 초과 "잦은 경향"(예시 최대 3개), 줄 끝에 `, 목소리: 자신감 {높음|보통|낮음}·어조 {차분|긴장|단조}·떨림 {있음|없음}·끝 흐려짐 {있음|없음}·발음 {좋음|보통|낮음}`과 근거(항목당 60자 이내, ` / `로 이음). `queued`가 있으면 최대 20초 기다리며 15초마다 `: ping`(테스트에서 monkeypatch 가능한 모듈 상수).
+- 리포트 합치기: 동의 면접이고 결과 `done`인 답변만 — `syllables` ← 저장된 `syllables`(`transcript`의 한글 음절 수), 군말 판정 ← `fillers.count`를 말한 1분당(`÷ max(speechSec/60, 0.5)`)으로: 2 이하 "적음", 5 이하 "보통", 초과 "잦은 경향"(예시 최대 3개), 줄 끝에 `, 목소리: 자신감 {높음|보통|낮음}·어조 {차분|긴장|단조}·떨림 {있음|없음}·끝 흐려짐 {있음|없음}·발음 {좋음|보통|낮음}`과 근거(항목당 60자 이내, ` / `로 이음). `queued`가 있으면 최대 20초 기다리며 15초마다 `: ping`(테스트에서 monkeypatch 가능한 모듈 상수).
 - 목소리 결과가 하나라도 들어가면 `DELIVERY_INSTRUCTION` 뒤에 `VOICE_NOTE = "목소리 항목은 녹음을 들은 AI의 판정입니다. 단정하지 말고 근거를 들어 '~하게 들렸다'로 말하세요."`를 붙인다(없으면 지금 그대로).
 - CLAUDE.md 8번 개정 문장은 spec 2절 그대로.
 - 마이그레이션 번호 **006**(③ 리포트 버전 2가 007).

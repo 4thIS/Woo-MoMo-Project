@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
@@ -57,12 +57,12 @@ class Settings:
     storage_dir: Path
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
     cookie_secure: bool = True
-    anthropic_api_key: str | None = None
+    anthropic_api_key: str | None = field(default=None, repr=False)
     admin_login: str | None = None
-    admin_password: str | None = None
+    admin_password: str | None = field(default=None, repr=False)
     ben_daily_limit: int = DEFAULT_BEN_DAILY_LIMIT
     admin_emails: tuple[str, ...] = ()
-    baze_api_keys: tuple[str, ...] = ()
+    baze_api_keys: tuple[str, ...] = field(default=(), repr=False)
     baze_voice_model: str = DEFAULT_BAZE_VOICE_MODEL
     baze_min_remaining: float = DEFAULT_BAZE_MIN_REMAINING
 

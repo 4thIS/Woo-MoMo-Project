@@ -72,6 +72,7 @@ def create_app(
         app.state.manifest = load_manifest(base / MANIFEST_FILENAME)
         app.state.question_sets = load_question_sets(base / QUESTIONS_DIRNAME)
         prepare_storage(cfg, clock())
+        app.state.voice_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="voice")
         stop = threading.Event()
         if own_baze is not None:
             threading.Thread(
@@ -81,7 +82,7 @@ def create_app(
             yield
         finally:
             stop.set()
-            app.state.voice_pool.shutdown(wait=True)
+            app.state.voice_pool.shutdown(wait=False, cancel_futures=True)
 
     app = FastAPI(title="Woo-MoMo API", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.settings = cfg
@@ -92,7 +93,6 @@ def create_app(
     # (면접, 답변)별 최신 업로드 토큰 - 재업로드 뒤 늦게 끝난 옛 분석이 결과를 덮지 않게
     app.state.voice_tokens = {}
     app.state.voice_lock = threading.Lock()
-    app.state.voice_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="voice")
     install_error_handlers(app)
     # 마지막에 넣은 미들웨어가 가장 바깥: CORS(프리플라이트) → Origin 확인 → 라우터
     app.add_middleware(OriginGuard, allowed=cfg.cors_origins)

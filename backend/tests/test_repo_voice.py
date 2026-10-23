@@ -3,14 +3,14 @@ import json
 import pytest
 
 from app import db
-from app.llm.baze import VoiceResult
+from app.llm.baze import StoredVoice
 from app.repos import premium, users, voice
 from tests.fakes import FakeBaze
 from tests.helpers import T0
 
 DAY_START = "2026-10-12T15:00:00.000Z"
 RESULT = {
-    "transcript": "안녕하세요",
+    "syllables": 5,
     "fillers": {"count": 1, "examples": ["음"]},
     "confidence": {"level": "mid", "reason": "r"},
     "tone": {"level": "calm", "reason": "r"},
@@ -71,7 +71,12 @@ def test_queue_finish_results_roundtrip(conn):
     voice.queue(conn, interview_id="pi_1", answer=2, now=T0)
     got = voice.results(conn, interview_id="pi_1")
     status, res = got[1]
-    assert status == "done" and isinstance(res, VoiceResult) and res.fillers.count == 1
+    assert (
+        status == "done"
+        and isinstance(res, StoredVoice)
+        and res.fillers.count == 1
+        and res.syllables == 5
+    )
     assert got[2] == ("queued", None)
     assert voice.results(conn, interview_id="pi_other") == {}
 
@@ -160,3 +165,51 @@ def test_fake_baze_surface():
     assert f.available() is False
     f.refresh_credits()
     assert isinstance(f.status(), list)
+
+
+def test_restart_cleanup_fails_queued_only(conn):
+    voice.queue(conn, interview_id="pi_1", answer=1, now=T0)
+    voice.queue(conn, interview_id="pi_1", answer=2, now=T0)
+    voice.finish(
+        conn,
+        interview_id="pi_1",
+        answer=2,
+        status="done",
+        result_json=json.dumps(RESULT),
+        error_code=None,
+        now=T0,
+    )
+    assert voice.restart_cleanup(conn, now=T0) == 1
+    rows = {
+        r["answer"]: (r["status"], r["error_code"])
+        for r in conn.execute("SELECT * FROM voice_analysis")
+    }
+    assert rows == {1: ("failed", "restart"), 2: ("done", None)}
+
+
+def test_count_for_interview_counts_usage_and_queued(conn):
+    assert voice.count_for_interview(conn, interview_id="pi_1") == 0
+    voice.queue(conn, interview_id="pi_1", answer=1, now=T0)
+    voice.record_usage(
+        conn,
+        at=T0,
+        user_id="u",
+        interview_id="pi_1",
+        key_index=1,
+        model="m",
+        input_tokens=1,
+        output_tokens=1,
+        outcome="ok",
+    )
+    voice.record_usage(
+        conn,
+        at=T0,
+        user_id="u",
+        interview_id="pi_2",
+        key_index=1,
+        model="m",
+        input_tokens=1,
+        output_tokens=1,
+        outcome="ok",
+    )
+    assert voice.count_for_interview(conn, interview_id="pi_1") == 2

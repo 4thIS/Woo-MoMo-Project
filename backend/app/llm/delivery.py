@@ -3,7 +3,7 @@
 모델이 숫자를 해석하지 않게 서버가 판정한다. 소리·텍스트는 다루지 않는다(숫자만).
 
 목소리 분석(BAZE, spec 2026-10-23 3.4)이 있는 답변은 `with_voice`로 합친다.
-- 음절 수 <- 받아쓰기(transcript)의 한글 음절(U+AC00..U+D7A3) 수
+- 음절 수 <- 받아쓰기의 한글 음절(U+AC00..U+D7A3) 수. 본문은 저장하지 않고 수(syllables)만 둔다
 - 군말 판정 <- fillers.count를 말한 1분당(max(speechSec/60, 0.5))으로 나눠 기준표 적용.
   "잦은 경향"이면 예시를 최대 3개 `(예: 음, 어, 그)`로 덧붙인다(1~6자 한글만).
 - 한글 음절이 없는 받아쓰기는 합치지 않는다(브라우저 숫자·판정 유지, 목소리 줄 없음).
@@ -16,7 +16,7 @@
 
 from dataclasses import dataclass, replace
 
-from app.llm.baze import VoiceResult
+from app.llm.baze import StoredVoice
 
 MIN_SPEECH_SEC = 5.0
 SLOW_BELOW = 250
@@ -49,7 +49,7 @@ class AnswerMetrics:
     longest_pause_sec: float
     first_word_sec: float
     filler_level: str | None
-    voice: VoiceResult | None = None
+    voice: StoredVoice | None = None
     filler_count: int | None = None  # 목소리 분석의 군말 수(있으면 filler_level 대신 쓴다)
     filler_examples: tuple[str, ...] = ()
 
@@ -58,13 +58,13 @@ def count_syllables(text: str) -> int:
     return sum(1 for ch in text if "가" <= ch <= "힣")
 
 
-def with_voice(m: AnswerMetrics, voice: VoiceResult | None) -> AnswerMetrics:
+def with_voice(m: AnswerMetrics, voice: StoredVoice | None) -> AnswerMetrics:
     """목소리 분석 결과를 합친다. 없으면 그대로."""
-    if voice is None or count_syllables(voice.transcript) == 0:
+    if voice is None or voice.syllables == 0:
         return m  # 한글 없는 받아쓰기는 믿지 않는다 - 브라우저 숫자·군말 판정을 그대로 쓴다
     return replace(
         m,
-        syllables=count_syllables(voice.transcript),
+        syllables=voice.syllables,
         voice=voice,
         filler_count=voice.fillers.count,
         filler_examples=tuple(voice.fillers.examples),
@@ -107,7 +107,7 @@ def _example(text: str) -> str | None:
     return folded if ok else None
 
 
-def _voice_part(v: VoiceResult) -> str:
+def _voice_part(v: StoredVoice) -> str:
     yes = {True: "있음", False: "없음"}
     labels = (
         f"자신감 {CONFIDENCE_LABELS[v.confidence.level]}"

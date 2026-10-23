@@ -256,7 +256,7 @@ def test_null_filler_level_is_accepted_without_filler_text(client, fake_claude):
 
 import time  # noqa: E402
 
-from app.llm.baze import VoiceResult  # noqa: E402
+from app.llm.baze import StoredVoice  # noqa: E402
 from app.repos import voice as voice_repo  # noqa: E402
 from app.routers import premium as premium_router  # noqa: E402
 from tests.fakes import DEFAULT_VOICE_RESULT  # noqa: E402
@@ -271,8 +271,8 @@ VOICE_LINE = (
 
 
 def _voice_result(syllables=300) -> str:
-    data = {**DEFAULT_VOICE_RESULT, "transcript": "가" * syllables}
-    return VoiceResult.model_validate(data).model_dump_json()
+    data = {k: v for k, v in DEFAULT_VOICE_RESULT.items() if k != "transcript"}
+    return StoredVoice.model_validate({**data, "syllables": syllables}).model_dump_json()
 
 
 def _consent_interview(client, consent=True) -> str:

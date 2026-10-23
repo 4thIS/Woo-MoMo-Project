@@ -71,3 +71,16 @@ def test_baze_settings_parse():
     d = Settings.from_env({})
     assert d.baze_api_keys == () and d.baze_voice_model == "gemini-3.8-flash"
     assert d.baze_min_remaining == 50.0
+
+
+def test_repr_hides_secrets():
+    s = Settings.from_env(
+        {
+            "BAZE_API_KEYS": "sk-baze-1,sk-baze-2",
+            "ANTHROPIC_API_KEY": "sk-ant-secret",
+            "ADMIN_PASSWORD": "hunter2-pass",
+        }
+    )
+    text = repr(s)
+    for secret in ("sk-baze-1", "sk-baze-2", "sk-ant-secret", "hunter2-pass"):
+        assert secret not in text

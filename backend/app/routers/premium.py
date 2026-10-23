@@ -19,7 +19,7 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts
-from app.llm.baze import VoiceAnalyzer, VoiceResult
+from app.llm.baze import StoredVoice, VoiceAnalyzer
 from app.llm.claude import (
     MODEL,
     REPORT_MAX_TOKENS,
@@ -401,7 +401,7 @@ def _parse_delivery(body: Any, interview: PremiumInterview) -> list[DeliveryMetr
 
 def _metrics(
     metrics: list[DeliveryMetric],
-    voices: dict[int, tuple[str, VoiceResult | None]] | None = None,
+    voices: dict[int, tuple[str, StoredVoice | None]] | None = None,
 ) -> list[delivery.AnswerMetrics]:
     """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다."""
     out = []
@@ -422,7 +422,7 @@ def _metrics(
 
 def _await_voice(
     db_path: Path, interview_id: str, wanted: set[int]
-) -> Generator[str, None, dict[int, tuple[str, VoiceResult | None]]]:
+) -> Generator[str, None, dict[int, tuple[str, StoredVoice | None]]]:
     """wanted 답변 중 queued가 남아 있으면 VOICE_WAIT_SEC까지 기다린다(ping을 흘리며).
 
     읽기 실패는 결과 없음으로 접는다 - 목소리가 리포트를 막지 않는다."""
@@ -520,6 +520,7 @@ def make_report(
 
 VOICE_MAX_BYTES = 5 * 1024 * 1024
 VOICE_PER_MINUTE = 20
+VOICE_MAX_PER_INTERVIEW = 16  # 면접당 분석 상한: 답변 최대 8 x 2
 
 
 def _is_wav(head: bytes) -> bool:
@@ -550,7 +551,11 @@ def _analyze_and_store(
     try:
         outcome = baze.analyze(tmp.read_bytes())
         if outcome.outcome == "ok" and outcome.result is not None:
-            status, result_json, error_code = "done", outcome.result.model_dump_json(), None
+            # 받아쓰기 본문은 버리고 한글 음절 수만 저장한다(데이터 최소화)
+            stored = StoredVoice.from_result(
+                outcome.result, delivery.count_syllables(outcome.result.transcript)
+            )
+            status, result_json, error_code = "done", stored.model_dump_json(), None
         elif outcome.outcome == "unavailable":
             status, error_code = "unavailable", "unavailable"
         else:
@@ -562,10 +567,11 @@ def _analyze_and_store(
         tmp.unlink(missing_ok=True)
     try:
         with lock:
-            if tokens.get(key) != token:
-                return
-            tokens.pop(key, None)
+            superseded = tokens.get(key) != token
+            if not superseded:
+                tokens.pop(key, None)
             with db.connection(db_path) as c:
+                # 호출 비용은 이미 나갔다 - 밀려난 실행도 사용량은 남기고 결과 쓰기만 건너뛴다
                 if outcome is not None and (
                     outcome.key_index is not None or outcome.outcome != "unavailable"
                 ):
@@ -582,15 +588,16 @@ def _analyze_and_store(
                             outcome.outcome if outcome.outcome in ("ok", "exhausted") else "error"
                         ),
                     )
-                voice.finish(
-                    c,
-                    interview_id=interview_id,
-                    answer=answer,
-                    status=status,
-                    result_json=result_json,
-                    error_code=error_code,
-                    now=iso(clock()),
-                )
+                if not superseded:
+                    voice.finish(
+                        c,
+                        interview_id=interview_id,
+                        answer=answer,
+                        status=status,
+                        result_json=result_json,
+                        error_code=error_code,
+                        now=iso(clock()),
+                    )
     except Exception as exc:
         log.warning("voice store failed: %s", type(exc).__name__)
 
@@ -625,6 +632,8 @@ def upload_voice(
         raise ApiError(415, "unsupported_media")
     settings = request.app.state.settings
     clock = request.app.state.clock
+    if voice.count_for_interview(conn, interview_id=interview.id) >= VOICE_MAX_PER_INTERVIEW:
+        raise ApiError(429, "voice_limit")
     # 업로드마다 임시 파일 이름이 다르다 - 재업로드가 옛 분석의 파일을 건드리지 않게
     token = secrets.token_hex(4)
     tmp = settings.voice_tmp_dir / f"{interview.id}-{answer}-{token}.wav"

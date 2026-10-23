@@ -5,7 +5,7 @@ import sqlite3
 from pydantic import ValidationError
 
 from app.ids import new_id
-from app.llm.baze import VoiceResult
+from app.llm.baze import StoredVoice
 
 
 def queue(conn: sqlite3.Connection, *, interview_id: str, answer: int, now: str) -> None:
@@ -38,8 +38,8 @@ def finish(
 
 def results(
     conn: sqlite3.Connection, *, interview_id: str
-) -> dict[int, tuple[str, VoiceResult | None]]:
-    out: dict[int, tuple[str, VoiceResult | None]] = {}
+) -> dict[int, tuple[str, StoredVoice | None]]:
+    out: dict[int, tuple[str, StoredVoice | None]] = {}
     rows = conn.execute(
         "SELECT answer, status, result_json FROM voice_analysis WHERE interview_id = ?"
         " ORDER BY answer",
@@ -49,11 +49,33 @@ def results(
         status, parsed = row["status"], None
         if status == "done":
             try:
-                parsed = VoiceResult.model_validate_json(row["result_json"] or "")
+                parsed = StoredVoice.model_validate_json(row["result_json"] or "")
             except ValidationError:
                 status = "failed"  # 저장된 결과가 깨졌으면 쓰지 않는다
         out[row["answer"]] = (status, parsed)
     return out
+
+
+def restart_cleanup(conn: sqlite3.Connection, *, now: str) -> int:
+    """재시작으로 사라진 대기 작업을 실패로 닫는다(워커가 더는 없다)."""
+    cur = conn.execute(
+        "UPDATE voice_analysis SET status = 'failed', error_code = 'restart', updated_at = ?"
+        " WHERE status = 'queued'",
+        (now,),
+    )
+    return cur.rowcount
+
+
+def count_for_interview(conn: sqlite3.Connection, *, interview_id: str) -> int:
+    """면접당 분석 상한용: 이미 치른 호출(baze_usage) + 아직 대기 중인 것."""
+    used = conn.execute(
+        "SELECT COUNT(*) FROM baze_usage WHERE interview_id = ?", (interview_id,)
+    ).fetchone()[0]
+    queued = conn.execute(
+        "SELECT COUNT(*) FROM voice_analysis WHERE interview_id = ? AND status = 'queued'",
+        (interview_id,),
+    ).fetchone()[0]
+    return int(used) + int(queued)
 
 
 def record_usage(

@@ -113,6 +113,23 @@ class VoiceResult(BaseModel):
     clarity: Clarity
 
 
+class StoredVoice(BaseModel):
+    """DB에 두는 목소리 결과 - 받아쓰기 본문은 버리고 한글 음절 수만 남긴다(데이터 최소화)."""
+
+    syllables: int = Field(ge=0)
+    fillers: Fillers
+    confidence: Confidence
+    tone: Tone
+    tremor: Flag
+    trailingOff: Flag
+    clarity: Clarity
+
+    @classmethod
+    def from_result(cls, result: VoiceResult, syllables: int) -> "StoredVoice":
+        data = result.model_dump(exclude={"transcript"})
+        return cls(syllables=syllables, **data)
+
+
 Outcome = Literal["ok", "error", "exhausted", "unavailable", "bad_output"]
 
 
@@ -356,7 +373,9 @@ class BazeClient:
         except (ValueError, TypeError, AttributeError):
             return VoiceOutcome("bad_output", key_index=idx)
         try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = data["candidates"][0]["content"]["parts"]
+            # 생각(thought) 파트는 건너뛰고 나머지 text를 이어 붙인다
+            text = "".join(p["text"] for p in parts if p.get("thought") is not True and "text" in p)
             result = VoiceResult.model_validate(json.loads(text))
         except (KeyError, IndexError, TypeError, ValueError, ValidationError):
             return VoiceOutcome("bad_output", key_index=idx, input_tokens=tin, output_tokens=tout)

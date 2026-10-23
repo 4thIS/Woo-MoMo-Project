@@ -286,3 +286,26 @@ def test_renewal_in_past_not_stuck():
     pool = KeyPool(["a"], clock=lambda: 5000.0)
     pool.mark_exhausted(0, datetime.fromtimestamp(5000.0, UTC) - timedelta(days=1))
     assert pool.pick() == 0
+
+
+def test_thought_parts_are_skipped_and_text_parts_joined():
+    half = json.dumps(GOOD)
+    cut = len(half) // 2
+    body = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"text": "생각 중...", "thought": True},
+                        {"text": half[:cut]},
+                        {"text": half[cut:]},
+                    ]
+                }
+            }
+        ],
+        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
+    }
+    client, _ = make(["k1"], lambda r: httpx.Response(200, json=body))
+    out = client.analyze(b"w")
+    assert out.outcome == "ok" and out.result is not None
+    assert out.result.fillers.count == 1
