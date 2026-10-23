@@ -263,19 +263,21 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 
 ```jsonc
 // 요청 (track에 맞는 쪽 하나만)
-{ "track": "company", "resumeText": "...", "company": { "field": "it", "job": "백엔드 개발자", "name": "토스(비바리퍼블리카)" } }
+{ "track": "company", "resumeText": "...", "company": { "field": "it", "job": "백엔드 개발자", "name": "토스(비바리퍼블리카)",
+               "postingUrl": "https://…" } }   // name·postingUrl은 선택
 { "track": "admission", "resumeText": "...(자기소개서)",
   "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
 // 201 { "interviewId": "pi_01J9ZQ...", "session": Session }   // 티켓 1장 차감된 Session
 // 403 premium_required
 // 409 { "error": "no_tickets" }
 // 422 { "error": "missing_field", "field": "company" }       // track에 맞는 묶음이 없음
-// 422 invalid                                                // resumeText 1~20,000자, 각 칸 1~100자, age 1~120, company.name 0~100자(비면 없음)
+// 422 invalid                                                // resumeText 1~20,000자, 각 칸 1~100자, age 1~120, company.name 0~100자(비면 없음), company.postingUrl 500자 이하 http(s) 절대 URL(위반 시 field: "postingUrl")
 // 503 { "error": "daily_limit" }                             // 서버 전체 하루 상한(BEN_DAILY_LIMIT, 한국 날짜). 티켓 차감 없음
 // 503 { "error": "ben_unavailable" }                         // 서버에 Claude 키가 없음. 티켓 차감 없음
 ```
 
 - `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 벤이 **회사명·직무만으로** 웹을 검색해 최신 정보 브리핑을 만들고 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
+- `company.postingUrl`(선택, 2026-10-23): 모집공고 링크. 공백 제거 후 1~500자, `http`/`https` 스킴과 호스트가 있는 절대 URL이어야 하고 비면 없는 것으로 친다(위반은 `422 invalid`, `field: "postingUrl"`). 회사명 **또는** 공고 링크가 있으면 첫 턴에 조사를 시작한다(둘 다 없으면 지금처럼 조사 없음). 조사에 보내는 것은 회사명·직무·공고 URL뿐이며 이력서·대화는 보내지 않는다. `track: "admission"`이면 무시하고 저장하지 않는다.
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 

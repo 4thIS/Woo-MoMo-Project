@@ -1,6 +1,8 @@
 import json
 from dataclasses import replace
 
+import pytest
+
 from tests.helpers import (
     ADMISSION_START,
     COMPANY_START,
@@ -161,3 +163,82 @@ def test_usage_sink_failure_logs_only_exception_type(tmp_path, caplog):
     assert len(msgs) == 1
     assert msgs[0].startswith("claude usage record failed: ")
     assert "u_1" not in msgs[0] and "pi_1" not in msgs[0] and "missing" not in msgs[0]
+
+
+# ── 모집공고 링크(spec 2026-10-23) ──
+
+POSTING = "https://www.example.com/jobs/123"
+
+
+def _with_company(**extra):
+    return {**COMPANY_START, "company": {**COMPANY_START["company"], **extra}}
+
+
+def test_posting_url_is_stored_trimmed_and_marks_pending(client, settings):
+    _admin_with_tickets(client)
+    body = _with_company(postingUrl=f"  {POSTING} ")
+    assert client.post(URL, json=body).status_code == 201
+    row = _row(settings)
+    assert json.loads(row["inputs_json"])["company"]["postingUrl"] == POSTING
+    assert row["briefing_status"] == "pending"
+
+
+def test_posting_url_without_name_is_pending(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=_with_company(postingUrl=POSTING)).status_code == 201
+    row = _row(settings)
+    assert "name" not in json.loads(row["inputs_json"])["company"]
+    assert row["briefing_status"] == "pending"
+
+
+def test_name_only_is_still_pending_and_no_url_key(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=_with_company(name="토스")).status_code == 201
+    row = _row(settings)
+    assert "postingUrl" not in json.loads(row["inputs_json"])["company"]
+    assert row["briefing_status"] == "pending"
+
+
+def test_neither_name_nor_url_is_none(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=_with_company(name="[ ]", postingUrl="  ")).status_code == 201
+    assert _row(settings)["briefing_status"] == "none"
+
+
+def test_blank_posting_url_is_dropped(client, settings):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=_with_company(postingUrl="   ")).status_code == 201
+    assert "postingUrl" not in json.loads(_row(settings)["inputs_json"])["company"]
+    assert client.post(URL, json=_with_company(postingUrl="")).status_code == 201
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "ftp://x.com/a",
+        "example.com/jobs",
+        "https://",
+        "https://" + "a" * 493,  # 501자
+    ],
+)
+def test_bad_posting_url_is_invalid(client, bad):
+    _admin_with_tickets(client)
+    res = client.post(URL, json=_with_company(postingUrl=bad))
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "postingUrl"}
+
+
+def test_posting_url_500_chars_is_ok(client):
+    _admin_with_tickets(client)
+    url = "https://x.com/" + "a" * 486
+    assert len(url) == 500
+    assert client.post(URL, json=_with_company(postingUrl=url)).status_code == 201
+
+
+def test_admission_ignores_posting_url(client, settings):
+    _admin_with_tickets(client)
+    body = {**ADMISSION_START, "company": {"field": "it", "job": "x", "postingUrl": POSTING}}
+    assert client.post(URL, json=body).status_code == 201
+    row = _row(settings)
+    assert "company" not in json.loads(row["inputs_json"])
+    assert row["briefing_status"] == "none"
