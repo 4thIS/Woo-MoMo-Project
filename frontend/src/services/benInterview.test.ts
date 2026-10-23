@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BenError, reportStream, startInterview, turnStream } from './benInterview'
+import { BenError, reportStream, startInterview, turnStream, uploadVoice } from './benInterview'
 
 let calls: { url: string; init: RequestInit }[] = []
 let next: { status?: number; json?: unknown; sse?: string[]; throws?: boolean }[] = []
@@ -341,5 +341,29 @@ describe('reportStream', () => {
     expect(sentBody().delivery.map((d: { answer: number }) => d.answer)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8,
     ])
+  })
+})
+
+describe('uploadVoice', () => {
+  const wav = () => new ArrayBuffer(44)
+
+  it('답변 번호별 주소로 WAV를 올린다', async () => {
+    next = [{ status: 202, json: { status: 'queued' } }]
+    expect(await uploadVoice('pi_1', 3, wav())).toBe(true)
+    expect(calls[0].url).toBe('/api/premium/interviews/pi_1/voice/3')
+    const body = calls[0].init.body as FormData
+    expect(body.get('file')).toBeInstanceOf(Blob)
+  })
+
+  it('퇴짜를 맞아도 조용히 넘어간다 — 면접은 계속돼야 한다', async () => {
+    for (const status of [403, 409, 413, 415, 429, 503]) {
+      next = [{ status, json: { error: 'x' } }]
+      expect(await uploadVoice('pi_1', 1, wav())).toBe(false)
+    }
+  })
+
+  it('망이 끊겨도 터지지 않는다', async () => {
+    next = [{ throws: true }]
+    expect(await uploadVoice('pi_1', 1, wav())).toBe(false)
   })
 })

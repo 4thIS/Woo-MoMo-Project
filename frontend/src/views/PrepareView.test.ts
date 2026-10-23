@@ -609,6 +609,48 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(interview.profile.companyName).toBe('토스(비바리퍼블리카)')
   })
 
+  it('목소리 분석 동의는 벤일 때만 나오고 기본은 꺼져 있다', async () => {
+    pick('m1')
+    const w = mountView()
+    expect(w.find('[data-test=voice-consent]').exists()).toBe(false)
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    await flushPromises()
+    const box = w.find('[data-test=voice-consent]')
+    expect(box.exists()).toBe(true)
+    expect((box.element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('어디로 가고 어떻게 되는지 적어 둔다 — 동의는 읽고 하는 것이다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    const t = w.find('[data-test=voice-consent-row]').text()
+    expect(t).toContain('외부 AI')
+    expect(t).toContain('지웁니다')
+  })
+
+  it('동의를 켜면 스토어에 남는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    await w.find('[data-test=voice-consent]').setValue(true)
+    expect(interview.voiceConsent).toBe(true)
+    await w.find('[data-test=voice-consent]').setValue(false)
+    expect(interview.voiceConsent).toBe(false)
+  })
+
+  it('대입 트랙에서도 벤이면 동의를 묻는다 — 녹음은 트랙과 무관하다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('admission')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=voice-consent]').exists()).toBe(true)
+  })
+
   it('공고 링크를 적었을 때만 고지에 그 줄이 붙는다', async () => {
     useInterviewerStore().select('m2')
     const interview = useInterviewStore()

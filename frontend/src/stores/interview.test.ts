@@ -16,6 +16,7 @@ vi.mock('@/services/benInterview', async (orig) => ({
   startInterview: vi.fn(),
   turnStream: vi.fn(),
   reportStream: vi.fn(),
+  uploadVoice: vi.fn(),
 }))
 import { getQuestions } from '@/services/api'
 import { startSession } from '@/services/llm'
@@ -24,7 +25,13 @@ import { useModelStore } from './model'
 import { synthesize } from '@/services/tts'
 import { decodeClip, playClip, setMuted } from '@/services/audio'
 import { startRecording } from '@/services/recorder'
-import { BenError, reportStream, startInterview, turnStream } from '@/services/benInterview'
+import {
+  BenError,
+  reportStream,
+  startInterview,
+  turnStream,
+  uploadVoice,
+} from '@/services/benInterview'
 import {
   PLAY_GRACE_MS,
   RECORDING_FULL,
@@ -1163,6 +1170,82 @@ describe('프리미엄 면접 녹음', () => {
     await s.finish()
     expect(s.reportV2).toBeNull()
     expect(s.report?.length).toBeGreaterThan(0)
+  })
+
+  it('목소리 분석 동의는 기본 꺼짐이고, 켜야 시작 요청에 실린다', async () => {
+    const s = await premiumStore()
+    expect(s.voiceConsent).toBe(false)
+    expect(s.benRequest()).not.toHaveProperty('voiceAnalysisConsent')
+    s.setVoiceConsent(true)
+    expect(s.benRequest()).toMatchObject({ voiceAnalysisConsent: true })
+  })
+
+  it('서버가 on이라고 해야 녹음을 올린다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(decodeClip).mockResolvedValue({
+      samples: new Float32Array(16_000),
+      sampleRate: 16_000,
+    })
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: { tickets: 9 } as never,
+      voiceAnalysis: 'on',
+    })
+    const s = await premiumStore()
+    s.setVoiceConsent(true)
+    await s.start()
+    await s.send('첫 답변입니다')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vi.mocked(uploadVoice)).toHaveBeenCalled()
+    const [id, answer, wav] = vi.mocked(uploadVoice).mock.calls[0]
+    expect(id).toBe('pi_1')
+    expect(answer).toBe(1)
+    // RIFF 머리가 붙은 WAV여야 한다
+    expect(String.fromCharCode(...new Uint8Array(wav, 0, 4))).toBe('RIFF')
+  })
+
+  it('서버가 off·unavailable이면 올리지 않는다 — 브라우저 측정만 쓴다', async () => {
+    for (const voiceAnalysis of ['off', 'unavailable'] as const) {
+      vi.mocked(uploadVoice).mockClear()
+      vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+      vi.mocked(decodeClip).mockResolvedValue({
+        samples: new Float32Array(16_000),
+        sampleRate: 16_000,
+      })
+      vi.mocked(startInterview).mockResolvedValue({
+        interviewId: 'pi_1',
+        session: { tickets: 9 } as never,
+        voiceAnalysis,
+      })
+      const s = await premiumStore()
+      s.setVoiceConsent(true)
+      await s.start()
+      await s.send('답변')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(vi.mocked(uploadVoice)).not.toHaveBeenCalled()
+    }
+  })
+
+  it('올리기가 실패해도 면접은 그대로 간다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(decodeClip).mockResolvedValue({
+      samples: new Float32Array(16_000),
+      sampleRate: 16_000,
+    })
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: { tickets: 9 } as never,
+      voiceAnalysis: 'on',
+    })
+    vi.mocked(uploadVoice).mockResolvedValue(false)
+    const s = await premiumStore()
+    s.setVoiceConsent(true)
+    await s.start()
+    await s.send('답변')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vi.mocked(uploadVoice)).toHaveBeenCalled() // 올리려 시도는 했다
+    expect(s.genError).toBeNull()
+    expect(s.messages.length).toBeGreaterThan(1)
   })
 
   it('프리미엄 면접이 아니면 녹음을 시작하지 않는다', async () => {
