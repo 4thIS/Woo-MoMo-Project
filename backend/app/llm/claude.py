@@ -97,6 +97,7 @@ class ClaudeClient(Protocol):
         effort: Effort,
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        output_format: dict[str, Any] | None = None,
     ) -> Iterator[str]: ...
 
     def research(
@@ -124,14 +125,19 @@ class AnthropicClaude:
         effort: Effort,
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        output_format: dict[str, Any] | None = None,
     ) -> Iterator[str]:
+        output_config: dict[str, Any] = {"effort": effort}
+        if output_format is not None:
+            # 구조화 출력: 스키마에 맞는 JSON만 나오게 한다
+            output_config["format"] = {"type": "json_schema", "schema": output_format}
         try:
             with self._sdk.messages.stream(
                 model=MODEL,
                 max_tokens=max_tokens,
                 system=system,
                 messages=messages,
-                output_config={"effort": effort},
+                output_config=output_config,
                 # 안전 분류기 거절 시 서버 측 폴백. SDK 타입에 아직 없을 수 있어
                 # 본문·헤더로 그대로 보낸다(fallbacks "default" + 베타 헤더).
                 extra_body={"fallbacks": "default"},
