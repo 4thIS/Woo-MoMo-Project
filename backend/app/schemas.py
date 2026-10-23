@@ -1,4 +1,6 @@
+import re
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     AwareDatetime,
@@ -334,6 +336,36 @@ class CompanyInputs(BaseModel):
     @classmethod
     def _blank_name_is_none(cls, v: str | None) -> str | None:
         return v or None
+
+    # 모집공고 링크(spec 2026-10-23): 비면 없음, 1~500자 http(s) 절대 URL
+    postingUrl: str | None = None
+
+    @field_validator("postingUrl")
+    @classmethod
+    def _posting_url(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        if not v:
+            return None
+        if len(v) > 500:
+            raise ValueError("too long")
+        if not v.isascii() or re.search(r"[\s\x00-\x1f\x7f]", v):
+            raise ValueError("whitespace or control character")
+        try:
+            parts = urlsplit(v)
+            _ = parts.port  # 잘못된 포트는 ValueError
+            host = parts.hostname or ""
+            ok = (
+                parts.scheme in {"http", "https"}
+                and bool(host)
+                and host.isascii()
+                and parts.username is None
+                and parts.password is None
+            )
+        except ValueError:
+            ok = False
+        if not ok:
+            raise ValueError("not an http(s) url")
+        return v
 
 
 class AdmissionInputs(BaseModel):

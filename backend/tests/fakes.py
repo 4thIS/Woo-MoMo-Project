@@ -70,9 +70,15 @@ class FakeClaude:
         messages: list[dict[str, Any]],
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        fetch_domains: list[str] | None = None,
     ) -> ResearchResult:
         self.research_calls.append(
-            {"system": system, "messages": messages, "max_tokens": max_tokens}
+            {
+                "system": system,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "fetch_domains": fetch_domains,
+            }
         )
         item = (
             self.research_results.pop(0)

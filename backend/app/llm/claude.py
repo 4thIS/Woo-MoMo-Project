@@ -15,6 +15,12 @@ RESEARCH_TIMEOUT = 60.0
 # 서버 쪽 검색 반복이 길어 pause_turn으로 멈추면 이어 받는다 — 무한 반복 방지 상한
 MAX_CONTINUATIONS = 2
 WEB_SEARCH_TOOL = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
+WEB_FETCH_TOOL_BASE = {
+    "type": "web_fetch_20260209",
+    "name": "web_fetch",
+    "max_uses": 2,
+    "max_content_tokens": 20000,
+}
 
 Effort = Literal["low", "medium"]
 
@@ -100,6 +106,7 @@ class ClaudeClient(Protocol):
         messages: list[dict[str, Any]],
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        fetch_domains: list[str] | None = None,
     ) -> ResearchResult: ...
 
 
@@ -147,8 +154,14 @@ class AnthropicClaude:
         messages: list[dict[str, Any]],
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        fetch_domains: list[str] | None = None,
     ) -> ResearchResult:
-        """웹 검색 서버 도구로 조사한다. 본문은 text 블록, 출처는 검색 결과 블록에서 모은다."""
+        """웹 검색 서버 도구로 조사한다. 본문은 text 블록, 출처는 검색·가져오기 결과에서 모은다.
+
+        fetch_domains가 있으면 web_fetch를 그 도메인에만 허용한다(모집공고 읽기)."""
+        tools: list[dict[str, Any]] = [WEB_SEARCH_TOOL]
+        if fetch_domains:
+            tools.append({**WEB_FETCH_TOOL_BASE, "allowed_domains": fetch_domains})
         convo = list(messages)
         texts: list[str] = []
         # 첫 검색 전의 머리말 후보. 첫 server_tool_use가 오면 버리고,
@@ -166,7 +179,7 @@ class AnthropicClaude:
                     max_tokens=max_tokens,
                     system=system,
                     messages=convo,
-                    tools=[WEB_SEARCH_TOOL],
+                    tools=tools,
                     output_config={"effort": "medium"},
                     extra_body={"fallbacks": "default"},
                     extra_headers={"anthropic-beta": FALLBACK_BETA},
@@ -193,6 +206,14 @@ class AnthropicClaude:
                                 sources.append(
                                     {"title": getattr(result, "title", "") or url, "url": url}
                                 )
+                    if block.type == "web_fetch_tool_result":
+                        # 가져오기 오류는 content가 오류 객체(url 없음)로 온다 — 무시
+                        url = getattr(block.content, "url", None)
+                        if url and url not in seen:
+                            seen.add(url)
+                            doc = getattr(block.content, "content", None)
+                            title = getattr(doc, "title", None) or url
+                            sources.append({"title": title, "url": url})
                 if resp.stop_reason != "pause_turn":
                     break
                 convo = [*convo, {"role": "assistant", "content": resp.content}]
