@@ -250,3 +250,148 @@ def test_null_filler_level_is_accepted_without_filler_text(client, fake_claude):
     content = fake_claude.calls[-1]["messages"][-1]["content"]
     block = content.split("[답변별 전달력 측정]", 1)[1]
     assert "군말" not in block
+
+
+# ── 목소리 분석 합치기 ──
+
+import time  # noqa: E402
+
+from app.llm.baze import VoiceResult  # noqa: E402
+from app.repos import voice as voice_repo  # noqa: E402
+from app.routers import premium as premium_router  # noqa: E402
+from tests.fakes import DEFAULT_VOICE_RESULT  # noqa: E402
+
+VOICE_LINE = (
+    "답변 1: 분당 300음절(보통), 2초 이상 쉼 1회·말한 1분당 1.0회(적음), "
+    "가장 긴 쉼 2.5초, 첫마디까지 1.5초(보통), 군말 적음, "
+    "목소리: 자신감 보통·어조 차분·떨림 없음·끝 흐려짐 없음·발음 좋음 "
+    "(근거: 자신감 또박또박 말함 / 어조 일정한 속도 / 떨림 떨림 없음 "
+    "/ 끝 흐려짐 끝까지 말함 / 발음 발음이 또렷함)"
+)
+
+
+def _voice_result(syllables=300) -> str:
+    data = {**DEFAULT_VOICE_RESULT, "transcript": "가" * syllables}
+    return VoiceResult.model_validate(data).model_dump_json()
+
+
+def _consent_interview(client, consent=True) -> str:
+    from tests.helpers import COMPANY_START
+
+    iid = start_ben(client, {**COMPANY_START, "voiceAnalysisConsent": consent})
+    _answered(client, iid, 2)
+    return iid
+
+
+def _put_voice(settings, iid, answer=1, status="done", syllables=300):
+    with open_db(settings) as conn:
+        voice_repo.queue(conn, interview_id=iid, answer=answer, now="2026-10-23T00:00:00.000Z")
+        if status != "queued":
+            voice_repo.finish(
+                conn,
+                interview_id=iid,
+                answer=answer,
+                status=status,
+                result_json=_voice_result(syllables) if status == "done" else None,
+                error_code=None if status == "done" else "x",
+                now="2026-10-23T00:00:01.000Z",
+            )
+        conn.commit()
+
+
+def _post_report(client, iid, delivery=(METRIC,)):
+    return client.post(f"/api/premium/interviews/{iid}/report", json={"delivery": list(delivery)})
+
+
+def test_consented_done_voice_is_merged_with_note(client, fake_claude, settings):
+    iid = _consent_interview(client)
+    _put_voice(settings, iid)
+    fake_claude.replies = [[REPORT_RAW]]
+    res = _post_report(client, iid, [{**METRIC, "syllables": 1}])
+    assert sse_events(res.text)[-1] == ("done", {})
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    assert content == (
+        f"{prompts.report_instruction()}\n\n{prompts.DELIVERY_INSTRUCTION} {prompts.VOICE_NOTE}"
+        f"\n\n[답변별 전달력 측정]\n{VOICE_LINE}"
+    )
+
+
+def test_no_consent_ignores_stored_voice_results(client, fake_claude, settings):
+    iid = _consent_interview(client, consent=False)
+    _put_voice(settings, iid)
+    fake_claude.replies = [[REPORT_RAW]]
+    _post_report(client, iid)
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    assert prompts.VOICE_NOTE not in content and "목소리:" not in content
+    assert content.endswith("첫마디까지 1.5초(보통), 군말 보통")
+
+
+def test_consent_without_results_is_byte_identical(client, fake_claude, settings):
+    iid = _consent_interview(client)
+    fake_claude.replies = [[REPORT_RAW]]
+    _post_report(client, iid)
+    content = fake_claude.calls[-1]["messages"][-1]["content"]
+    assert prompts.VOICE_NOTE not in content
+    assert content == (
+        f"{prompts.report_instruction()}\n\n{prompts.DELIVERY_INSTRUCTION}\n\n"
+        "[답변별 전달력 측정]\n"
+        "답변 1: 분당 300음절(보통), 2초 이상 쉼 1회·말한 1분당 1.0회(적음), "
+        "가장 긴 쉼 2.5초, 첫마디까지 1.5초(보통), 군말 보통"
+    )
+
+
+def test_failed_voice_is_not_merged_and_voice_alone_adds_nothing(client, fake_claude, settings):
+    iid = _consent_interview(client)
+    _put_voice(settings, iid, status="failed")
+    fake_claude.replies = [[REPORT_RAW]]
+    _post_report(client, iid)
+    assert prompts.VOICE_NOTE not in fake_claude.calls[-1]["messages"][-1]["content"]
+    # 브라우저 측정이 없으면 목소리만으로는 줄을 만들지 않는다
+    iid2 = _consent_interview(client)
+    _put_voice(settings, iid2)
+    fake_claude.replies = [[REPORT_RAW]]
+    _post_report(client, iid2, [])
+    assert fake_claude.calls[-1]["messages"][-1]["content"] == prompts.report_instruction()
+
+
+def test_queued_voice_is_awaited_with_pings_then_merged(client, fake_claude, settings, monkeypatch):
+    import threading
+
+    monkeypatch.setattr(premium_router, "VOICE_WAIT_SEC", 5.0)
+    monkeypatch.setattr(premium_router, "VOICE_PING_EVERY", 0.05)
+    monkeypatch.setattr(premium_router, "VOICE_POLL_SEC", 0.01)
+    iid = _consent_interview(client)
+    _put_voice(settings, iid, status="queued")
+    threading.Timer(0.3, lambda: _put_voice(settings, iid)).start()
+    fake_claude.replies = [[REPORT_RAW]]
+    res = _post_report(client, iid)
+    assert res.text.count(": ping") >= 3  # 맨 앞 1개 + 기다리는 동안
+    assert sse_events(res.text)[-1] == ("done", {})
+    assert prompts.VOICE_NOTE in fake_claude.calls[-1]["messages"][-1]["content"]
+
+
+def test_queued_voice_times_out_and_report_goes_without_it(
+    client, fake_claude, settings, monkeypatch
+):
+    monkeypatch.setattr(premium_router, "VOICE_WAIT_SEC", 0.2)
+    monkeypatch.setattr(premium_router, "VOICE_POLL_SEC", 0.01)
+    iid = _consent_interview(client)
+    _put_voice(settings, iid, status="queued")
+    fake_claude.replies = [[REPORT_RAW]]
+    started = time.monotonic()
+    res = _post_report(client, iid)
+    assert time.monotonic() - started < 3
+    assert sse_events(res.text)[-1] == ("done", {})
+    assert "목소리:" not in fake_claude.calls[-1]["messages"][-1]["content"]
+
+
+def test_queued_voice_for_answer_without_browser_metric_is_not_awaited(
+    client, fake_claude, settings, monkeypatch
+):
+    monkeypatch.setattr(premium_router, "VOICE_WAIT_SEC", 30.0)
+    iid = _consent_interview(client)
+    _put_voice(settings, iid, status="queued")
+    fake_claude.replies = [[REPORT_RAW]]
+    started = time.monotonic()
+    _post_report(client, iid, [])
+    assert time.monotonic() - started < 3

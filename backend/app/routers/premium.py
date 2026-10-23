@@ -19,7 +19,7 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts
-from app.llm.baze import VoiceAnalyzer
+from app.llm.baze import VoiceAnalyzer, VoiceResult
 from app.llm.claude import (
     MODEL,
     REPORT_MAX_TOKENS,
@@ -33,7 +33,14 @@ from app.presenters import to_session
 from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
-from app.schemas import InterviewStart, InterviewStarted, ReportBody, Session, TurnBody
+from app.schemas import (
+    DeliveryMetric,
+    InterviewStart,
+    InterviewStarted,
+    ReportBody,
+    Session,
+    TurnBody,
+)
 from app.security import RateLimiter
 from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
@@ -374,8 +381,14 @@ def take_turn(
     return _stream(events())
 
 
-def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
-    """리포트 본문의 전달력 측정을 검증해 프롬프트 블록으로. 없으면 None(지금과 같음)."""
+# 목소리 분석(BAZE) 결과를 리포트 전에 기다리는 한도와 ping 간격. 테스트가 monkeypatch한다
+VOICE_WAIT_SEC = 20.0
+VOICE_PING_EVERY = 15.0
+VOICE_POLL_SEC = 0.25
+
+
+def _parse_delivery(body: Any, interview: PremiumInterview) -> list[DeliveryMetric]:
+    """리포트 본문의 전달력 측정을 검증한다. 어긋나면 422."""
     try:
         parsed = ReportBody.model_validate(body if body is not None else {})
     except ValidationError:
@@ -383,20 +396,58 @@ def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
     answers = sum(1 for m in interview.messages if m["role"] == "user")
     if any(m.answer > answers for m in parsed.delivery):
         raise ApiError(422, "invalid", field="delivery")
-    return delivery.render(
-        [
-            delivery.AnswerMetrics(
-                answer=m.answer,
-                speech_sec=m.speechSec,
-                syllables=m.syllables,
-                long_pauses=m.longPauses,
-                longest_pause_sec=m.longestPauseSec,
-                first_word_sec=m.firstWordSec,
-                filler_level=m.fillerLevel,
-            )
-            for m in parsed.delivery
-        ]
-    )
+    return parsed.delivery
+
+
+def _metrics(
+    metrics: list[DeliveryMetric],
+    voices: dict[int, tuple[str, VoiceResult | None]] | None = None,
+) -> list[delivery.AnswerMetrics]:
+    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다."""
+    out = []
+    for m in metrics:
+        base = delivery.AnswerMetrics(
+            answer=m.answer,
+            speech_sec=m.speechSec,
+            syllables=m.syllables,
+            long_pauses=m.longPauses,
+            longest_pause_sec=m.longestPauseSec,
+            first_word_sec=m.firstWordSec,
+            filler_level=m.fillerLevel,
+        )
+        status, result = (voices or {}).get(m.answer, ("", None))
+        out.append(delivery.with_voice(base, result if status == "done" else None))
+    return out
+
+
+def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
+    """목소리 없이 만든 전달력 블록. 없으면 None(지금과 같음)."""
+    return delivery.render(_metrics(_parse_delivery(body, interview)))
+
+
+def _await_voice(
+    db_path: Path, interview_id: str, wanted: set[int]
+) -> Generator[str, None, dict[int, tuple[str, VoiceResult | None]]]:
+    """wanted 답변 중 queued가 남아 있으면 VOICE_WAIT_SEC까지 기다린다(ping을 흘리며).
+
+    읽기 실패는 결과 없음으로 접는다 - 목소리가 리포트를 막지 않는다."""
+    deadline = time.monotonic() + VOICE_WAIT_SEC
+    last_ping = time.monotonic()
+    while True:
+        try:
+            with db.connection(db_path) as c:
+                found = voice.results(c, interview_id=interview_id)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("voice read failed: %s", type(exc).__name__)
+            return {}
+        pending = any(found.get(a, ("", None))[0] == "queued" for a in wanted)
+        now = time.monotonic()
+        if not pending or now >= deadline:
+            return found
+        time.sleep(max(0.0, min(VOICE_POLL_SEC, deadline - now)))
+        if time.monotonic() - last_ping >= VOICE_PING_EVERY:
+            last_ping = time.monotonic()
+            yield PING
 
 
 @router.post("/premium/interviews/{interview_id}/report")
@@ -422,20 +473,33 @@ def make_report(
         return _stream(replay())
     if interview.model_turns == 0:
         raise ApiError(409, "interview_not_started")
-    block = _delivery_block(body, interview)
+    parsed = _parse_delivery(body, interview)
+    # 동의한 면접의 측정이 있으면 목소리 결과를 기다려 합쳐야 해서 스트림 안에서 만든다
+    with_voice = interview.voice_consent and bool(parsed)
+    messages = (
+        None
+        if with_voice
+        else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
+    )
     claude = _claude(request)
     _count_attempt(conn, interview)
     system = prompts.build_system(interview.track, interview.inputs)
-    messages = prompts.report_messages(interview.messages, block)
     db_path = request.app.state.settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
 
     def events() -> Iterator[str]:
+        msgs = messages
+        if msgs is None:
+            voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
+            merged = _metrics(parsed, voices)
+            msgs = prompts.report_messages(
+                interview.messages, delivery.render(merged), voice=delivery.voice_used(merged)
+            )
         chunks: list[str] = []
         try:
             for text in claude.stream_text(
                 system=system,
-                messages=messages,
+                messages=msgs,
                 effort="medium",
                 max_tokens=REPORT_MAX_TOKENS,
                 on_usage=report_sink,

@@ -186,15 +186,22 @@ DELIVERY_INSTRUCTION = (
 )
 
 
+# 목소리 분석(BAZE) 결과가 블록에 들어갈 때만 DELIVERY_INSTRUCTION 뒤에 붙인다
+VOICE_NOTE = "목소리 항목은 녹음을 들은 AI의 판정입니다. 단정하지 말고 근거를 들어 '~하게 들렸다'로 말하세요."
+
+
 def report_instruction() -> str:
     """프론트 buildReportInstruction(PERSONAS.sharp)과 같다: JSON 예시 앞에 말투 한 줄."""
     return REPORT_INSTRUCTION.replace("\n\n[", f"\n{SHARP_REPORT_TONE}\n\n[", 1)
 
 
-def report_messages(messages: list[Message], delivery_block: str | None = None) -> list[Message]:
+def report_messages(
+    messages: list[Message], delivery_block: str | None = None, voice: bool = False
+) -> list[Message]:
     instruction = report_instruction()
     if delivery_block:
-        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION}\n\n{delivery_block}"
+        note = f" {VOICE_NOTE}" if voice else ""
+        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION}{note}\n\n{delivery_block}"
     return [*_history(messages), {"role": "user", "content": instruction}]
 
 
