@@ -68,7 +68,11 @@ const KNOWN = new Set(Object.keys(MESSAGES))
 
 export class BenError extends Error {
   readonly retryable: boolean
-  constructor(readonly code: BenErrorCode) {
+  /** 422에서 서버가 짚어 준 칸 이름. 화면이 그 칸 옆에 안내를 붙인다 */
+  constructor(
+    readonly code: BenErrorCode,
+    readonly field?: string,
+  ) {
     super(MESSAGES[code])
     this.name = 'BenError'
     this.retryable = RETRYABLE.has(code)
@@ -115,7 +119,10 @@ async function post(path: string, body?: unknown, signal?: AbortSignal): Promise
 export async function startInterview(req: StartRequest): Promise<Started> {
   const res = await post(BASE, req)
   const body = await res.json().catch(() => undefined)
-  if (!res.ok) throw new BenError(codeOf((body as { error?: unknown } | undefined)?.error))
+  if (!res.ok) {
+    const b = body as { error?: unknown; field?: unknown } | undefined
+    throw new BenError(codeOf(b?.error), typeof b?.field === 'string' ? b.field : undefined)
+  }
   return body as Started
 }
 
