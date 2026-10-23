@@ -367,7 +367,7 @@ curl -sI https://demomo.ssenu.cloud/admin
 키는 셸 기록이나 화면에 남지 않게 `read -rsp`로 넣는다.
 
 ```
-cd /srv/momo/deploy   # 실제 경로에 맞춘다
+cd /srv/apps/Woo-MoMo-Project-dev/deploy      # 운영은 /srv/apps/Woo-MoMo-Project/deploy
 read -rsp 'BAZE 키들(쉼표로 구분): ' K; echo
 sed -i '/^BAZE_API_KEYS=/d' .env
 printf 'BAZE_API_KEYS=%s\n' "$K" >> .env
