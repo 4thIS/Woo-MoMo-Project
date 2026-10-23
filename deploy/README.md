@@ -130,7 +130,7 @@ sudo rsync -a /srv/momo-dev/data/recordings/ /srv/momo-dev/backup/recordings/
 복원: `docker compose stop api` → 백업 파일을 `/srv/momo-dev/data/momo.sqlite3`로 복사(같은 폴더의 `momo.sqlite3-wal`·`momo.sqlite3-shm`은 지운다) → `sudo chown 10001:10001 /srv/momo-dev/data/momo.sqlite3` → `docker compose start api`. 기동 때 DB에 없는 녹음 파일은 자동으로 지워진다.
 
 ### nginx
-`/api/recordings`만 요청 크기 6MB(`client_max_body_size 6m`), 나머지 `/api/`는 기본 1MB. 벤 스트림(SSE)은 앱이 `X-Accel-Buffering: no`로 버퍼링을 끄고, `/api/`의 `proxy_read_timeout`은 300초다. nginx 설정을 바꾼 뒤에는 `docker compose exec web nginx -t`로 문법을 확인한다(`--build`로 web을 다시 띄운 다음).
+`/api/recordings`와 `/api/premium/interviews/{id}/voice/…`(목소리 분석 WAV)만 요청 크기 6MB(`client_max_body_size 6m`), 나머지 `/api/`는 기본 1MB. 벤 스트림(SSE)은 앱이 `X-Accel-Buffering: no`로 버퍼링을 끄고, `/api/`의 `proxy_read_timeout`은 300초다. nginx 설정을 바꾼 뒤에는 `docker compose exec web nginx -t`로 문법을 확인한다(`--build`로 web을 다시 띄운 다음).
 
 ## 최초 1회 (일반 절차)
 ```

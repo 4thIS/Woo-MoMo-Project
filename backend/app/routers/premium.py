@@ -1,7 +1,9 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
 import logging
+import secrets
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -474,10 +476,17 @@ def _analyze_and_store(
     interview_id: str,
     answer: int,
     tmp: Path,
+    token: str,
+    tokens: dict[tuple[str, int], str],
+    lock: threading.Lock,
 ) -> None:
     """워커 스레드: 임시 녹음을 분석해 결과를 저장하고, 어떤 경로로 끝나도 파일을 지운다.
 
+    같은 답변이 다시 올라왔으면(토큰이 최신이 아니면) 결과·사용량을 쓰지 않는다.
     예외는 failed로 접는다 - 로그에는 예외 이름만(녹음·받아쓰기·키는 남기지 않는다)."""
+    log = logging.getLogger(__name__)
+    key = (interview_id, answer)
+    outcome = None
     status, result_json, error_code = "failed", None, "error"
     try:
         outcome = baze.analyze(tmp.read_bytes())
@@ -487,9 +496,20 @@ def _analyze_and_store(
             status, error_code = "unavailable", "unavailable"
         else:
             error_code = outcome.outcome
-        if outcome.key_index is not None or outcome.outcome != "unavailable":
-            try:
-                with db.connection(db_path) as c:
+    except Exception as exc:
+        log.warning("voice analysis failed: %s", type(exc).__name__)
+        status, result_json, error_code = "failed", None, "error"
+    finally:
+        tmp.unlink(missing_ok=True)
+    try:
+        with lock:
+            if tokens.get(key) != token:
+                return
+            tokens.pop(key, None)
+            with db.connection(db_path) as c:
+                if outcome is not None and (
+                    outcome.key_index is not None or outcome.outcome != "unavailable"
+                ):
                     voice.record_usage(
                         c,
                         at=iso(clock()),
@@ -503,17 +523,6 @@ def _analyze_and_store(
                             outcome.outcome if outcome.outcome in ("ok", "exhausted") else "error"
                         ),
                     )
-            except Exception as exc:
-                logging.getLogger(__name__).warning(
-                    "baze usage record failed: %s", type(exc).__name__
-                )
-    except Exception as exc:
-        logging.getLogger(__name__).warning("voice analysis failed: %s", type(exc).__name__)
-        status, result_json, error_code = "failed", None, "error"
-    finally:
-        tmp.unlink(missing_ok=True)
-        try:
-            with db.connection(db_path) as c:
                 voice.finish(
                     c,
                     interview_id=interview_id,
@@ -523,8 +532,8 @@ def _analyze_and_store(
                     error_code=error_code,
                     now=iso(clock()),
                 )
-        except Exception as exc:
-            logging.getLogger(__name__).warning("voice finish failed: %s", type(exc).__name__)
+    except Exception as exc:
+        log.warning("voice store failed: %s", type(exc).__name__)
 
 
 @router.post("/premium/interviews/{interview_id}/voice/{answer}", status_code=202)
@@ -557,12 +566,21 @@ def upload_voice(
         raise ApiError(415, "unsupported_media")
     settings = request.app.state.settings
     clock = request.app.state.clock
-    tmp = settings.voice_tmp_dir / f"{interview.id}-{answer}.wav"
+    # 업로드마다 임시 파일 이름이 다르다 - 재업로드가 옛 분석의 파일을 건드리지 않게
+    token = secrets.token_hex(4)
+    tmp = settings.voice_tmp_dir / f"{interview.id}-{answer}-{token}.wav"
+    key = (interview.id, answer)
+    tokens: dict[tuple[str, int], str] = request.app.state.voice_tokens
+    lock: threading.Lock = request.app.state.voice_lock
+    queued = False
     try:
         tmp.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_bytes(data)
-        with db.transaction(conn):
-            voice.queue(conn, interview_id=interview.id, answer=answer, now=iso(clock()))
+        with lock:
+            with db.transaction(conn):
+                voice.queue(conn, interview_id=interview.id, answer=answer, now=iso(clock()))
+            tokens[key] = token
+            queued = True
         request.app.state.voice_pool.submit(
             _analyze_and_store,
             baze,
@@ -573,8 +591,25 @@ def upload_voice(
             interview.id,
             answer,
             tmp,
+            token,
+            tokens,
+            lock,
         )
     except BaseException:
         tmp.unlink(missing_ok=True)
+        if queued:
+            with lock:
+                if tokens.get(key) == token:
+                    tokens.pop(key, None)
+                    with db.transaction(conn):
+                        voice.finish(
+                            conn,
+                            interview_id=interview.id,
+                            answer=answer,
+                            status="failed",
+                            result_json=None,
+                            error_code="submit_failed",
+                            now=iso(clock()),
+                        )
         raise
     return {"status": "queued"}

@@ -264,3 +264,67 @@ def test_no_transcript_in_logs(
     assert _upload(voice_client, interview_id).status_code == 202
     assert _wait_status(settings, interview_id) == "done"
     assert "백엔드 개발자" not in caplog.text
+
+
+def test_reupload_race_latest_wins_and_files_cleaned(
+    voice_client: TestClient, settings: Settings, fake_baze: FakeBaze
+) -> None:
+    import threading
+
+    from app.llm.baze import VoiceResult
+    from tests.fakes import DEFAULT_VOICE_RESULT
+
+    gate = threading.Event()
+    entered = threading.Event()
+    first = VoiceOutcome(
+        "ok",
+        result=VoiceResult.model_validate({**DEFAULT_VOICE_RESULT, "transcript": "첫번째업로드"}),
+        key_index=1,
+    )
+    second = VoiceOutcome(
+        "ok",
+        result=VoiceResult.model_validate({**DEFAULT_VOICE_RESULT, "transcript": "두번째업로드"}),
+        key_index=1,
+    )
+    calls = iter([first, second])
+    lock = threading.Lock()
+
+    def analyze(wav: bytes) -> VoiceOutcome:
+        with lock:
+            item = next(calls)
+        if item is first:
+            entered.set()
+            assert gate.wait(5)
+        return item
+
+    fake_baze.analyze = analyze  # type: ignore[method-assign]
+    interview_id, _ = _start(voice_client)
+    _answer(voice_client, interview_id)
+    assert _upload(voice_client, interview_id).status_code == 202
+    assert entered.wait(5)
+    assert _upload(voice_client, interview_id).status_code == 202
+    assert _wait_status(settings, interview_id) == "done"
+    gate.set()
+    time.sleep(0.3)
+    with open_db(settings) as conn:
+        row = conn.execute("SELECT status, result_json FROM voice_analysis").fetchone()
+        n_usage = conn.execute("SELECT COUNT(*) FROM baze_usage").fetchone()[0]
+    assert row["status"] == "done"
+    assert "두번째업로드" in row["result_json"]
+    assert n_usage == 1
+    assert _wait_tmp_empty(settings) == []
+
+
+def test_submit_failure_marks_failed(voice_client: TestClient, settings: Settings) -> None:
+    def boom(*a: Any, **k: Any) -> None:
+        raise RuntimeError("pool down")
+
+    interview_id, _ = _start(voice_client)
+    _answer(voice_client, interview_id)
+    voice_client.app.state.voice_pool.submit = boom  # type: ignore[union-attr,method-assign]
+    with pytest.raises(RuntimeError):
+        _upload(voice_client, interview_id)
+    with open_db(settings) as conn:
+        row = conn.execute("SELECT status, error_code FROM voice_analysis").fetchone()
+    assert (row["status"], row["error_code"]) == ("failed", "submit_failed")
+    assert _tmp_files(settings) == []

@@ -89,6 +89,9 @@ def create_app(
     app.state.limiter = RateLimiter(clock)
     app.state.claude = claude if claude is not None else _default_claude(cfg)
     app.state.baze = baze if baze is not None else own_baze
+    # (면접, 답변)별 최신 업로드 토큰 - 재업로드 뒤 늦게 끝난 옛 분석이 결과를 덮지 않게
+    app.state.voice_tokens = {}
+    app.state.voice_lock = threading.Lock()
     app.state.voice_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="voice")
     install_error_handlers(app)
     # 마지막에 넣은 미들웨어가 가장 바깥: CORS(프리플라이트) → Origin 확인 → 라우터
