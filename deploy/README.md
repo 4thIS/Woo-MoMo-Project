@@ -351,3 +351,54 @@ curl -sI https://demomo.ssenu.cloud/admin
 ```
 - `/api/premium/purchase`(목업 결제)는 Access 경로 밖이다. 서버가 관리자인지 검사해 막는다(관리자 전용).
 - Access 로그인을 통과한 뒤에도 관리자 API는 서버가 관리자 여부를 다시 검사한다. 관리자가 아닌 계정은 Access를 통과해도 403이 난다.
+
+## 목소리 분석 (BAZE, 2026-10-23~)
+
+벤 면접에서 사용자가 목소리 분석에 동의한 경우에만, 답변 녹음을 학교 BAZE 게이트웨이(Google Gemini)로 보내 받아쓰기·말하기 지표를 얻는다. 동의하지 않은 면접과 비로그인 사용자는 이 경로를 타지 않는다.
+
+### `.env` 항목 (커밋 금지)
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `BAZE_API_KEYS` | (없음) | 학교 키를 쉼표로 구분해 넣는다. 앞 키부터 쓰고, 소진되면 다음 키로 넘어간다. |
+| `BAZE_VOICE_MODEL` | `gemini-3.8-flash` | 분석에 쓰는 모델 이름. |
+| `BAZE_MIN_REMAINING` | `50` | 키의 남은 크레딧이 이 값 이하이면 그 키를 쓰지 않는다. |
+
+키는 셸 기록이나 화면에 남지 않게 `read -rsp`로 넣는다.
+
+```
+cd /srv/momo/deploy   # 실제 경로에 맞춘다
+read -rsp 'BAZE 키들(쉼표로 구분): ' K; echo
+sed -i '/^BAZE_API_KEYS=/d' .env
+printf 'BAZE_API_KEYS=%s\n' "$K" >> .env
+unset K
+chmod 600 .env
+docker compose up -d --no-build
+```
+
+- 키를 바꾼 뒤에도 같은 순서로 다시 넣는다. 이전 줄은 `sed`가 지운다.
+- `docker compose up -d --no-build`는 이미지를 새로 빌드하지 않고 환경 변수만 반영한다.
+
+### 키 상태와 동작
+
+- 키는 값으로 표시하지 않고 순번(키 1, 키 2 …)으로만 식별한다. 로그에도 키 값은 남지 않는다.
+- 잔액은 기동 시와 30분마다 확인한다.
+- 402(크레딧 부족): 그 키는 매월 1일 갱신 때까지 건너뛴다.
+- 401(인증 실패): 그 키는 서버를 재시작할 때까지 건너뛴다. 키를 고쳐 넣은 뒤에는 재시작이 필요하다.
+- 쓸 수 있는 키가 하나도 없으면 목소리 분석은 꺼진다. 면접은 계속되고, 리포트는 브라우저에서 잰 지표만으로 만든다.
+
+### 개인정보
+
+- 분석 대상은 목소리 분석에 동의한 벤 면접의 답변 녹음뿐이다(면접 단위 동의, `voiceAnalysisConsent`).
+- 서버의 임시 녹음은 `DATA_DIR/voice_tmp`에 저장되고 분석이 끝나면 바로 지운다.
+- nginx는 녹음 업로드 경로에만 `client_max_body_size 6m`을 허용한다. 나머지 `/api/`는 기본 1MB를 그대로 쓴다.
+
+### 잔액 확인 (키 값 출력 없음)
+
+`.env`를 읽어 각 키의 순번과 남은 크레딧만 출력한다. 키 값은 화면에 나오지 않는다.
+
+```
+python3 -c "import json,urllib.request as u; L=[l.strip().split('=',1)[1] for l in open('.env') if l.startswith('BAZE_API_KEYS=')]; ks=[k.strip() for k in (L[0] if L else '').split(',') if k.strip()]; [print('키', i+1, json.load(u.urlopen(u.Request('https://factchat-cloud.mindlogic.ai/v1/gateway/credits/', headers={'Authorization': 'Bearer '+k, 'User-Agent': 'woo-momo/1.0'})))['total']['remaining']) for i,k in enumerate(ks)]"
+```
+
+- 출력은 `키 1 <남은 크레딧>` 형태다. 응답 형식이 바뀌었거나 키가 틀리면 예외 메시지가 나올 수 있으니, 그 메시지에 키 값이 섞이지 않았는지 확인한다.
