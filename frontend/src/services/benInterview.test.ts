@@ -65,6 +65,13 @@ describe('startInterview', () => {
     const e = await startInterview(COMPANY).catch((x) => x)
     expect(e.code).toBe('ben_unavailable')
   })
+
+  it('어느 칸이 잘못됐는지 함께 알린다 — 화면이 그 칸 옆에 붙여 보여 준다', async () => {
+    next = [{ status: 422, json: { error: 'invalid', field: 'postingUrl' } }]
+    const e = await startInterview(COMPANY).catch((x) => x)
+    expect(e.code).toBe('invalid')
+    expect(e.field).toBe('postingUrl')
+  })
 })
 
 describe('turnStream', () => {

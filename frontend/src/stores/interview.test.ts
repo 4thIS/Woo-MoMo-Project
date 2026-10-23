@@ -1294,6 +1294,43 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
     expect((s.benRequest() as { company: object }).company).not.toHaveProperty('name')
   })
 
+  it('모집공고 링크를 적으면 시작 요청에 실어 보낸다 — 비우면 보내지 않는다', async () => {
+    const s = await benStore()
+    s.setPostingUrl('  https://careers.example.com/jobs/1  ')
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      company: { postingUrl: 'https://careers.example.com/jobs/1' },
+    })
+    s.setPostingUrl('')
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('postingUrl')
+  })
+
+  it('한글이 든 공고 링크는 퍼센트 인코딩해서 보낸다 — 서버는 ASCII만 받는다', async () => {
+    const s = await benStore()
+    s.setPostingUrl('https://example.com/채용')
+    expect((s.benRequest() as { company: object }).company).toHaveProperty(
+      'postingUrl',
+      'https://example.com/%EC%B1%84%EC%9A%A9',
+    )
+  })
+
+  it('형식이 틀린 공고 링크는 아예 보내지 않는다 — 티켓을 먼저 쓰지 않게', async () => {
+    const s = await benStore()
+    s.setPostingUrl('example.com/jobs')
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('postingUrl')
+  })
+
+  it('서버가 공고 링크를 퇴짜 놓으면 그 칸 옆 안내로 남긴다 — 고쳐 넣으면 사라진다', async () => {
+    const s = await benStore()
+    vi.mocked(startInterview).mockRejectedValueOnce(new BenError('invalid', 'postingUrl'))
+    s.setPostingUrl('https://example.com/a')
+    await s.start()
+    expect(s.postingError).toMatch(/\S/)
+    expect(s.phase).not.toBe('interview')
+    s.setPostingUrl('https://example.com/b')
+    expect(s.postingError).toBeNull()
+  })
+
   it('조사 중이면 회사명과 함께 알리고, 끝나면 내린다', async () => {
     vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
       onStatus?.({ phase: 'researching' })

@@ -16,6 +16,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
 import { formatEta } from '@/utils/progressStages'
+import { normalizePostingUrl } from '@/utils/postingUrl'
 import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
@@ -50,6 +51,11 @@ const pickerOpen = ref(false)
 const pickerBox = ref<HTMLElement | null>(null)
 /* 회사 브리핑은 벤(프리미엄)만 한다 — 무료 면접관은 서버를 거치지 않고, 대입은 쓰지 않는다 */
 const benCompany = computed(() => Boolean(iv.current?.premium) && interview.track === 'company')
+/** 공고 링크 안내 — 적는 동안은 형식 검사가, 보낸 뒤에는 서버가 짚어 준 것이 뜬다 */
+const postingProblem = computed(() => {
+  const r = normalizePostingUrl(interview.profile.postingUrl)
+  return r.ok ? interview.postingError : r.reason
+})
 /* 패널은 버튼 아래에 생겨 화면 밖에서 열리기 쉽다 — 열 때만 다 보이는 자리까지 내린다.
    nearest라 이미 다 보이면 움직이지 않는다. 닫을 때는 보던 자리를 지킨다 */
 watch(pickerOpen, async (open) => {
@@ -463,6 +469,27 @@ async function clearAndRetry() {
                     >회사 이름이 비슷한 곳이 많으면 사업부·서비스명까지 적어 주세요</span
                   >
                 </div>
+                <!-- 공고 링크도 선택 입력. 회사명과 따로 — 둘 중 하나만 있어도 조사가 돈다 -->
+                <div v-if="benCompany" class="field">
+                  <label class="mono label" for="posting-url"
+                    >모집공고 링크 <span class="dim">(선택)</span></label
+                  >
+                  <input
+                    id="posting-url"
+                    data-test="posting-url"
+                    class="input"
+                    :value="interview.profile.postingUrl"
+                    maxlength="500"
+                    placeholder="예: https://careers.example.com/jobs/1234"
+                    @input="interview.setPostingUrl(($event.target as HTMLInputElement).value)"
+                  />
+                  <span v-if="postingProblem" class="mono warn" data-test="posting-error">{{
+                    postingProblem
+                  }}</span>
+                  <span v-else class="mono hint"
+                    >공고를 열어 요구사항을 질문에 반영합니다. 회사명만 적어도 됩니다</span
+                  >
+                </div>
               </template>
             </div>
 
@@ -565,6 +592,9 @@ async function clearAndRetry() {
           벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
           <template v-if="interview.track === 'company'">
             회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
+            <template v-if="interview.profile.postingUrl.trim()">
+              모집공고 링크를 열어 요구사항을 참고합니다.
+            </template>
           </template>
         </p>
         <div class="start-row">

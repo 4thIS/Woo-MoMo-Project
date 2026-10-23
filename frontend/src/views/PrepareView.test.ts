@@ -609,6 +609,65 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(interview.profile.companyName).toBe('토스(비바리퍼블리카)')
   })
 
+  it('공고 링크를 적었을 때만 고지에 그 줄이 붙는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').text()).not.toContain('모집공고 링크를 열어')
+    interview.setPostingUrl('https://careers.example.com/jobs/1')
+    await flushPromises()
+    expect(w.find('[data-test=ben-notice]').text()).toContain('모집공고 링크를 열어')
+  })
+
+  it('공고 링크 칸도 벤 + 회사일 때만 나온다', async () => {
+    pick('m1')
+    const w = mountView()
+    expect(w.find('[data-test=posting-url]').exists()).toBe(false)
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    await flushPromises()
+    expect(w.find('[data-test=posting-url]').exists()).toBe(true)
+    useInterviewStore().setTrack('admission')
+    await flushPromises()
+    expect(w.find('[data-test=posting-url]').exists()).toBe(false)
+  })
+
+  it('공고 링크를 적으면 스토어에 담긴다 — 비워도 시작을 막지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    expect(interview.profile.postingUrl).toBe('')
+    await w.find('[data-test=posting-url]').setValue('https://careers.example.com/jobs/1')
+    expect(interview.profile.postingUrl).toBe('https://careers.example.com/jobs/1')
+  })
+
+  it('형식이 틀린 공고 링크는 칸 옆에서 바로 짚어 준다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=posting-error]').exists()).toBe(false)
+    await w.find('[data-test=posting-url]').setValue('example.com/jobs')
+    expect(w.find('[data-test=posting-error]').text()).toMatch(/\S/)
+    await w.find('[data-test=posting-url]').setValue('https://example.com/jobs')
+    expect(w.find('[data-test=posting-error]').exists()).toBe(false)
+  })
+
+  it('서버가 퇴짜 놓은 것도 같은 자리에 보여 준다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.postingError = '이 주소로는 공고를 열 수 없습니다'
+    await flushPromises()
+    expect(w.find('[data-test=posting-error]').text()).toContain('공고를 열 수 없습니다')
+  })
+
   it('벤이면 웹 검색을 쓴다고 시작 전에 알린다', async () => {
     useInterviewerStore().select('m2')
     useInterviewStore().setTrack('company')

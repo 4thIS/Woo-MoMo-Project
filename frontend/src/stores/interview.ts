@@ -15,6 +15,7 @@ import {
 import { useInterviewerStore } from './interviewer'
 import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
+import { normalizePostingUrl } from '@/utils/postingUrl'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
 import { canStartWith, trackOf } from '@/utils/track'
@@ -24,6 +25,7 @@ import { parseReport, type ReportItem } from '@/utils/reportParser'
 import { synthesize } from '@/services/tts'
 import { startRecording, type Recorder } from '@/services/recorder'
 import {
+  BenError,
   reportStream,
   startInterview,
   turnStream,
@@ -118,11 +120,15 @@ export const useInterviewStore = defineStore('interview', {
       job: '',
       /** 벤 + 회사에서만 쓰는 선택 입력. 있으면 서버가 웹을 뒤져 브리핑을 만든다 */
       companyName: '',
+      /** 모집공고 링크(선택). 회사명과 따로 — 둘 중 하나만 있어도 조사가 돈다 */
+      postingUrl: '',
       name: '',
       age: null as number | null,
       university: '',
       department: '',
     },
+    /** 서버가 공고 링크를 퇴짜 놓았을 때의 안내. 그 칸 옆에만 붙는다 */
+    postingError: null as string | null,
     /** 벤처럼 둘 다 보는 면접관에서만 쓴다. 다른 면접관은 자기 트랙이 이긴다 */
     chosenTrack: null as Track | null,
     resumeText: '',
@@ -213,6 +219,12 @@ export const useInterviewStore = defineStore('interview', {
     setCompanyName(name: string) {
       this.profile.companyName = name.slice(0, 100)
     },
+    /** 모집공고 링크. 적힌 그대로 둔다 — 형식 검사와 인코딩은 보낼 때 한 번만 한다 */
+    setPostingUrl(url: string) {
+      this.profile.postingUrl = url.slice(0, 500)
+      // 고쳐 넣는 중에 옛 안내가 남아 있으면 무엇을 고쳐야 하는지 알 수 없다
+      this.postingError = null
+    },
     /** 벤에서 고른 트랙. 다른 면접관으로 바꾸면 비운다 */
     setTrack(t: Track | null) {
       this.chosenTrack = t
@@ -281,6 +293,9 @@ export const useInterviewStore = defineStore('interview', {
             benId = started.interviewId
             account.session = started.session
           } catch (e) {
+            // 서버가 짚어 준 칸이 있으면 그 칸 옆에 붙인다 — 어디를 고쳐야 하는지 알 수 있게
+            if (e instanceof BenError && e.field === 'postingUrl')
+              this.postingError = '이 주소로는 공고를 열 수 없습니다 — 다시 확인해 주세요'
             this.genError = e instanceof Error ? e.message : String(e)
             return
           }
@@ -620,11 +635,19 @@ export const useInterviewStore = defineStore('interview', {
           },
         }
       const name = p.companyName.trim()
+      // 형식이 틀리면 싣지 않는다 — 422를 받고 나면 티켓이 이미 빠진 뒤다
+      const posting = normalizePostingUrl(p.postingUrl)
+      const postingUrl = posting.ok ? posting.url : null
       return {
         track: 'company',
         resumeText: this.resumeText,
         // 비었으면 아예 보내지 않는다 — 서버가 "없는 것"으로 친다
-        company: { field: p.field ?? '', job: p.job, ...(name ? { name } : {}) },
+        company: {
+          field: p.field ?? '',
+          job: p.job,
+          ...(name ? { name } : {}),
+          ...(postingUrl ? { postingUrl } : {}),
+        },
       }
     },
 
@@ -684,11 +707,13 @@ export const useInterviewStore = defineStore('interview', {
         field: null,
         job: '',
         companyName: '',
+        postingUrl: '',
         name: '',
         age: null,
         university: '',
         department: '',
       }
+      this.postingError = null
       this.briefing = null
       this.chosenTrack = null
       this.resumeText = ''
