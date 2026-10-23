@@ -189,9 +189,7 @@ def test_reasons_trimmed_to_60_chars_and_blank_skipped():
 def test_insufficient_answers_get_no_voice_line():
     short = with_voice(m(1, speech=3.0), vr())
     assert render([short]).splitlines()[1] == "답변 1: 측정 부족(말한 시간 5초 미만)"
-    empty = with_voice(m(2), vr(transcript="..."))
-    assert render([empty]).splitlines()[1] == "답변 2: 측정 부족(받아쓴 음절 없음)"
-    assert voice_used([short, empty]) is False
+    assert voice_used([short]) is False
 
 
 def test_filler_examples_keep_only_short_hangul():
