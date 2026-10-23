@@ -15,6 +15,7 @@
 """
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 from app.llm.baze import StoredVoice
 
@@ -80,16 +81,24 @@ def voice_used(metrics: list[AnswerMetrics]) -> bool:
     return any(m.voice is not None and _measurable(m) for m in metrics)
 
 
-def _filler_text(m: AnswerMetrics) -> str | None:
+def _filler(m: AnswerMetrics) -> tuple[str, list[str]] | None:
+    """군말 판정: (라벨, 예시). 정보가 전혀 없으면 None. 예시는 "잦은 경향"일 때만."""
     if m.filler_count is None:
-        return None if m.filler_level is None else FILLER_LABELS[m.filler_level]
+        return None if m.filler_level is None else (FILLER_LABELS[m.filler_level], [])
     per_min = m.filler_count / max(m.speech_sec / 60, 0.5)
     if per_min <= FILLER_FEW_MAX:
-        return FILLER_LABELS["low"]
+        return FILLER_LABELS["low"], []
     if per_min <= FILLER_NORMAL_MAX:
-        return FILLER_LABELS["normal"]
+        return FILLER_LABELS["normal"], []
     examples = [e for e in map(_example, m.filler_examples) if e][:FILLER_EXAMPLES_MAX]
-    label = FILLER_LABELS["high"]
+    return FILLER_LABELS["high"], examples
+
+
+def _filler_text(m: AnswerMetrics) -> str | None:
+    f = _filler(m)
+    if f is None:
+        return None
+    label, examples = f
     return f"{label}(예: {', '.join(examples)})" if examples else label
 
 
@@ -199,3 +208,49 @@ def render(metrics: list[AnswerMetrics]) -> str | None:
         else None
     )
     return "\n".join(["[답변별 전달력 측정]", *(_line(m, base) for m in ordered)])
+
+
+_JUDGE_KEYS = (
+    "syllablesPerMin",
+    "speed",
+    "longPauses",
+    "pausesPerMin",
+    "pause",
+    "longestPauseSec",
+    "firstWordSec",
+    "firstWord",
+    "filler",
+    "voice",
+)
+
+
+def _voice_dict(v: StoredVoice) -> dict[str, Any]:
+    return {
+        "confidence": {"level": v.confidence.level, "reason": _reason(v.confidence.reason)},
+        "tone": {"level": v.tone.level, "reason": _reason(v.tone.reason)},
+        "tremor": {"present": v.tremor.present, "reason": _reason(v.tremor.reason)},
+        "trailingOff": {"present": v.trailingOff.present, "reason": _reason(v.trailingOff.reason)},
+        "clarity": {"level": v.clarity.level, "reason": _reason(v.clarity.reason)},
+    }
+
+
+def judge(m: AnswerMetrics) -> dict[str, Any]:
+    """답변 하나의 판정을 딕셔너리로(리포트 v2 measurements). `_line`과 같은 판정 함수를 쓴다."""
+    if not _measurable(m):
+        return {**dict.fromkeys(_JUDGE_KEYS), "insufficient": True}
+    spm = _per_minute(m)
+    rate = round(_pause_rate(m), 1)
+    f = _filler(m)
+    return {
+        "syllablesPerMin": spm,
+        "speed": _speed(spm),
+        "longPauses": m.long_pauses,
+        "pausesPerMin": rate,
+        "pause": _pause(rate),
+        "longestPauseSec": round(m.longest_pause_sec, 1),
+        "firstWordSec": round(m.first_word_sec, 1),
+        "firstWord": "보통" if m.first_word_sec <= FIRST_WORD_MAX else "망설임 긺",
+        "filler": None if f is None else {"level": f[0], "count": m.filler_count, "examples": f[1]},
+        "voice": None if m.voice is None else _voice_dict(m.voice),
+        "insufficient": False,
+    }
