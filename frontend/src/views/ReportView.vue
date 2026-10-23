@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { clip, reportHeader, reportToText } from '@/utils/reportParser'
+import { reportV2ToText } from '@/utils/reportV2'
 import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
 import { answersForReport } from '@/utils/reportAnswers'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import ReportCards from '@/components/report/ReportCards.vue'
+import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
 import { useAccountStore } from '@/stores/account'
 import { useModalStore } from '@/stores/modal'
 import { ARCHIVE_LIMIT } from '@/utils/archive'
@@ -34,9 +36,11 @@ const timing = computed(() =>
 
 const copied = ref(false)
 async function copy() {
-  const text = s.report
-    ? reportToText(s.report, answers.value, fieldLabel.value, s.profile.job, timing.value)
-    : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
+  const text = s.reportV2
+    ? reportV2ToText(s.reportV2, fieldLabel.value, s.profile.job)
+    : s.report
+      ? reportToText(s.report, answers.value, fieldLabel.value, s.profile.job, timing.value)
+      : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
   await navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
@@ -136,6 +140,7 @@ function printReport() {
       <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
     </PixelWindow>
 
+    <ReportV2Cards v-else-if="s.reportV2" :report="s.reportV2" />
     <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
 
     <PixelWindow v-else title="리포트 원문" data-test="raw">

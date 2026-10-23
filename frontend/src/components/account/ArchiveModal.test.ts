@@ -143,6 +143,41 @@ describe('ArchiveModal — 상세', () => {
     expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(1)
   })
 
+  it('버전 2로 남은 기록은 버전 2 카드로 다시 그린다', async () => {
+    await withEntries(
+      draft({
+        reportV2: {
+          version: 2,
+          items: [
+            {
+              id: 'Q1',
+              parent: null,
+              answer: 1,
+              kind: 'main',
+              question: '버전 2 질문',
+              answerSummary: '요약',
+              feedback: '피드백',
+              delivery: null,
+              measurements: null,
+            },
+          ],
+          summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+        },
+      }),
+    )
+    q('[data-test="archive-row"]')!.click()
+    await settle()
+    expect(document.querySelectorAll('[data-test="v2-card"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(0)
+    expect(q('[data-test="archive-detail"]')!.textContent).toContain('버전 2 질문')
+  })
+
+  it('예전 기록에는 reportV2가 없다 — 그래도 기존 카드로 열린다', async () => {
+    await openDetail()
+    expect(document.querySelectorAll('[data-test="v2-card"]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(1)
+  })
+
   it('상세가 대화를 보여 준다', async () => {
     await openDetail()
     expect(q('[data-test="archive-detail"]')!.textContent).toContain(

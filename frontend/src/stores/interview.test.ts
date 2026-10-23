@@ -1114,6 +1114,57 @@ describe('프리미엄 면접 녹음', () => {
     return s
   }
 
+  it('버전 2 리포트가 오면 그것으로 그린다 — 예전 파서는 쓰지 않는다', async () => {
+    const v2 = {
+      version: 2 as const,
+      items: [
+        {
+          id: 'Q1',
+          parent: null,
+          answer: 1,
+          kind: 'main' as const,
+          question: '자기소개',
+          answerSummary: '요약',
+          feedback: '피드백',
+          delivery: null,
+          measurements: null,
+        },
+      ],
+      summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+    }
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta, _s, _d, hooks) => {
+      onDelta('{"items":')
+      hooks?.onReport?.(v2)
+    })
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportV2).toEqual(v2)
+    // 원문은 JSON 조각이라 예전 파서로는 못 읽는다. 그래도 화면은 비지 않는다
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('reset이 오면 쓰다 만 원문과 리포트를 버린다', async () => {
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta, _s, _d, hooks) => {
+      onDelta('쓰다 만 것')
+      hooks?.onReset?.()
+      onDelta(fenced(REPORT))
+    })
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportRaw).not.toContain('쓰다 만 것')
+    expect(s.report?.length).toBeGreaterThan(0)
+  })
+
+  it('버전 2가 없으면 예전 파서로 읽는다 — 플래그가 꺼진 서버', async () => {
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportV2).toBeNull()
+    expect(s.report?.length).toBeGreaterThan(0)
+  })
+
   it('프리미엄 면접이 아니면 녹음을 시작하지 않는다', async () => {
     vi.mocked(startSession).mockResolvedValue(replies())
     const s = await readyStore()
@@ -1434,6 +1485,46 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
     await s.start()
     await s.finish()
     expect(s.archiveDraft()).toMatchObject({ premium: true, premiumInterviewId: 'pi_1' })
+  })
+
+  it('버전 2 리포트는 받은 그대로 보관함에 남긴다 — 상세가 같은 화면을 다시 그린다', async () => {
+    const v2 = {
+      version: 2 as const,
+      items: [
+        {
+          id: 'Q1',
+          parent: null,
+          answer: 1,
+          kind: 'main' as const,
+          question: '자기소개',
+          answerSummary: '요약',
+          feedback: '피드백',
+          delivery: null,
+          measurements: null,
+        },
+      ],
+      summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+    }
+    vi.mocked(reportStream).mockImplementation(async (_id, _onDelta, _s, _d, hooks) => {
+      hooks?.onReport?.(v2)
+    })
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    const draft = s.archiveDraft()
+    expect(draft.reportV2).toEqual(v2)
+    expect(draft.questionCount).toBe(1)
+  })
+
+  it('버전 1 리포트에는 reportV2 칸을 넣지 않는다 — 옛 기록과 같게 둔다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(s.archiveDraft()).not.toHaveProperty('reportV2')
   })
 
   it('무료 면접관은 서버를 부르지 않는다', async () => {
