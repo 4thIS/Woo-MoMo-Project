@@ -1,9 +1,22 @@
 """벤 답변 전달력 판정 (spec 2026-10-16 2.2). 숫자를 기준표로 판정해 프롬프트 블록을 만든다.
 
 모델이 숫자를 해석하지 않게 서버가 판정한다. 소리·텍스트는 다루지 않는다(숫자만).
+
+목소리 분석(BAZE, spec 2026-10-23 3.4)이 있는 답변은 `with_voice`로 합친다.
+- 음절 수 <- 받아쓰기의 한글 음절(U+AC00..U+D7A3) 수. 본문은 저장하지 않고 수(syllables)만 둔다
+- 군말 판정 <- fillers.count를 말한 1분당(max(speechSec/60, 0.5))으로 나눠 기준표 적용.
+  "잦은 경향"이면 예시를 최대 3개 `(예: 음, 어, 그)`로 덧붙인다(1~6자 한글만).
+- 한글 음절이 없는 받아쓰기는 합치지 않는다(브라우저 숫자·판정 유지, 목소리 줄 없음).
+- 줄 끝(측정 부족 줄에는 붙이지 않는다):
+  `, 목소리: 자신감 {..}·어조 {..}·떨림 {..}·끝 흐려짐 {..}·발음 {..} (근거: 자신감 {이유}
+  / 어조 {이유} / 떨림 {이유} / 끝 흐려짐 {이유} / 발음 {이유})`
+  이유는 `[]()`를 지우고 공백으로 접어 60자로 자르며, 빈 이유는 항목째 뺀다.
+받아쓰기·이유는 로그에 남기지 않는다.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from app.llm.baze import StoredVoice
 
 MIN_SPEECH_SEC = 5.0
 SLOW_BELOW = 250
@@ -15,6 +28,16 @@ RATIO_HIGH = 1.5
 RATIO_LOW = 0.67
 
 FILLER_LABELS = {"low": "적음", "normal": "보통", "high": "잦은 경향"}
+FILLER_FEW_MAX = 2
+FILLER_NORMAL_MAX = 5
+FILLER_EXAMPLES_MAX = 3
+REASON_MAX = 60
+EXAMPLE_MAX_LEN = 6
+_STRUCTURAL = str.maketrans("", "", "[]()")  # 블록의 구조 문자
+
+CONFIDENCE_LABELS = {"high": "높음", "mid": "보통", "low": "낮음"}
+TONE_LABELS = {"calm": "차분", "tense": "긴장", "monotone": "단조"}
+CLARITY_LABELS = {"good": "좋음", "ok": "보통", "poor": "낮음"}
 
 
 @dataclass(frozen=True)
@@ -26,6 +49,86 @@ class AnswerMetrics:
     longest_pause_sec: float
     first_word_sec: float
     filler_level: str | None
+    voice: StoredVoice | None = None
+    filler_count: int | None = None  # 목소리 분석의 군말 수(있으면 filler_level 대신 쓴다)
+    filler_examples: tuple[str, ...] = ()
+
+
+def count_syllables(text: str) -> int:
+    return sum(1 for ch in text if "가" <= ch <= "힣")
+
+
+def with_voice(m: AnswerMetrics, voice: StoredVoice | None) -> AnswerMetrics:
+    """목소리 분석 결과를 합친다. 없으면 그대로."""
+    if voice is None or voice.syllables == 0:
+        return m  # 한글 없는 받아쓰기는 믿지 않는다 - 브라우저 숫자·군말 판정을 그대로 쓴다
+    return replace(
+        m,
+        syllables=voice.syllables,
+        voice=voice,
+        filler_count=voice.fillers.count,
+        filler_examples=tuple(voice.fillers.examples),
+    )
+
+
+def _measurable(m: AnswerMetrics) -> bool:
+    return m.speech_sec >= MIN_SPEECH_SEC and m.syllables > 0
+
+
+def voice_used(metrics: list[AnswerMetrics]) -> bool:
+    """목소리 줄이 실제로 블록에 들어가는 답변이 하나라도 있는가."""
+    return any(m.voice is not None and _measurable(m) for m in metrics)
+
+
+def _filler_text(m: AnswerMetrics) -> str | None:
+    if m.filler_count is None:
+        return None if m.filler_level is None else FILLER_LABELS[m.filler_level]
+    per_min = m.filler_count / max(m.speech_sec / 60, 0.5)
+    if per_min <= FILLER_FEW_MAX:
+        return FILLER_LABELS["low"]
+    if per_min <= FILLER_NORMAL_MAX:
+        return FILLER_LABELS["normal"]
+    examples = [e for e in map(_example, m.filler_examples) if e][:FILLER_EXAMPLES_MAX]
+    label = FILLER_LABELS["high"]
+    return f"{label}(예: {', '.join(examples)})" if examples else label
+
+
+def _reason(text: str) -> str:
+    folded = " ".join(text.translate(_STRUCTURAL).split())
+    return folded[:REASON_MAX]
+
+
+def _example(text: str) -> str | None:
+    """군말 예시는 1~6자 한글만 프롬프트로 보낸다(모델 출력이 그대로 들어가므로)."""
+    folded = " ".join(text.split())
+    ok = 1 <= len(folded) <= EXAMPLE_MAX_LEN and all(
+        "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㆎ" for ch in folded
+    )
+    return folded if ok else None
+
+
+def _voice_part(v: StoredVoice) -> str:
+    yes = {True: "있음", False: "없음"}
+    labels = (
+        f"자신감 {CONFIDENCE_LABELS[v.confidence.level]}"
+        f"·어조 {TONE_LABELS[v.tone.level]}"
+        f"·떨림 {yes[v.tremor.present]}"
+        f"·끝 흐려짐 {yes[v.trailingOff.present]}"
+        f"·발음 {CLARITY_LABELS[v.clarity.level]}"
+    )
+    reasons = [
+        f"{name} {_reason(r)}"
+        for name, r in (
+            ("자신감", v.confidence.reason),
+            ("어조", v.tone.reason),
+            ("떨림", v.tremor.reason),
+            ("끝 흐려짐", v.trailingOff.reason),
+            ("발음", v.clarity.reason),
+        )
+        if _reason(r)
+    ]
+    tail = f" (근거: {' / '.join(reasons)})" if reasons else ""
+    return f"목소리: {labels}{tail}"
 
 
 def _per_minute(m: AnswerMetrics) -> int:
@@ -66,8 +169,9 @@ def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
         f"가장 긴 쉼 {m.longest_pause_sec:.1f}초",
         f"첫마디까지 {m.first_word_sec:.1f}초({first})",
     ]
-    if m.filler_level is not None:
-        parts.append(f"군말 {FILLER_LABELS[m.filler_level]}")
+    filler = _filler_text(m)
+    if filler is not None:
+        parts.append(f"군말 {filler}")
     if base is not None and base.answer != m.answer:
         notes = []
         speed_ratio = spm / _per_minute(base)
@@ -78,6 +182,8 @@ def _line(m: AnswerMetrics, base: AnswerMetrics | None) -> str:
             notes.append(f"쉼 {rate / base_rate:.1f}배")
         if notes:
             parts.append("기준 대비 " + "·".join(notes))
+    if m.voice is not None:
+        parts.append(_voice_part(m.voice))
     return f"답변 {m.answer}: " + ", ".join(parts)
 
 

@@ -59,3 +59,10 @@ def test_put_overwrites_the_same_key(conn):
     )
     got = briefings.get_fresh(conn, key=key, since=LATER)
     assert got is not None and got.briefing == "새것" and got.sources == SOURCES
+
+
+def test_cache_key_without_url_is_unchanged_and_with_url_differs():
+    base = briefings.cache_key("토스", "백엔드")
+    assert briefings.cache_key("토스", "백엔드", None) == base
+    assert briefings.cache_key("토스", "백엔드", " https://a.com/1 ") == base + "\nhttps://a.com/1"
+    assert briefings.cache_key("", "백엔드", "https://a.com/1") == "\n백엔드\nhttps://a.com/1"

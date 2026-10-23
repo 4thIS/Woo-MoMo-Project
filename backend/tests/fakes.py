@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from typing import Any
 
+from app.llm.baze import VoiceOutcome, VoiceResult
 from app.llm.claude import ClaudeError, ResearchResult, Usage, UsageSink
 
 DEFAULT_REPLY = ["자기소개를 ", "해 주세요."]
@@ -70,9 +71,15 @@ class FakeClaude:
         messages: list[dict[str, Any]],
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        fetch_domains: list[str] | None = None,
     ) -> ResearchResult:
         self.research_calls.append(
-            {"system": system, "messages": messages, "max_tokens": max_tokens}
+            {
+                "system": system,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "fetch_domains": fetch_domains,
+            }
         )
         item = (
             self.research_results.pop(0)
@@ -84,4 +91,51 @@ class FakeClaude:
             raise item
         if on_usage is not None:
             on_usage(self.usage, "ok")
+        return item
+
+
+DEFAULT_VOICE_RESULT = {
+    "transcript": "안녕하세요 음 저는 백엔드 개발자입니다",
+    "fillers": {"count": 1, "examples": ["음"]},
+    "confidence": {"level": "mid", "reason": "또박또박 말함"},
+    "tone": {"level": "calm", "reason": "일정한 속도"},
+    "tremor": {"present": False, "reason": "떨림 없음"},
+    "trailingOff": {"present": False, "reason": "끝까지 말함"},
+    "clarity": {"level": "good", "reason": "발음이 또렷함"},
+}
+
+
+class FakeBaze:
+    """BazeClient 대역. results는 VoiceOutcome 또는 예외, 비면 기본 성공. calls는 wav 길이만."""
+
+    def __init__(self, available: bool = True) -> None:
+        self.available_flag = available
+        self.results: list[VoiceOutcome | Exception] = []
+        self.calls: list[int] = []
+        self.refreshed = 0
+
+    def available(self) -> bool:
+        return self.available_flag
+
+    def refresh_credits(self) -> None:
+        self.refreshed += 1
+
+    def status(self) -> list[dict[str, Any]]:
+        return [{"index": 1, "state": "ok" if self.available_flag else "dead", "remaining": None}]
+
+    def analyze(self, wav: bytes) -> VoiceOutcome:
+        self.calls.append(len(wav))
+        item = (
+            self.results.pop(0)
+            if self.results
+            else VoiceOutcome(
+                "ok",
+                result=VoiceResult.model_validate(DEFAULT_VOICE_RESULT),
+                key_index=1,
+                input_tokens=100,
+                output_tokens=30,
+            )
+        )
+        if isinstance(item, Exception):
+            raise item
         return item

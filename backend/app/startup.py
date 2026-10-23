@@ -5,7 +5,7 @@ import sqlite3
 from app import db
 from app.config import Settings
 from app.files import cleanup_orphan_recordings
-from app.repos import users
+from app.repos import users, voice
 from app.security import hash_password, verify_password
 from app.timefmt import iso
 
@@ -13,8 +13,16 @@ from app.timefmt import iso
 def prepare_storage(settings: Settings, now: float) -> None:
     db.init_db(settings.db_path)
     settings.recordings_dir.mkdir(parents=True, exist_ok=True)
+    # 임시 녹음(목소리 분석)은 분석이 끝나면 지운다 — 기동 때 남은 것도 지운다
+    settings.voice_tmp_dir.mkdir(parents=True, exist_ok=True)
+    for leftover in settings.voice_tmp_dir.iterdir():
+        if leftover.is_file():
+            leftover.unlink(missing_ok=True)
     with db.connection(settings.db_path) as conn:
         cleanup_orphan_recordings(conn, settings.storage_dir)
+        # 재시작으로 워커가 사라진 대기 분석은 실패로 닫는다
+        with db.transaction(conn):
+            voice.restart_cleanup(conn, now=iso(now))
         sync_admin(conn, settings, now)
 
 

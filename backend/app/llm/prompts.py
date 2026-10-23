@@ -61,6 +61,24 @@ BRIEFING_NOTICE = (
 BRIEFING_FOCUS = (
     "질문 중 1~2개는 [지원 기업 최신 정보]의 최근 사업·소식을 지원 직무와 연결해 묻습니다."
 )
+POSTING_MARK = "모집공고 요구사항"
+POSTING_MISSING_STEM = "공고를 확인하지 못"  # 못함·못했습니다 모두
+POSTING_MIN_BODY = 20  # 소제목 뒤에 이만큼은 본문이 있어야 한다(잘림 방어)
+POSTING_FOCUS = (
+    '질문 중 1~2개는 [지원 기업 최신 정보]의 "모집공고 요구사항"(기술 스택·업무)을 '
+    "지원자 이력서와 연결해 묻고, 회사 소식 질문보다 먼저 합니다. "
+    "공고·회사 정보로 묻는 질문은 합쳐 2~3개로 하고 나머지는 이력서로 묻습니다."
+)
+
+
+def _has_posting(briefing: str) -> bool:
+    """공고 소제목 뒤에 실제 본문이 있고 실패 문구가 없을 때만 참."""
+    head, mark, tail = briefing.partition(POSTING_MARK)
+    return (
+        bool(mark)
+        and POSTING_MISSING_STEM not in briefing
+        and len(tail.strip()) >= POSTING_MIN_BODY
+    )
 
 
 def _one_line(value: str, limit: int = 60) -> str:
@@ -121,6 +139,8 @@ def build_system(
         focus, heading = COMPANY_FOCUS, "[지원자 이력서]"
         if briefing:
             focus = f"{focus} {BRIEFING_FOCUS}"
+            if _has_posting(briefing):
+                focus = f"{focus} {POSTING_FOCUS}"
     else:
         intro = _admission_intro(inputs["admission"])
         focus, heading = ADMISSION_FOCUS, "[지원자 자기소개서]"
@@ -166,15 +186,22 @@ DELIVERY_INSTRUCTION = (
 )
 
 
+# 목소리 분석(BAZE) 결과가 블록에 들어갈 때만 DELIVERY_INSTRUCTION 뒤에 붙인다
+VOICE_NOTE = "목소리 항목은 녹음을 들은 AI의 판정입니다. 단정하지 말고 근거를 들어 '~하게 들렸다'로 말하세요."
+
+
 def report_instruction() -> str:
     """프론트 buildReportInstruction(PERSONAS.sharp)과 같다: JSON 예시 앞에 말투 한 줄."""
     return REPORT_INSTRUCTION.replace("\n\n[", f"\n{SHARP_REPORT_TONE}\n\n[", 1)
 
 
-def report_messages(messages: list[Message], delivery_block: str | None = None) -> list[Message]:
+def report_messages(
+    messages: list[Message], delivery_block: str | None = None, voice: bool = False
+) -> list[Message]:
     instruction = report_instruction()
     if delivery_block:
-        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION}\n\n{delivery_block}"
+        note = f" {VOICE_NOTE}" if voice else ""
+        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION}{note}\n\n{delivery_block}"
     return [*_history(messages), {"role": "user", "content": instruction}]
 
 
