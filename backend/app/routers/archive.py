@@ -67,6 +67,9 @@ def _to_new(body: ArchiveCreate) -> archive.NewArchive:
         messages_json=json.dumps(messages, ensure_ascii=False),
         report_json=json.dumps([r.model_dump() for r in body.report], ensure_ascii=False),
         report_raw=body.reportRaw,
+        report_v2_json=(
+            json.dumps(body.reportV2, ensure_ascii=False) if body.reportV2 is not None else None
+        ),
     )
 
 
@@ -85,6 +88,7 @@ def get_archive(archive_id: str, user: LoggedInUser, conn: Db) -> ArchiveDetail:
         messages=json.loads(record.messages_json),
         report=json.loads(record.report_json),
         reportRaw=record.report_raw,
+        reportV2=json.loads(record.report_v2_json) if record.report_v2_json else None,
         recordings=[RecordingRef(turn=t, url=recording_url(i)) for t, i in record.recordings],
     )
 

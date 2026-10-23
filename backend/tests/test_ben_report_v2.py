@@ -8,7 +8,7 @@ from app.llm import prompts
 from app.llm.claude import ClaudeError
 from app.llm.report_v2 import REPORT_V2_SCHEMA
 from app.repos import premium, voice
-from tests.helpers import COMPANY_START, open_db, sse_events, start_ben
+from tests.helpers import ADMISSION_START, COMPANY_START, open_db, sse_events, start_ben
 from tests.test_report_v2 import item, summary
 
 DELIVERY = {
@@ -240,3 +240,48 @@ def test_v2_voice_in_measurements(v2_client, fake_claude, v2_settings):
     fake_claude.replies = [[_raw()]]
     data = sse_events(_report(v2_client, iid, DELIVERY).text)[-2][1]
     assert data["items"][0]["measurements"]["voice"]["confidence"]["level"] == "high"
+
+
+def test_replay_of_stored_v2_report_with_flag_off_still_sends_report(
+    v2_client, fake_claude, v2_settings
+):
+    iid = start_ben(v2_client)
+    _two_turns(v2_client, iid)
+    fake_claude.replies = [[_raw()]]
+    first = sse_events(_report(v2_client, iid).text)
+    # 같은 앱·DB에서 플래그만 끈다
+    v2_client.app.state.settings = dataclasses.replace(v2_settings, ben_report_v2=False)
+    n = len(fake_claude.calls)
+    again = sse_events(_report(v2_client, iid).text)
+    assert [e for e, _ in again] == ["delta", "report", "done"]
+    assert again[1][1] == first[-2][1]
+    assert len(fake_claude.calls) == n
+
+
+def test_v2_admission_with_posting_like_briefing_gets_no_posting(
+    v2_client, fake_claude, v2_settings
+):
+    iid = start_ben(v2_client, ADMISSION_START)
+    _two_turns(v2_client, iid)
+    with open_db(v2_settings) as conn:
+        conn.execute(
+            "UPDATE premium_interviews SET briefing = ? WHERE id = ?", (POSTING_BRIEFING, iid)
+        )
+    fake_claude.replies = [[_raw()]]
+    events = sse_events(_report(v2_client, iid).text)
+    assert events[-2][1]["summary"]["postingFit"] is None
+    call = fake_claude.calls[-1]
+    assert "대용량 트래픽 결제" not in json.dumps(call["system"], ensure_ascii=False)
+    assert prompts.POSTING_FIT_INSTRUCTION not in call["messages"][-1]["content"]
+
+
+def test_v2_regeneration_records_usage_for_both_attempts(v2_client, fake_claude, v2_settings):
+    iid = start_ben(v2_client)
+    _two_turns(v2_client, iid)
+    fake_claude.replies = [["not json"], [_raw()]]
+    _report(v2_client, iid)
+    with open_db(v2_settings) as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM claude_usage WHERE interview_id = ? AND kind = 'report'", (iid,)
+        ).fetchone()[0]
+    assert n == 2

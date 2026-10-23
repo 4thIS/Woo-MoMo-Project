@@ -553,16 +553,15 @@ def make_report(
     parsed = _parse_delivery(body, interview)
     # 동의한 면접의 측정이 있으면 목소리 결과를 기다려 합쳐야 해서 스트림 안에서 만든다
     with_voice = interview.voice_consent and bool(parsed)
-    v2_on = request.app.state.settings.ben_report_v2
+    settings = request.app.state.settings
+    v2 = settings.ben_report_v2
     messages = (
         None
-        if with_voice or v2_on
+        if with_voice or v2
         else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
     )
     claude = _claude(request)
     _count_attempt(conn, interview)
-    settings = request.app.state.settings
-    v2 = settings.ben_report_v2
     system = (
         prompts.report_system(interview.track, interview.inputs, interview.briefing)
         if v2
