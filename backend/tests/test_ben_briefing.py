@@ -202,3 +202,33 @@ def test_retry_after_failed_research_does_not_research_again(client, fake_claude
     assert sse_events(_turn(client, iid).text) == [FAILED, *QUESTION]
     assert len(fake_claude.research_calls) == 1
     assert len(fake_claude.calls[1]["system"]) == 2
+
+
+POSTING = "https://www.wanted.co.kr/wd/1"
+URL_ONLY = {**COMPANY_START, "company": {**COMPANY_START["company"], "postingUrl": POSTING}}
+
+
+def test_posting_url_only_researches_on_the_first_turn(client, fake_claude, settings):
+    iid = start_ben(client, URL_ONLY)
+    events = sse_events(_turn(client, iid).text)
+    assert events == [RESEARCHING, OK, *QUESTION]
+    assert len(fake_claude.research_calls) == 1
+    call = fake_claude.research_calls[0]
+    assert call["fetch_domains"] == ["www.wanted.co.kr"]
+    assert POSTING in call["messages"][0]["content"]
+    assert COMPANY_START["resumeText"] not in json.dumps(call, ensure_ascii=False)
+    assert _row(settings, iid)["briefing_status"] == "ok"
+
+
+def test_cache_depends_on_the_posting_url(client, fake_claude):
+    other = {**URL_ONLY, "company": {**URL_ONLY["company"], "postingUrl": POSTING + "2"}}
+    _turn(client, start_ben(client, URL_ONLY))
+    assert sse_events(_turn(client, _start_again(client, URL_ONLY)).text) == [OK, *QUESTION]
+    assert len(fake_claude.research_calls) == 1
+    sse_events(_turn(client, _start_again(client, other)).text)
+    assert len(fake_claude.research_calls) == 2
+
+
+def test_name_only_research_has_no_fetch_domains(client, fake_claude):
+    _turn(client, start_ben(client, NAMED))
+    assert fake_claude.research_calls[0]["fetch_domains"] is None

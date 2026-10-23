@@ -195,6 +195,85 @@ def test_research_uses_web_search_and_collects_text_and_sources():
     assert kw["messages"] == R_MESSAGES
 
 
+def _fetched(url, title=None, error=False):
+    if error:
+        content = SimpleNamespace(
+            type="web_fetch_tool_result_error", error_code="url_not_accessible"
+        )
+    else:
+        doc = SimpleNamespace(title=title) if title else None
+        content = SimpleNamespace(type="web_fetch_result", url=url, content=doc)
+    return SimpleNamespace(type="web_fetch_tool_result", content=content)
+
+
+POSTING = "https://www.wanted.co.kr/wd/1"
+
+
+def test_research_without_fetch_domains_has_only_web_search():
+    create = _Create([_resp([_text("본문")])])
+    _research_claude(create).research(system="s", messages=R_MESSAGES, max_tokens=8000)
+    assert create.calls[0]["tools"] == [WEB_SEARCH_TOOL]
+
+
+def test_research_adds_web_fetch_limited_to_domains():
+    create = _Create([_resp([_text("본문")])])
+    _research_claude(create).research(
+        system="s", messages=R_MESSAGES, max_tokens=8000, fetch_domains=["www.wanted.co.kr"]
+    )
+    assert create.calls[0]["tools"] == [
+        WEB_SEARCH_TOOL,
+        {
+            "type": "web_fetch_20260209",
+            "name": "web_fetch",
+            "max_uses": 2,
+            "allowed_domains": ["www.wanted.co.kr"],
+        },
+    ]
+
+
+def test_fetched_page_is_a_source_and_fetch_error_is_ignored():
+    create = _Create(
+        [
+            _resp(
+                [
+                    SimpleNamespace(type="server_tool_use", name="web_fetch"),
+                    _fetched(POSTING, "백엔드 채용"),
+                    SimpleNamespace(type="server_tool_use", name="web_fetch"),
+                    _fetched("https://bad", error=True),
+                    _fetched("https://www.wanted.co.kr/wd/2"),
+                    _text("본문"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(
+        system="s", messages=R_MESSAGES, max_tokens=8000, fetch_domains=["www.wanted.co.kr"]
+    )
+    assert got.sources == [
+        {"title": "백엔드 채용", "url": POSTING},
+        {"title": "https://www.wanted.co.kr/wd/2", "url": "https://www.wanted.co.kr/wd/2"},
+    ]
+
+
+def test_web_fetch_use_also_drops_narration():
+    create = _Create(
+        [
+            _resp(
+                [
+                    _text("공고를 읽어 보겠습니다."),
+                    SimpleNamespace(type="server_tool_use", name="web_fetch"),
+                    _fetched(POSTING),
+                    _text("본문"),
+                ]
+            )
+        ]
+    )
+    got = _research_claude(create).research(
+        system="s", messages=R_MESSAGES, max_tokens=8000, fetch_domains=["www.wanted.co.kr"]
+    )
+    assert got.text == "본문"
+
+
 def test_research_resumes_pause_turn_with_the_paused_content():
     first = _resp([_results(("a", "https://a.com")), _text("앞")], stop_reason="pause_turn")
     second = _resp([_results(("a", "https://a.com"), ("b", "https://b.com")), _text("뒤")])
