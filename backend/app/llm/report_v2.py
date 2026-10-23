@@ -7,7 +7,7 @@
 import json
 from typing import Any
 
-from app.llm.delivery import AnswerMetrics, judge
+from app.llm.delivery import AnswerMetrics, _measurable, judge
 from app.llm.prompts import Message
 
 MAX_POINTS = 3
@@ -193,7 +193,9 @@ def build(
                 "question": it["question"],
                 "answerSummary": it["answerSummary"],
                 "feedback": it["feedback"],
-                "delivery": it["delivery"] if has_delivery else None,
+                "delivery": it["delivery"]
+                if has_delivery and m is not None and _measurable(m)
+                else None,
                 "measurements": None if m is None else judge(m),
             }
         )

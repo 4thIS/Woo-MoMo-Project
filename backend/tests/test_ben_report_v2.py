@@ -285,3 +285,40 @@ def test_v2_regeneration_records_usage_for_both_attempts(v2_client, fake_claude,
             "SELECT COUNT(*) FROM claude_usage WHERE interview_id = ? AND kind = 'report'", (iid,)
         ).fetchone()[0]
     assert n == 2
+
+
+def test_v2_no_answers_is_409_without_claude_or_attempt(v2_client, fake_claude, v2_settings):
+    iid = start_ben(v2_client)
+    v2_client.post(f"/api/premium/interviews/{iid}/turns", json={})  # 첫 질문만
+    before = _row(v2_settings, iid)["attempts"]
+    n = len(fake_claude.calls)
+    res = _report(v2_client, iid)
+    assert res.status_code == 409
+    assert res.json() == {"error": "no_answers"}
+    assert len(fake_claude.calls) == n
+    assert _row(v2_settings, iid)["attempts"] == before
+
+
+def test_v2_too_long_is_error_without_regeneration(v2_client, fake_claude, v2_settings):
+    iid = start_ben(v2_client)
+    _two_turns(v2_client, iid)
+    fake_claude.replies = [["{", ClaudeError("too_long")], [_raw()]]
+    n = len(fake_claude.calls)
+    events = sse_events(_report(v2_client, iid).text)
+    assert events[-1] == ("error", {"code": "too_long"})
+    assert "reset" not in [e for e, _ in events]
+    assert len(fake_claude.calls) == n + 1
+    assert _row(v2_settings, iid)["status"] == "active"
+
+
+def test_flag_off_request_is_exactly_the_v1_prompt(client, fake_claude, settings):
+    iid = start_ben(client)
+    _two_turns(client, iid)
+    fake_claude.replies = [["[]"]]
+    _report(client, iid)
+    with open_db(settings) as conn:
+        row = conn.execute("SELECT * FROM premium_interviews WHERE id = ?", (iid,)).fetchone()
+        iv = premium._interview(row)
+    call = fake_claude.calls[-1]
+    assert call["system"] == prompts.build_system(iv.track, iv.inputs)
+    assert call["messages"] == prompts.report_messages(iv.messages, None)

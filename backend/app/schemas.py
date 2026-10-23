@@ -298,7 +298,8 @@ class ArchiveDetail(ArchiveEntry):
     reportV2: dict[str, Any] | None = None
 
     @model_serializer(mode="wrap")
-    def _keep_report_v2(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+    def _keep_report_v2(self, handler: SerializerFunctionWrapHandler):
+        # 반환 주석을 달면 직렬화 OpenAPI 스키마가 빈 객체가 된다
         out = handler(self)
         out.setdefault("reportV2", None)
         return out

@@ -152,6 +152,9 @@ class AnthropicClaude:
         _report(on_usage, _usage_of(final), "refused" if refused else "ok")
         if refused:
             raise ClaudeError("refused")
+        if output_format is not None and final.stop_reason == "max_tokens":
+            # 구조화 출력이 잘리면 JSON이 닫히지 않는다 — 다시 만들어도 같으니 재생성하지 않는다
+            raise ClaudeError("too_long")
 
     def research(
         self,

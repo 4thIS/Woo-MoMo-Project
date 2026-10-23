@@ -229,3 +229,13 @@ def test_tts_voice_path_must_not_shadow_engine_file():
 def test_tts_voice_rejects_bad_entries(voice):
     with pytest.raises(ValidationError):
         Manifest.model_validate(_manifest(tts={**TTS, "voices": [voice]}))
+
+
+def test_archive_detail_keeps_model_schema_in_openapi():
+    from app.main import create_app
+    from app.schemas import ArchiveDetail
+
+    props = ArchiveDetail.model_json_schema(mode="serialization")["properties"]
+    assert "reportV2" in props and "messages" in props
+    spec = create_app().openapi()
+    assert spec["components"]["schemas"]["ArchiveDetail"].get("properties")

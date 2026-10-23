@@ -504,6 +504,7 @@ def _report_v2_events(
         try:
             raw = yield from _generate_report_once(claude, system, msgs, sink)
         except ClaudeError as exc:
+            # too_long도 같은 코드로 끝낸다(다시 만들어도 같은 길이라 재생성하지 않음)
             yield sse("error", {"code": exc.code})
             return
         if not raw.strip():
@@ -560,6 +561,8 @@ def make_report(
         if with_voice or v2
         else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
     )
+    if v2 and report_v2.answer_count(interview.messages) == 0:
+        raise ApiError(409, "no_answers")  # 시도를 세기 전에 거절 — Claude를 부르지 않는다
     claude = _claude(request)
     _count_attempt(conn, interview)
     system = (

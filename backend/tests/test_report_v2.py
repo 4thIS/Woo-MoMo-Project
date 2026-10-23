@@ -157,7 +157,7 @@ def test_null_overrides():
     assert all(i["delivery"] is None for i in out["items"])
     assert out["summary"]["delivery"] is None
     assert out["summary"]["postingFit"] is None
-    out = report_v2.build(obj(), [], has_delivery=True, has_posting=True)
+    out = report_v2.build(obj(), [met(1)], has_delivery=True, has_posting=True)
     assert out["items"][0]["delivery"] == "d1"
     assert out["summary"]["postingFit"] == {"met": ["x"], "gaps": ["y"]}
 
@@ -256,3 +256,12 @@ def test_validate_shape():
     )
     assert bad(lambda o: o["summary"].__setitem__("postingFit", None)) is None
     assert report_v2.validate({"items": [], "summary": summary()}, 0) == "answers"
+
+
+def test_item_delivery_null_unless_answer_measurable():
+    metrics = [met(1), met(2, speech=3.0), met(3, syl=0)]
+    o = obj(kinds=("main", "follow", "follow", "main", "follow"))
+    out = report_v2.build(o, metrics, has_delivery=True, has_posting=False)
+    got = [i["delivery"] for i in out["items"]]
+    assert got == ["d1", None, None, None, None]  # 2: 5초 미만, 3: 음절 0, 4~5: 측정 없음
+    assert out["summary"]["delivery"] == "sd"
