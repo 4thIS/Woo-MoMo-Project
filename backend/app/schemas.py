@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
@@ -347,9 +348,19 @@ class CompanyInputs(BaseModel):
             return None
         if len(v) > 500:
             raise ValueError("too long")
+        if re.search(r"[\s\x00-\x1f\x7f]", v):
+            raise ValueError("whitespace or control character")
         try:
             parts = urlsplit(v)
-            ok = parts.scheme in {"http", "https"} and bool(parts.netloc) and bool(parts.hostname)
+            _ = parts.port  # 잘못된 포트는 ValueError
+            host = parts.hostname or ""
+            ok = (
+                parts.scheme in {"http", "https"}
+                and bool(host)
+                and host.isascii()
+                and parts.username is None
+                and parts.password is None
+            )
         except ValueError:
             ok = False
         if not ok:

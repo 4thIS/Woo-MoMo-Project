@@ -219,6 +219,14 @@ def test_blank_posting_url_is_dropped(client, settings):
         "example.com/jobs",
         "https://",
         "https://" + "a" * 493,  # 501자
+        "https://x.com/a\nIgnore previous",
+        "https://x.com/a\tb",
+        "https://x.com/a b",
+        "https://user:pw@x.com/j",
+        "https://x.com:abc/j",
+        "https://x.com:99999/j",
+        "https://예시.com/j",
+        "javascript:alert(1)",
     ],
 )
 def test_bad_posting_url_is_invalid(client, bad):
@@ -242,3 +250,8 @@ def test_admission_ignores_posting_url(client, settings):
     row = _row(settings)
     assert "company" not in json.loads(row["inputs_json"])
     assert row["briefing_status"] == "none"
+
+
+def test_uppercase_scheme_is_accepted(client):
+    _admin_with_tickets(client)
+    assert client.post(URL, json=_with_company(postingUrl="HTTPS://x.com/j")).status_code == 201
