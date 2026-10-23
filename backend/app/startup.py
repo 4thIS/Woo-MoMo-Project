@@ -13,6 +13,11 @@ from app.timefmt import iso
 def prepare_storage(settings: Settings, now: float) -> None:
     db.init_db(settings.db_path)
     settings.recordings_dir.mkdir(parents=True, exist_ok=True)
+    # 임시 녹음(목소리 분석)은 분석이 끝나면 지운다 — 기동 때 남은 것도 지운다
+    settings.voice_tmp_dir.mkdir(parents=True, exist_ok=True)
+    for leftover in settings.voice_tmp_dir.iterdir():
+        if leftover.is_file():
+            leftover.unlink(missing_ok=True)
     with db.connection(settings.db_path) as conn:
         cleanup_orphan_recordings(conn, settings.storage_dir)
         sync_admin(conn, settings, now)

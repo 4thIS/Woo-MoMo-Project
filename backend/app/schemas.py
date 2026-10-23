@@ -382,11 +382,14 @@ class InterviewStart(BaseModel):
     ]
     company: CompanyInputs | None = None
     admission: AdmissionInputs | None = None
+    # 목소리 분석 동의(2026-10-23, additive). 안 하면 1단계와 같다
+    voiceAnalysisConsent: bool = False
 
 
 class InterviewStarted(BaseModel):
     interviewId: str
     session: Session
+    voiceAnalysis: Literal["on", "off", "unavailable"] = "off"
 
 
 class TurnBody(BaseModel):

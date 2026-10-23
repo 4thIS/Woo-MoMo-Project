@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -225,6 +225,16 @@ def _parse_renewal(value: Any) -> datetime | None:
     except ValueError:
         return None
     return d if d.tzinfo else d.replace(tzinfo=UTC)
+
+
+class VoiceAnalyzer(Protocol):
+    """라우터·앱이 보는 BAZE 면(BazeClient와 테스트 대역이 같이 만족한다)."""
+
+    def available(self) -> bool: ...
+
+    def refresh_credits(self) -> None: ...
+
+    def analyze(self, wav: bytes) -> VoiceOutcome: ...
 
 
 class BazeClient:

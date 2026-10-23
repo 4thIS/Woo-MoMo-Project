@@ -267,7 +267,8 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
                "postingUrl": "https://…" } }   // name·postingUrl은 선택
 { "track": "admission", "resumeText": "...(자기소개서)",
   "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
-// 201 { "interviewId": "pi_01J9ZQ...", "session": Session }   // 티켓 1장 차감된 Session
+// 선택 "voiceAnalysisConsent": true   // 목소리 분석 동의(기본 false, 2026-10-23)
+// 201 { "interviewId": "pi_01J9ZQ...", "session": Session, "voiceAnalysis": "on" }   // 티켓 1장 차감된 Session
 // 403 premium_required
 // 409 { "error": "no_tickets" }
 // 422 { "error": "missing_field", "field": "company" }       // track에 맞는 묶음이 없음
@@ -278,6 +279,8 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 
 - `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 벤이 **회사명·직무만으로** 웹을 검색해 최신 정보 브리핑을 만들고 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
 - `company.postingUrl`(선택, 2026-10-23): 모집공고 링크. 공백 제거 후 1~500자, ASCII 문자만(한글 경로는 퍼센트 인코딩된 주소), `http`/`https` 스킴과 호스트가 있는 절대 URL이어야 하고 비면 없는 것으로 친다(위반은 `422 invalid`, `field: "postingUrl"`). 회사명 **또는** 공고 링크가 있으면 첫 턴에 조사를 시작한다(둘 다 없으면 지금처럼 조사 없음). 조사에 보내는 것은 회사명·직무·공고 URL뿐이며 이력서·대화는 보내지 않는다. `track: "admission"`이면 무시하고 저장하지 않는다.
+
+- `voiceAnalysisConsent`(선택, 2026-10-23, additive): 답변 녹음을 학교 AI 게이트웨이(BAZE, Gemini)로 보내 목소리를 분석하는 데 동의했는지. 기본 `false`이며 `false`이거나 서버에 BAZE 키가 없으면 동작은 이전과 같다. 응답 `voiceAnalysis`는 `"off"`(동의 안 함) / `"on"`(동의 + 분석 가능) / `"unavailable"`(동의했지만 키가 없거나 모두 쓸 수 없음 - 프론트는 업로드하지 않는다). 동의 여부는 면접에 저장된다.
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 
@@ -336,6 +339,23 @@ SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `ref
 SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 되고 서버가 원문을 보관한다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
 **이미 리포트를 받은(`done`) 면접에 다시 요청하면** Claude를 부르지 않고 보관한 원문을 그대로 다시 보낸다(`delta` 한 번 + `done`). 리포트 스트림이 끊겼거나 새로 고친 뒤 원문을 다시 받을 때 쓴다. 요청 수 제한(`429`)은 똑같이 센다.
 프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.
+
+**목소리 분석 업로드 — POST /api/premium/interviews/{id}/voice/{answer}** (2026-10-23)
+
+`multipart/form-data`, 칸 `file`(WAV, 16kHz 모노 PCM 16비트 권장, RIFF/WAVE 머리 확인, 최대 5MB). `answer`는 1부터, 이 면접의 실제 답변 수 이하. 동의한(`voiceAnalysisConsent: true`) 면접만.
+
+```jsonc
+// 202 { "status": "queued" }   // 분석은 백그라운드. 같은 답변을 다시 보내면 이전 결과를 지우고 다시 분석한다
+// 401 unauthorized · 403 premium_required
+// 403 { "error": "voice_consent_required" }   // 동의 안 한 면접
+// 404 not_found                                // 없거나 남의 면접
+// 409 { "error": "interview_over" }            // 리포트까지 끝난 면접
+// 413 { "error": "too_large" } · 415 { "error": "unsupported_media" }   // WAV 아님
+// 422 { "error": "invalid", "field": "answer" }
+// 429 rate_limited                             // 사용자당 분당 20회(벤 분당 6회와 별개)
+// 503 { "error": "voice_unavailable" }         // BAZE 키 없음·모두 사용 불가
+```
+서버는 녹음을 임시 파일로만 두고 분석이 끝나면(성공·실패 모두) 지운다. 결과(받아쓰기 포함)는 `voice_analysis`에 저장된다. 리포트 합치기는 다음 단계에서 이어진다.
 
 ### 녹음(프리미엄)
 

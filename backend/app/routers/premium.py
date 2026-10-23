@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
@@ -17,6 +17,7 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts
+from app.llm.baze import VoiceAnalyzer
 from app.llm.claude import (
     MODEL,
     REPORT_MAX_TOKENS,
@@ -27,7 +28,7 @@ from app.llm.claude import (
     UsageSink,
 )
 from app.presenters import to_session
-from app.repos import briefings, premium, usage, users
+from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import InterviewStart, InterviewStarted, ReportBody, Session, TurnBody
@@ -85,6 +86,7 @@ def start_interview(
             day_start=kst_day_start(now),
             daily_limit=request.app.state.settings.ben_daily_limit,
             briefing_status="pending" if research else "none",
+            voice_consent=body.voiceAnalysisConsent,
         )
     except premium.DailyLimitReached:
         raise ApiError(503, "daily_limit") from None
@@ -93,7 +95,13 @@ def start_interview(
     fresh = users.get_by_id(conn, user.id)
     if fresh is None:
         raise ApiError(401, "unauthorized")
-    return InterviewStarted(interviewId=interview_id, session=to_session(fresh))
+    baze: VoiceAnalyzer | None = request.app.state.baze
+    voice_state = "off"
+    if body.voiceAnalysisConsent:
+        voice_state = "on" if baze is not None and baze.available() else "unavailable"
+    return InterviewStarted(
+        interviewId=interview_id, session=to_session(fresh), voiceAnalysis=voice_state
+    )
 
 
 def _owned(conn: sqlite3.Connection, user: User, interview_id: str) -> PremiumInterview:
@@ -445,3 +453,128 @@ def make_report(
         yield sse("done", {})
 
     return _stream(events())
+
+
+# ── 목소리 분석(BAZE) 업로드 ──
+
+VOICE_MAX_BYTES = 5 * 1024 * 1024
+VOICE_PER_MINUTE = 20
+
+
+def _is_wav(head: bytes) -> bool:
+    return head[:4] == b"RIFF" and head[8:12] == b"WAVE"
+
+
+def _analyze_and_store(
+    baze: VoiceAnalyzer,
+    db_path: Path,
+    clock: Callable[[], float],
+    model: str,
+    user_id: str,
+    interview_id: str,
+    answer: int,
+    tmp: Path,
+) -> None:
+    """워커 스레드: 임시 녹음을 분석해 결과를 저장하고, 어떤 경로로 끝나도 파일을 지운다.
+
+    예외는 failed로 접는다 - 로그에는 예외 이름만(녹음·받아쓰기·키는 남기지 않는다)."""
+    status, result_json, error_code = "failed", None, "error"
+    try:
+        outcome = baze.analyze(tmp.read_bytes())
+        if outcome.outcome == "ok" and outcome.result is not None:
+            status, result_json, error_code = "done", outcome.result.model_dump_json(), None
+        elif outcome.outcome == "unavailable":
+            status, error_code = "unavailable", "unavailable"
+        else:
+            error_code = outcome.outcome
+        if outcome.key_index is not None or outcome.outcome != "unavailable":
+            try:
+                with db.connection(db_path) as c:
+                    voice.record_usage(
+                        c,
+                        at=iso(clock()),
+                        user_id=user_id,
+                        interview_id=interview_id,
+                        key_index=outcome.key_index,
+                        model=model,
+                        input_tokens=outcome.input_tokens,
+                        output_tokens=outcome.output_tokens,
+                        outcome=(
+                            outcome.outcome if outcome.outcome in ("ok", "exhausted") else "error"
+                        ),
+                    )
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "baze usage record failed: %s", type(exc).__name__
+                )
+    except Exception as exc:
+        logging.getLogger(__name__).warning("voice analysis failed: %s", type(exc).__name__)
+        status, result_json, error_code = "failed", None, "error"
+    finally:
+        tmp.unlink(missing_ok=True)
+        try:
+            with db.connection(db_path) as c:
+                voice.finish(
+                    c,
+                    interview_id=interview_id,
+                    answer=answer,
+                    status=status,
+                    result_json=result_json,
+                    error_code=error_code,
+                    now=iso(clock()),
+                )
+        except Exception as exc:
+            logging.getLogger(__name__).warning("voice finish failed: %s", type(exc).__name__)
+
+
+@router.post("/premium/interviews/{interview_id}/voice/{answer}", status_code=202)
+def upload_voice(
+    interview_id: str,
+    answer: int,
+    file: UploadFile,
+    user: PremiumUser,
+    conn: Db,
+    request: Request,
+) -> dict[str, str]:
+    limiter: RateLimiter = request.app.state.limiter
+    if not limiter.allow(f"voice:{user.id}", VOICE_PER_MINUTE):
+        raise ApiError(429, "rate_limited")
+    interview = _owned(conn, user, interview_id)
+    if not interview.voice_consent:
+        raise ApiError(403, "voice_consent_required")
+    if interview.status == "done":
+        raise ApiError(409, "interview_over")
+    baze: VoiceAnalyzer | None = request.app.state.baze
+    if baze is None or not baze.available():
+        raise ApiError(503, "voice_unavailable")
+    answers = sum(1 for m in interview.messages if m["role"] == "user")
+    if answer < 1 or answer > answers:
+        raise ApiError(422, "invalid", field="answer")
+    data = file.file.read(VOICE_MAX_BYTES + 1)
+    if len(data) > VOICE_MAX_BYTES:
+        raise ApiError(413, "too_large")
+    if not _is_wav(data):
+        raise ApiError(415, "unsupported_media")
+    settings = request.app.state.settings
+    clock = request.app.state.clock
+    tmp = settings.voice_tmp_dir / f"{interview.id}-{answer}.wav"
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(data)
+        with db.transaction(conn):
+            voice.queue(conn, interview_id=interview.id, answer=answer, now=iso(clock()))
+        request.app.state.voice_pool.submit(
+            _analyze_and_store,
+            baze,
+            settings.db_path,
+            clock,
+            settings.baze_voice_model,
+            user.id,
+            interview.id,
+            answer,
+            tmp,
+        )
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return {"status": "queued"}

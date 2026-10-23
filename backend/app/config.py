@@ -71,6 +71,10 @@ class Settings:
         return self.storage_dir / "momo.sqlite3"
 
     @property
+    def voice_tmp_dir(self) -> Path:
+        return self.storage_dir / "voice_tmp"
+
+    @property
     def recordings_dir(self) -> Path:
         return self.storage_dir / "recordings"
 
