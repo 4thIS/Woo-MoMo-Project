@@ -61,6 +61,12 @@ BRIEFING_NOTICE = (
 BRIEFING_FOCUS = (
     "질문 중 1~2개는 [지원 기업 최신 정보]의 최근 사업·소식을 지원 직무와 연결해 묻습니다."
 )
+POSTING_MARK = "모집공고 요구사항"
+POSTING_MISSING = "공고를 확인하지 못함"
+POSTING_FOCUS = (
+    '질문 중 1~2개는 [지원 기업 최신 정보]의 "모집공고 요구사항"(기술 스택·업무)을 '
+    "지원자 이력서와 연결해 묻고, 회사 소식 질문보다 먼저 합니다."
+)
 
 
 def _one_line(value: str, limit: int = 60) -> str:
@@ -121,6 +127,8 @@ def build_system(
         focus, heading = COMPANY_FOCUS, "[지원자 이력서]"
         if briefing:
             focus = f"{focus} {BRIEFING_FOCUS}"
+            if POSTING_MARK in briefing and POSTING_MISSING not in briefing:
+                focus = f"{focus} {POSTING_FOCUS}"
     else:
         intro = _admission_intro(inputs["admission"])
         focus, heading = ADMISSION_FOCUS, "[지원자 자기소개서]"
