@@ -65,6 +65,7 @@ class Settings:
     baze_api_keys: tuple[str, ...] = field(default=(), repr=False)
     baze_voice_model: str = DEFAULT_BAZE_VOICE_MODEL
     baze_min_remaining: float = DEFAULT_BAZE_MIN_REMAINING
+    ben_report_v2: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -99,4 +100,5 @@ class Settings:
             baze_min_remaining=float(min_remaining)
             if min_remaining
             else DEFAULT_BAZE_MIN_REMAINING,
+            ben_report_v2=_parse_bool(e.get("BEN_REPORT_V2"), default=False),
         )

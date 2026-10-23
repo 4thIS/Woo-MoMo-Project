@@ -208,3 +208,36 @@ def test_report_delivery_is_at_most_2000_chars(client):
     item = {"question": "q", "answerSummary": "a", "feedback": "f", "delivery": "가" * 2001}
     res = client.post(URL, json=archive_body(report=[item]))
     assert res.status_code == 422
+
+
+V2 = {"version": 2, "items": [{"id": "Q1", "parent": None}], "summary": {"postingFit": None}}
+
+
+def test_report_v2_round_trips_and_is_null_when_missing(client):
+    signup(client)
+    aid = client.post(URL, json=archive_body(reportV2=V2)).json()["entry"]["id"]
+    assert client.get(f"{URL}/{aid}").json()["reportV2"] == V2
+    plain = client.post(URL, json=archive_body()).json()["entry"]["id"]
+    detail = client.get(f"{URL}/{plain}").json()
+    assert detail["reportV2"] is None
+    assert "reportV2" not in client.get(URL).json()[0]
+
+
+def test_report_v2_allows_empty_report_list(client):
+    signup(client)
+    res = client.post(URL, json=archive_body(report=[], reportV2=V2))
+    assert res.status_code == 201
+    aid = res.json()["entry"]["id"]
+    detail = client.get(f"{URL}/{aid}").json()
+    assert detail["report"] == []
+    assert detail["reportV2"] == V2
+
+
+def test_report_v2_size_limit(client):
+    signup(client)
+    over = {"pad": "x" * 200_000}
+    res = client.post(URL, json=archive_body(reportV2=over))
+    assert res.status_code == 422
+    assert res.json() == {"error": "invalid", "field": "reportV2"}
+    edge = {"pad": "x" * (200_000 - len('{"pad": ""}'))}
+    assert client.post(URL, json=archive_body(reportV2=edge)).status_code == 201

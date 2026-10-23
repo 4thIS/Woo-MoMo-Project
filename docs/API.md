@@ -248,6 +248,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 - **5개 한도는 서버가 집행한다.** 저장 뒤 무료 기록(`premium:false`)이 5개를 넘으면 `startedAt`이 오래된 것부터 지우고 그 id를 `evicted`로 돌려준다. 프리미엄 기록은 세지 않는다.
   - 새 기록의 `startedAt`이 기존 무료 기록 5개보다 모두 오래됐으면 **방금 저장한 기록 자신**이 지워져 `evicted`에 들어갈 수 있다(`entry.id`가 `evicted`에 있으면 저장되지 않은 것과 같다).
 - 크기 상한(넘으면 `422 invalid` + `field`): `messages` 200개, 메시지 `text` 20,000자, `report` 50개, `reportRaw` 100,000자.
+- 선택 `reportV2`(객체, 2026-10-23): 벤 리포트 버전 2의 `report` 이벤트 데이터를 그대로 담는다. 직렬화(JSON, UTF-8) 200,000바이트 초과면 `422 {"error":"invalid","field":"reportV2"}`. 저장은 받은 그대로라 서버가 문자열을 정리하지 않는다 — 클라이언트는 텍스트를 이스케이프해서 그려야 한다(HTML로 넣지 않는다). `ArchiveDetail`은 저장된 객체를 그대로, 없으면 `null`로 돌려준다(목록 `ArchiveEntry`에는 없다). 버전 2 리포트는 `report`를 `[]`로 보내도 된다. 키를 안 보내는 기존 요청은 그대로 통과한다.
 
 ### 프리미엄
 
@@ -318,7 +319,7 @@ data: {"ended":false}
 - SSE `error` 코드 `turn_conflict`: 같은 면접에 턴 요청이 겹쳐 뒤의 것을 기록하지 않음. 새로 고쳐 이어 가면 된다.
 - SSE `error` 코드 `server_error`: 서버 내부 오류. 그 턴은 기록되지 않았을 수 있으니 `claude_error`처럼 같은 요청으로 다시 시도한다.
 
-SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `refused`, `turn_conflict`(턴만), `server_error`.
+SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `refused`, `turn_conflict`(턴만), `bad_report`·`too_long`(리포트 버전 2만), `server_error`.
 
 **3) 리포트 — POST /api/premium/interviews/{id}/report**
 
@@ -338,7 +339,42 @@ SSE `error` 이벤트 `code` 전체(턴·리포트 공통): `claude_error`, `ref
 스트림 전 오류: `404`, `403 premium_required`, `409 interview_over`(Claude 호출 시도 상한 21번을 넘음), `409 interview_not_started`(턴이 하나도 없음), `429 rate_limited`(턴과 합쳐 사용자당 분당 6회), `503 ben_unavailable`.
 SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event: done` / `data: {}`로 끝난다. 이때 면접은 `done`이 되고 서버가 원문을 보관한다. 실패하면 `error` 이벤트(면접은 그대로, 재시도 가능).
 **이미 리포트를 받은(`done`) 면접에 다시 요청하면** Claude를 부르지 않고 보관한 원문을 그대로 다시 보낸다(`delta` 한 번 + `done`). 리포트 스트림이 끊겼거나 새로 고친 뒤 원문을 다시 받을 때 쓴다. 요청 수 제한(`429`)은 똑같이 센다.
-프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.
+**버전 2 (`BEN_REPORT_V2`, 기본 꺼짐 — 2026-10-23)**: 서버 환경변수 `BEN_REPORT_V2=true`이면 벤이 구조화 JSON 객체를 쓴다(원문은 `{"items":[…],"summary":{…}}` 형태라 예전 `parseReport`로는 읽을 수 없다 — 프론트 버전 2 화면을 배포한 뒤 켠다). 꺼져 있으면 위의 설명 그대로다. 켜면 SSE 순서는 `delta…` → (검증 실패 시 `reset` → `delta…`) → `report` → `done`이다.
+첫 응답이 비어 있으면 재생성 없이 `claude_error`로 끝난다(검증 실패가 아니다).
+- `event: reset` / `data: {}` — 첫 시도의 결과가 형식 검증(JSON 파싱·답변 번호 1..n 오름차순·첫 항목 `main`·`summary` 참조 범위)에 실패해 서버가 같은 요청으로 한 번 더 만든다. 프론트는 지금까지 받은 `delta` 원문 버퍼를 비운다. 재생성은 Claude 호출 시도로 한 번 더 센다(상한에 닿았으면 재생성 없이 `bad_report`).
+- `event: report` — 서버가 검증·정리한 리포트(`delta` 원문과 별개로 이것을 그린다):
+```jsonc
+{ "version": 2,
+  "items": [{
+    "id": "Q1",                // main: Q1, Q2… / follow: 앞 main 아래 Q1-1, Q1-2…
+    "parent": null,            // follow면 "Q1"
+    "answer": 1, "kind": "main",   // main | follow
+    "question": "...", "answerSummary": "...", "feedback": "...",
+    "delivery": "..." ,        // 그 답변의 측정이 없거나 측정 부족이면 null
+    "measurements": {          // 측정이 없으면 null. 값은 서버 판정(모델 숫자 아님)
+      "syllablesPerMin": 300, "speed": "느림|보통|빠름",
+      "longPauses": 1, "pausesPerMin": 1.0, "pause": "적음|보통|잦음",
+      "longestPauseSec": 2.5, "firstWordSec": 1.5, "firstWord": "보통|망설임 긺",
+      "filler": { "level": "적음|보통|잦은 경향", "count": 3, "examples": ["음"] },   // 또는 null. count는 number|null(브라우저 판정만 있으면 null)
+      "voice": { "confidence": {"level": "...", "reason": "..."}, "tone": {"level": "...", "reason": "..."},
+                 "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
+                 "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
+      "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
+    } }],
+  "summary": {
+    "strengths":    [{ "point": "...", "refs": ["Q1", "Q1-1"] }],   // 최대 3개, refs는 항목 id(답변 순)
+    "improvements": [{ "point": "...", "refs": ["Q2"] }],
+    "delivery": "..." ,        // 측정이 없으면 null
+    "postingFit": { "met": ["..."], "gaps": ["..."] }               // 모집공고가 있는 회사 면접만, 아니면 null
+  } }
+```
+- `error` 코드 `too_long` — 구조화 출력이 길이 한도(`max_tokens`)에서 잘렸다. 다시 만들어도 같아 재생성하지 않고 바로 끝낸다. 면접은 `active` 그대로다.
+- `409 no_answers`(버전 2만, 스트림 전) — 지원자의 답변이 하나도 없다(첫 질문만 받은 상태). Claude를 부르지 않고 시도도 세지 않는다.
+- `error` 코드 `bad_report` — 두 번 만들어도 형식 검증을 통과하지 못했다. 면접은 `active` 그대로라 같은 요청으로 다시 시도할 수 있다(`claude_error`·`refused`는 이전과 같다).
+- 저장·재요청: 성공하면 원문과 `report` 데이터를 함께 보관한다. `done` 면접에 다시 요청하면 `delta`(보관 원문) → `report`(보관본이 있을 때만) → `done`이며 Claude를 부르지 않는다. 이 재요청은 플래그가 꺼져 있어도 같다.
+- 로그에는 리포트 원문·측정값·목소리 이유를 남기지 않는다.
+
+`BEN_REPORT_V2`가 꺼져 있으면 프론트는 원문을 기존 리포트 파서(`parseReport`)에 넣고, 보관함에 `premium: true`, `premiumInterviewId: <interviewId>`로 저장한다.
 
 **목소리 분석 업로드 — POST /api/premium/interviews/{id}/voice/{answer}** (2026-10-23)
 

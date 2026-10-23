@@ -26,6 +26,7 @@ class PremiumInterview:
     created_at: str
     attempts: int = 0
     report_raw: str | None = None
+    report_v2_json: str | None = None
     briefing: str | None = None
     briefing_status: str = "none"
     voice_consent: bool = False
@@ -55,6 +56,7 @@ def _interview(row: sqlite3.Row) -> PremiumInterview:
         created_at=row["created_at"],
         attempts=row["attempts"],
         report_raw=row["report_raw"],
+        report_v2_json=row["report_v2_json"],
         briefing=row["briefing"],
         briefing_status=row["briefing_status"],
         voice_consent=bool(row["voice_consent"]),
@@ -167,11 +169,18 @@ def count_attempt(conn: sqlite3.Connection, *, interview_id: str) -> int:
     return attempts
 
 
-def mark_done(conn: sqlite3.Connection, *, interview_id: str, report_raw: str) -> None:
-    """리포트 성공: done으로 바꾸고 원문을 보관한다(재요청 때 그대로 다시 보낸다)."""
+def mark_done(
+    conn: sqlite3.Connection,
+    *,
+    interview_id: str,
+    report_raw: str,
+    report_v2_json: str | None = None,
+) -> None:
+    """리포트 성공: done으로 바꾸고 원문(+버전 2 구조)을 보관한다(재요청 때 그대로 다시 보낸다)."""
     conn.execute(
-        "UPDATE premium_interviews SET status = 'done', report_raw = ? WHERE id = ?",
-        (report_raw, interview_id),
+        "UPDATE premium_interviews SET status = 'done', report_raw = ?, report_v2_json = ?"
+        " WHERE id = ?",
+        (report_raw, report_v2_json, interview_id),
     )
 
 

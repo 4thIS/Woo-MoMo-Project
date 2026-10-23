@@ -27,6 +27,7 @@ class NewArchive:
     messages_json: str
     report_json: str
     report_raw: str
+    report_v2_json: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class ArchiveRecord:
     messages_json: str
     report_json: str
     report_raw: str
+    report_v2_json: str | None
     recordings: list[tuple[int, str]]
 
 
@@ -77,8 +79,9 @@ INSERT_SQL = """
 INSERT INTO archive (
     id, user_id, interviewer_id, premium, premium_interview_id, track,
     field, job, name, age, university, department, question_count,
-    started_at, ended_at, messages_json, report_json, report_raw
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    started_at, ended_at, messages_json, report_json, report_raw,
+    report_v2_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 USABLE_INTERVIEW_SQL = """
@@ -155,6 +158,7 @@ def save_archive(conn: sqlite3.Connection, *, user_id: str, new: NewArchive) -> 
                 new.messages_json,
                 new.report_json,
                 new.report_raw,
+                new.report_v2_json,
             ),
         )
         rows = conn.execute(
@@ -188,6 +192,7 @@ def get_archive(conn: sqlite3.Connection, *, user_id: str, archive_id: str) -> A
         messages_json=row["messages_json"],
         report_json=row["report_json"],
         report_raw=row["report_raw"],
+        report_v2_json=row["report_v2_json"],
         recordings=[(r["turn"], r["id"]) for r in recs],
     )
 

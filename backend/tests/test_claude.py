@@ -464,3 +464,60 @@ def test_report_logs_only_exception_type_on_sink_failure(caplog):
     with caplog.at_level("WARNING"):
         _report(boom, Usage(), "ok")
     assert [r.getMessage() for r in caplog.records] == ["claude usage record failed: RuntimeError"]
+
+
+def test_output_format_goes_into_output_config_format():
+    messages = _Messages(stream=_Stream(["{}"]))
+    schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    list(
+        _claude(messages).stream_text(
+            system=SYSTEM,
+            messages=MESSAGES,
+            effort="medium",
+            max_tokens=16000,
+            output_format=schema,
+        )
+    )
+    assert messages.kwargs["output_config"] == {
+        "effort": "medium",
+        "format": {"type": "json_schema", "schema": schema},
+    }
+
+
+def test_without_output_format_output_config_has_only_effort():
+    messages = _Messages(stream=_Stream(["x"]))
+    list(
+        _claude(messages).stream_text(
+            system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=10, output_format=None
+        )
+    )
+    assert messages.kwargs["output_config"] == {"effort": "low"}
+
+
+def test_max_tokens_with_output_format_is_too_long_after_usage():
+    got, sink = _collect()
+    claude = _claude(_Messages(stream=_UsageStream(["{"], "max_tokens", _usage())))
+    with pytest.raises(ClaudeError) as err:
+        list(
+            claude.stream_text(
+                system=SYSTEM,
+                messages=MESSAGES,
+                effort="low",
+                max_tokens=9,
+                on_usage=sink,
+                output_format={"type": "object"},
+            )
+        )
+    assert err.value.code == "too_long"
+    assert got == [(Usage(10, 5, 3, 2, 0), "ok")]
+
+
+def test_max_tokens_without_output_format_is_unchanged():
+    got, sink = _collect()
+    claude = _claude(_Messages(stream=_UsageStream(["a"], "max_tokens", _usage())))
+    assert list(
+        claude.stream_text(
+            system=SYSTEM, messages=MESSAGES, effort="low", max_tokens=9, on_usage=sink
+        )
+    ) == ["a"]
+    assert got == [(Usage(10, 5, 3, 2, 0), "ok")]

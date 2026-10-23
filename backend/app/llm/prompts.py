@@ -205,6 +205,56 @@ def report_messages(
     return [*_history(messages), {"role": "user", "content": instruction}]
 
 
+# 벤 리포트 버전 2(구조화 출력): 답변 단위 평가. 위 로컬용 지시문과 별개다.
+REPORT_INSTRUCTION_V2 = (
+    "면접이 끝났습니다. 지금까지의 면접을 답변 단위로 평가하세요.\n"
+    f"- 답변 번호(answer)는 '{KICKOFF}' 이후 지원자가 한 답변의 순서입니다(1부터). "
+    "답변마다 정확히 한 항목을 순서대로 쓰세요.\n"
+    '- kind: 그 답변이 받은 질문이 새 질문이면 "main", 바로 앞 질문을 파고든 꼬리질문이면 "follow"입니다. '
+    '첫 항목은 "main"입니다.\n'
+    "- question은 당신이 한 질문 원문, answerSummary는 답변 요약 한두 문장, feedback은 두세 문장이며 "
+    "가장 중요한 구절 하나를 **강조**하세요.\n"
+    "- 압박 면접관답게 칭찬은 생략하고, 근거·수치가 부족한 부분을 직설적으로 지적하세요.\n"
+    "- summary.strengths와 summary.improvements는 각각 2~3개이며, answers에 근거가 된 답변 번호를 넣으세요. "
+    "improvements에는 고칠 방법을 함께 쓰세요.\n"
+    "- delivery와 summary.delivery는 전달력 측정이 주어졌을 때만 쓰고, 아니면 null로 두세요. "
+    "postingFit은 모집공고 요구사항이 주어졌을 때만 쓰고, 아니면 null로 두세요."
+)
+
+DELIVERY_INSTRUCTION_V2 = (
+    "아래는 녹음에서 잰 답변별 전달력 수치와 판정입니다. "
+    "측정이 있는 답변의 delivery에 판정과 숫자를 근거로 한두 문장을 쓰고 고칠 방법을 하나 제시하세요. "
+    "측정이 없거나 측정 부족인 답변의 delivery는 null입니다. "
+    "summary.delivery에는 전체 경향을 두세 문장으로 쓰세요. "
+    "군말은 단정하지 말고 '경향'으로만 말하세요."
+)
+
+POSTING_FIT_INSTRUCTION = (
+    '시스템 프롬프트의 [지원 기업 최신 정보] 중 "모집공고 요구사항"을 근거로, '
+    "지원자가 면접에서 보여 준 것을 postingFit.met에, "
+    "드러나지 않았거나 부족한 요구사항을 postingFit.gaps에 짧은 구절로 쓰세요."
+)
+
+
+def report_messages_v2(
+    messages: list[Message], delivery_block: str | None, *, voice: bool, posting: bool
+) -> list[Message]:
+    instruction = REPORT_INSTRUCTION_V2
+    if delivery_block:
+        note = f" {VOICE_NOTE}" if voice else ""
+        instruction = f"{instruction}\n\n{DELIVERY_INSTRUCTION_V2}{note}\n\n{delivery_block}"
+    if posting:
+        instruction = f"{instruction}\n\n{POSTING_FIT_INSTRUCTION}"
+    return [*_history(messages), {"role": "user", "content": instruction}]
+
+
+def report_system(track: str, inputs: dict[str, Any], briefing: str | None) -> list[dict[str, Any]]:
+    """버전 2 리포트의 시스템 프롬프트: 모집공고가 있을 때만 브리핑을 넣는다."""
+    if briefing and _has_posting(briefing):
+        return build_system(track, inputs, briefing)
+    return build_system(track, inputs)
+
+
 def has_end_phrase(text: str) -> bool:
     """프론트 hasEndPhrase와 같다: 공백을 모두 빼고 비교한다."""
     return "".join(END_PHRASE.split()) in "".join(text.split())

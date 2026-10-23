@@ -46,10 +46,17 @@ class FakeClaude:
         effort: str,
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        output_format: dict[str, Any] | None = None,
     ) -> Iterator[str]:
-        self.calls.append(
-            {"system": system, "messages": messages, "effort": effort, "max_tokens": max_tokens}
-        )
+        call: dict[str, Any] = {
+            "system": system,
+            "messages": messages,
+            "effort": effort,
+            "max_tokens": max_tokens,
+        }
+        if output_format is not None:  # 없으면 키 자체를 넣지 않는다(기존 비교 유지)
+            call["output_format"] = output_format
+        self.calls.append(call)
         reply = self.replies.pop(0) if self.replies else list(DEFAULT_REPLY)
         for item in reply:
             if isinstance(item, Exception):

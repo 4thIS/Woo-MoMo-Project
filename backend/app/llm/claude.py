@@ -97,6 +97,7 @@ class ClaudeClient(Protocol):
         effort: Effort,
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        output_format: dict[str, Any] | None = None,
     ) -> Iterator[str]: ...
 
     def research(
@@ -124,14 +125,19 @@ class AnthropicClaude:
         effort: Effort,
         max_tokens: int,
         on_usage: UsageSink | None = None,
+        output_format: dict[str, Any] | None = None,
     ) -> Iterator[str]:
+        output_config: dict[str, Any] = {"effort": effort}
+        if output_format is not None:
+            # 구조화 출력: 스키마에 맞는 JSON만 나오게 한다
+            output_config["format"] = {"type": "json_schema", "schema": output_format}
         try:
             with self._sdk.messages.stream(
                 model=MODEL,
                 max_tokens=max_tokens,
                 system=system,
                 messages=messages,
-                output_config={"effort": effort},
+                output_config=output_config,
                 # 안전 분류기 거절 시 서버 측 폴백. SDK 타입에 아직 없을 수 있어
                 # 본문·헤더로 그대로 보낸다(fallbacks "default" + 베타 헤더).
                 extra_body={"fallbacks": "default"},
@@ -146,6 +152,9 @@ class AnthropicClaude:
         _report(on_usage, _usage_of(final), "refused" if refused else "ok")
         if refused:
             raise ClaudeError("refused")
+        if output_format is not None and final.stop_reason == "max_tokens":
+            # 구조화 출력이 잘리면 JSON이 닫히지 않는다 — 다시 만들어도 같으니 재생성하지 않는다
+            raise ClaudeError("too_long")
 
     def research(
         self,

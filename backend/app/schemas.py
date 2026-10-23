@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
@@ -293,6 +294,18 @@ class ArchiveDetail(ArchiveEntry):
     report: list[ReportItem]
     reportRaw: str
     recordings: list[RecordingRef]
+    # 벤 리포트 버전 2(`report` 이벤트 데이터). 없으면 null — exclude_none에도 키를 남긴다
+    reportV2: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def _keep_report_v2(self, handler: SerializerFunctionWrapHandler):
+        # 반환 주석을 달면 직렬화 OpenAPI 스키마가 빈 객체가 된다
+        out = handler(self)
+        out.setdefault("reportV2", None)
+        return out
+
+
+REPORT_V2_MAX_BYTES = 200_000
 
 
 class ArchiveCreate(BaseModel):
@@ -313,6 +326,14 @@ class ArchiveCreate(BaseModel):
     report: list[ReportItem] = Field(max_length=50)
     reportRaw: str = Field(max_length=100_000)
     premiumInterviewId: str | None = None
+    reportV2: dict[str, Any] | None = None
+
+    @field_validator("reportV2")
+    @classmethod
+    def _report_v2_size(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        if v is not None and len(json.dumps(v, ensure_ascii=False).encode()) > REPORT_V2_MAX_BYTES:
+            raise ValueError("reportV2 too large")
+        return v
 
 
 class ArchiveSaved(BaseModel):

@@ -247,3 +247,46 @@ def test_report_messages_voice_note_only_with_voice_flag():
     assert prompts.VOICE_NOTE == (
         "목소리 항목은 녹음을 들은 AI의 판정입니다. 단정하지 말고 근거를 들어 '~하게 들렸다'로 말하세요."
     )
+
+
+def test_v2_instruction_text_and_kickoff():
+    ins = prompts.REPORT_INSTRUCTION_V2
+    assert ins.startswith("면접이 끝났습니다. 지금까지의 면접을 답변 단위로 평가하세요.\n")
+    assert f"'{prompts.KICKOFF}' 이후 지원자가 한 답변의 순서입니다(1부터)." in ins
+    assert '새 질문이면 "main"' in ins
+    assert ins.endswith("아니면 null로 두세요.")
+    assert ins.count("\n") == 6
+
+
+def test_v2_messages_four_combinations():
+    base = prompts.REPORT_INSTRUCTION_V2
+    d = prompts.DELIVERY_INSTRUCTION_V2
+    p = prompts.POSTING_FIT_INSTRUCTION
+    hist = prompts._history(HISTORY)
+
+    def last(block, voice, posting):
+        out = prompts.report_messages_v2(HISTORY, block, voice=voice, posting=posting)
+        assert out[:-1] == hist
+        assert out[-1]["role"] == "user"
+        return out[-1]["content"]
+
+    assert last(None, False, False) == base
+    assert last(None, True, False) == base
+    assert last(BLOCK, False, False) == f"{base}\n\n{d}\n\n{BLOCK}"
+    assert last(BLOCK, True, False) == f"{base}\n\n{d} {prompts.VOICE_NOTE}\n\n{BLOCK}"
+    assert last(None, False, True) == f"{base}\n\n{p}"
+    assert last(BLOCK, True, True) == f"{base}\n\n{d} {prompts.VOICE_NOTE}\n\n{BLOCK}\n\n{p}"
+
+
+def test_report_system_includes_briefing_only_with_posting():
+    posting = "사업: 간편송금\n## 모집공고 요구사항\n- Kotlin, 결제 도메인, 대용량 트래픽 처리"
+    assert prompts.report_system("company", COMPANY, posting) == prompts.build_system(
+        "company", COMPANY, posting
+    )
+    plain = "사업: 간편송금\n인재상: 자율"
+    assert prompts.report_system("company", COMPANY, plain) == prompts.build_system(
+        "company", COMPANY
+    )
+    assert prompts.report_system("company", COMPANY, None) == prompts.build_system(
+        "company", COMPANY
+    )
