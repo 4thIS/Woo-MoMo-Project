@@ -1,14 +1,16 @@
 """프리미엄: 목업 결제(관리자 전용)와 벤 면접 (spec 4.4)."""
 
 import logging
+import secrets
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
@@ -17,6 +19,7 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts
+from app.llm.baze import StoredVoice, VoiceAnalyzer
 from app.llm.claude import (
     MODEL,
     REPORT_MAX_TOKENS,
@@ -27,10 +30,17 @@ from app.llm.claude import (
     UsageSink,
 )
 from app.presenters import to_session
-from app.repos import briefings, premium, usage, users
+from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
-from app.schemas import InterviewStart, InterviewStarted, ReportBody, Session, TurnBody
+from app.schemas import (
+    DeliveryMetric,
+    InterviewStart,
+    InterviewStarted,
+    ReportBody,
+    Session,
+    TurnBody,
+)
 from app.security import RateLimiter
 from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
@@ -85,6 +95,7 @@ def start_interview(
             day_start=kst_day_start(now),
             daily_limit=request.app.state.settings.ben_daily_limit,
             briefing_status="pending" if research else "none",
+            voice_consent=body.voiceAnalysisConsent,
         )
     except premium.DailyLimitReached:
         raise ApiError(503, "daily_limit") from None
@@ -93,7 +104,13 @@ def start_interview(
     fresh = users.get_by_id(conn, user.id)
     if fresh is None:
         raise ApiError(401, "unauthorized")
-    return InterviewStarted(interviewId=interview_id, session=to_session(fresh))
+    baze: VoiceAnalyzer | None = request.app.state.baze
+    voice_state = "off"
+    if body.voiceAnalysisConsent:
+        voice_state = "on" if baze is not None and baze.available() else "unavailable"
+    return InterviewStarted(
+        interviewId=interview_id, session=to_session(fresh), voiceAnalysis=voice_state
+    )
 
 
 def _owned(conn: sqlite3.Connection, user: User, interview_id: str) -> PremiumInterview:
@@ -364,8 +381,14 @@ def take_turn(
     return _stream(events())
 
 
-def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
-    """리포트 본문의 전달력 측정을 검증해 프롬프트 블록으로. 없으면 None(지금과 같음)."""
+# 목소리 분석(BAZE) 결과를 리포트 전에 기다리는 한도와 ping 간격. 테스트가 monkeypatch한다
+VOICE_WAIT_SEC = 20.0
+VOICE_PING_EVERY = 15.0
+VOICE_POLL_SEC = 0.25
+
+
+def _parse_delivery(body: Any, interview: PremiumInterview) -> list[DeliveryMetric]:
+    """리포트 본문의 전달력 측정을 검증한다. 어긋나면 422."""
     try:
         parsed = ReportBody.model_validate(body if body is not None else {})
     except ValidationError:
@@ -373,20 +396,53 @@ def _delivery_block(body: Any, interview: PremiumInterview) -> str | None:
     answers = sum(1 for m in interview.messages if m["role"] == "user")
     if any(m.answer > answers for m in parsed.delivery):
         raise ApiError(422, "invalid", field="delivery")
-    return delivery.render(
-        [
-            delivery.AnswerMetrics(
-                answer=m.answer,
-                speech_sec=m.speechSec,
-                syllables=m.syllables,
-                long_pauses=m.longPauses,
-                longest_pause_sec=m.longestPauseSec,
-                first_word_sec=m.firstWordSec,
-                filler_level=m.fillerLevel,
-            )
-            for m in parsed.delivery
-        ]
-    )
+    return parsed.delivery
+
+
+def _metrics(
+    metrics: list[DeliveryMetric],
+    voices: dict[int, tuple[str, StoredVoice | None]] | None = None,
+) -> list[delivery.AnswerMetrics]:
+    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다."""
+    out = []
+    for m in metrics:
+        base = delivery.AnswerMetrics(
+            answer=m.answer,
+            speech_sec=m.speechSec,
+            syllables=m.syllables,
+            long_pauses=m.longPauses,
+            longest_pause_sec=m.longestPauseSec,
+            first_word_sec=m.firstWordSec,
+            filler_level=m.fillerLevel,
+        )
+        status, result = (voices or {}).get(m.answer, ("", None))
+        out.append(delivery.with_voice(base, result if status == "done" else None))
+    return out
+
+
+def _await_voice(
+    db_path: Path, interview_id: str, wanted: set[int]
+) -> Generator[str, None, dict[int, tuple[str, StoredVoice | None]]]:
+    """wanted 답변 중 queued가 남아 있으면 VOICE_WAIT_SEC까지 기다린다(ping을 흘리며).
+
+    읽기 실패는 결과 없음으로 접는다 - 목소리가 리포트를 막지 않는다."""
+    deadline = time.monotonic() + VOICE_WAIT_SEC
+    last_ping = time.monotonic()
+    while True:
+        try:
+            with db.connection(db_path) as c:
+                found = voice.results(c, interview_id=interview_id)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("voice read failed: %s", type(exc).__name__)
+            return {}
+        pending = any(found.get(a, ("", None))[0] == "queued" for a in wanted)
+        now = time.monotonic()
+        if not pending or now >= deadline:
+            return found
+        time.sleep(max(0.0, min(VOICE_POLL_SEC, deadline - now)))
+        if time.monotonic() - last_ping >= VOICE_PING_EVERY:
+            last_ping = time.monotonic()
+            yield PING
 
 
 @router.post("/premium/interviews/{interview_id}/report")
@@ -412,20 +468,33 @@ def make_report(
         return _stream(replay())
     if interview.model_turns == 0:
         raise ApiError(409, "interview_not_started")
-    block = _delivery_block(body, interview)
+    parsed = _parse_delivery(body, interview)
+    # 동의한 면접의 측정이 있으면 목소리 결과를 기다려 합쳐야 해서 스트림 안에서 만든다
+    with_voice = interview.voice_consent and bool(parsed)
+    messages = (
+        None
+        if with_voice
+        else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
+    )
     claude = _claude(request)
     _count_attempt(conn, interview)
     system = prompts.build_system(interview.track, interview.inputs)
-    messages = prompts.report_messages(interview.messages, block)
     db_path = request.app.state.settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
 
     def events() -> Iterator[str]:
+        msgs = messages
+        if msgs is None:
+            voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
+            merged = _metrics(parsed, voices)
+            msgs = prompts.report_messages(
+                interview.messages, delivery.render(merged), voice=delivery.voice_used(merged)
+            )
         chunks: list[str] = []
         try:
             for text in claude.stream_text(
                 system=system,
-                messages=messages,
+                messages=msgs,
                 effort="medium",
                 max_tokens=REPORT_MAX_TOKENS,
                 on_usage=report_sink,
@@ -445,3 +514,170 @@ def make_report(
         yield sse("done", {})
 
     return _stream(events())
+
+
+# ── 목소리 분석(BAZE) 업로드 ──
+
+VOICE_MAX_BYTES = 5 * 1024 * 1024
+VOICE_PER_MINUTE = 20
+VOICE_MAX_PER_INTERVIEW = 16  # 면접당 분석 상한: 답변 최대 8 x 2
+
+
+def _is_wav(head: bytes) -> bool:
+    return head[:4] == b"RIFF" and head[8:12] == b"WAVE"
+
+
+def _analyze_and_store(
+    baze: VoiceAnalyzer,
+    db_path: Path,
+    clock: Callable[[], float],
+    model: str,
+    user_id: str,
+    interview_id: str,
+    answer: int,
+    tmp: Path,
+    token: str,
+    tokens: dict[tuple[str, int], str],
+    lock: threading.Lock,
+) -> None:
+    """워커 스레드: 임시 녹음을 분석해 결과를 저장하고, 어떤 경로로 끝나도 파일을 지운다.
+
+    같은 답변이 다시 올라왔으면(토큰이 최신이 아니면) 결과·사용량을 쓰지 않는다.
+    예외는 failed로 접는다 - 로그에는 예외 이름만(녹음·받아쓰기·키는 남기지 않는다)."""
+    log = logging.getLogger(__name__)
+    key = (interview_id, answer)
+    outcome = None
+    status, result_json, error_code = "failed", None, "error"
+    try:
+        outcome = baze.analyze(tmp.read_bytes())
+        if outcome.outcome == "ok" and outcome.result is not None:
+            # 받아쓰기 본문은 버리고 한글 음절 수만 저장한다(데이터 최소화)
+            stored = StoredVoice.from_result(
+                outcome.result, delivery.count_syllables(outcome.result.transcript)
+            )
+            status, result_json, error_code = "done", stored.model_dump_json(), None
+        elif outcome.outcome == "unavailable":
+            status, error_code = "unavailable", "unavailable"
+        else:
+            error_code = outcome.outcome
+    except Exception as exc:
+        log.warning("voice analysis failed: %s", type(exc).__name__)
+        status, result_json, error_code = "failed", None, "error"
+    finally:
+        tmp.unlink(missing_ok=True)
+    try:
+        with lock:
+            superseded = tokens.get(key) != token
+            if not superseded:
+                tokens.pop(key, None)
+            with db.connection(db_path) as c:
+                # 호출 비용은 이미 나갔다 - 밀려난 실행도 사용량은 남기고 결과 쓰기만 건너뛴다
+                if outcome is not None and (
+                    outcome.key_index is not None or outcome.outcome != "unavailable"
+                ):
+                    voice.record_usage(
+                        c,
+                        at=iso(clock()),
+                        user_id=user_id,
+                        interview_id=interview_id,
+                        key_index=outcome.key_index,
+                        model=model,
+                        input_tokens=outcome.input_tokens,
+                        output_tokens=outcome.output_tokens,
+                        outcome=(
+                            outcome.outcome if outcome.outcome in ("ok", "exhausted") else "error"
+                        ),
+                    )
+                if not superseded:
+                    voice.finish(
+                        c,
+                        interview_id=interview_id,
+                        answer=answer,
+                        status=status,
+                        result_json=result_json,
+                        error_code=error_code,
+                        now=iso(clock()),
+                    )
+    except Exception as exc:
+        log.warning("voice store failed: %s", type(exc).__name__)
+
+
+@router.post("/premium/interviews/{interview_id}/voice/{answer}", status_code=202)
+def upload_voice(
+    interview_id: str,
+    answer: int,
+    file: UploadFile,
+    user: PremiumUser,
+    conn: Db,
+    request: Request,
+) -> dict[str, str]:
+    limiter: RateLimiter = request.app.state.limiter
+    if not limiter.allow(f"voice:{user.id}", VOICE_PER_MINUTE):
+        raise ApiError(429, "rate_limited")
+    interview = _owned(conn, user, interview_id)
+    if not interview.voice_consent:
+        raise ApiError(403, "voice_consent_required")
+    if interview.status == "done":
+        raise ApiError(409, "interview_over")
+    baze: VoiceAnalyzer | None = request.app.state.baze
+    if baze is None or not baze.available():
+        raise ApiError(503, "voice_unavailable")
+    answers = sum(1 for m in interview.messages if m["role"] == "user")
+    if answer < 1 or answer > answers:
+        raise ApiError(422, "invalid", field="answer")
+    data = file.file.read(VOICE_MAX_BYTES + 1)
+    if len(data) > VOICE_MAX_BYTES:
+        raise ApiError(413, "too_large")
+    if not _is_wav(data):
+        raise ApiError(415, "unsupported_media")
+    settings = request.app.state.settings
+    clock = request.app.state.clock
+    if voice.count_for_interview(conn, interview_id=interview.id) >= VOICE_MAX_PER_INTERVIEW:
+        raise ApiError(429, "voice_limit")
+    # 업로드마다 임시 파일 이름이 다르다 - 재업로드가 옛 분석의 파일을 건드리지 않게
+    token = secrets.token_hex(4)
+    tmp = settings.voice_tmp_dir / f"{interview.id}-{answer}-{token}.wav"
+    key = (interview.id, answer)
+    tokens: dict[tuple[str, int], str] = request.app.state.voice_tokens
+    lock: threading.Lock = request.app.state.voice_lock
+    queued = False
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(data)
+        with lock:
+            with db.transaction(conn):
+                voice.queue(conn, interview_id=interview.id, answer=answer, now=iso(clock()))
+            tokens[key] = token
+            queued = True
+        request.app.state.voice_pool.submit(
+            _analyze_and_store,
+            baze,
+            settings.db_path,
+            clock,
+            settings.baze_voice_model,
+            user.id,
+            interview.id,
+            answer,
+            tmp,
+            token,
+            tokens,
+            lock,
+        )
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        if queued:
+            with lock:
+                if tokens.get(key) == token:
+                    tokens.pop(key, None)
+                    with db.transaction(conn):
+                        voice.finish(
+                            conn,
+                            interview_id=interview.id,
+                            answer=answer,
+                            status="failed",
+                            result_json=None,
+                            error_code="submit_failed",
+                            now=iso(clock()),
+                        )
+        raise
+    return {"status": "queued"}

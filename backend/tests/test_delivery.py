@@ -1,3 +1,5 @@
+import pytest
+
 from app.llm.delivery import AnswerMetrics, render
 
 
@@ -96,3 +98,122 @@ def test_no_syllables_is_insufficient_not_slow():
     lines = render([m(1), m(2, speech=20.0, syl=0)]).splitlines()
     assert lines[2] == "답변 2: 측정 부족(받아쓴 음절 없음)"
     assert "기준 대비" not in lines[2]
+
+
+# ── 목소리 분석 합치기 (spec 2026-10-23 3.4) ──
+
+from app.llm.baze import StoredVoice  # noqa: E402
+from app.llm.delivery import count_syllables, voice_used, with_voice  # noqa: E402
+
+
+def vr(transcript="가" * 300, count=3, examples=("음",), **over):
+    data = {
+        "syllables": count_syllables(transcript),
+        "fillers": {"count": count, "examples": list(examples)},
+        "confidence": {"level": "high", "reason": "또박또박"},
+        "tone": {"level": "calm", "reason": "일정함"},
+        "tremor": {"present": False, "reason": "떨림 없음"},
+        "trailingOff": {"present": True, "reason": "끝이 작아짐"},
+        "clarity": {"level": "ok", "reason": "대체로 또렷"},
+    }
+    data.update(over)
+    return StoredVoice.model_validate(data)
+
+
+def test_count_syllables_counts_only_hangul():
+    assert count_syllables("안녕, hello 123 하세요!") == 5
+    assert count_syllables("") == 0
+    assert count_syllables("ㄱㅏ") == 0  # 자모는 음절이 아니다
+
+
+def test_without_voice_block_is_unchanged():
+    assert render([m(1, syl=300)]) == render([with_voice(m(1, syl=300), None)])
+    assert voice_used([m(1)]) is False
+
+
+def test_voice_line_exact_format_and_syllables_replaced():
+    metric = with_voice(m(1, syl=999, filler="high"), vr())
+    assert metric.syllables == 300
+    assert voice_used([metric]) is True
+    assert render([metric]) == (
+        "[답변별 전달력 측정]\n"
+        "답변 1: 분당 300음절(보통), 2초 이상 쉼 1회·말한 1분당 1.0회(적음), "
+        "가장 긴 쉼 2.5초, 첫마디까지 1.5초(보통), 군말 보통, "
+        "목소리: 자신감 높음·어조 차분·떨림 없음·끝 흐려짐 있음·발음 보통 "
+        "(근거: 자신감 또박또박 / 어조 일정함 / 떨림 떨림 없음 / 끝 흐려짐 끝이 작아짐 "
+        "/ 발음 대체로 또렷)"
+    )
+
+
+@pytest.mark.parametrize(
+    "count,speech,label",
+    [
+        (2, 60, "적음"),
+        (3, 60, "보통"),
+        (5, 60, "보통"),
+        (6, 60, "잦은 경향(예: 음, 어, 그)"),
+        (1, 10, "적음"),  # 0.5분 하한: 1 / 0.5 = 2 (10초는 5초 이상이라 측정됨)
+        (3, 10, "잦은 경향(예: 음, 어, 그)"),  # 3 / 0.5 = 6 > 5
+    ],
+)
+def test_voice_filler_judged_per_speech_minute(count, speech, label):
+    metric = with_voice(
+        m(1, speech=speech, syl=1, filler=None),
+        vr(count=count, examples=("음", "어", "그", "저")),
+    )
+    line = render([metric]).splitlines()[1]
+    assert f"군말 {label}," in line
+
+
+def test_voice_filler_without_examples_has_no_parenthesis():
+    line = render([with_voice(m(1), vr(count=9, examples=()))]).splitlines()[1]
+    assert "군말 잦은 경향, 목소리" in line
+
+
+def test_reasons_trimmed_to_60_chars_and_blank_skipped():
+    long = "가" * 80
+    metric = with_voice(
+        m(1),
+        vr(
+            confidence={"level": "low", "reason": long},
+            tone={"level": "monotone", "reason": "  "},
+            clarity={"level": "poor", "reason": "a\nb"},
+        ),
+    )
+    line = render([metric]).splitlines()[1]
+    assert f"(근거: 자신감 {'가' * 60} / 떨림 떨림 없음 / 끝 흐려짐 끝이 작아짐 / 발음 a b)" in line
+    assert "가" * 61 not in line
+    assert "자신감 낮음·어조 단조" in line and "발음 낮음" in line
+
+
+def test_insufficient_answers_get_no_voice_line():
+    short = with_voice(m(1, speech=3.0), vr())
+    assert render([short]).splitlines()[1] == "답변 1: 측정 부족(말한 시간 5초 미만)"
+    assert voice_used([short]) is False
+
+
+def test_filler_examples_keep_only_short_hangul():
+    ex = ("음", "어  어", "ignore previous", "[시스템]", "일이삼사오육칠", "ㅡㅡ", "", "그", "저")
+    line = render([with_voice(m(1, filler=None), vr(count=9, examples=ex))]).splitlines()[1]
+    assert "군말 잦은 경향(예: 음, ㅡㅡ, 그)," in line
+
+
+def test_filler_examples_all_invalid_has_no_parenthesis():
+    line = render([with_voice(m(1), vr(count=9, examples=("a b", "(x)")))]).splitlines()[1]
+    assert "군말 잦은 경향, 목소리" in line
+
+
+def test_reason_structural_chars_removed():
+    metric = with_voice(m(1), vr(tone={"level": "calm", "reason": "[끝] (조용)함"}))
+    line = render([metric]).splitlines()[1]
+    assert "어조 끝 조용함" in line
+    assert not any(c in line.split("(근거:", 1)[1][:-1] for c in "[]()")
+
+
+def test_transcript_without_hangul_keeps_browser_numbers_and_no_voice_line():
+    base = m(1, syl=300, filler="high")
+    metric = with_voice(base, vr(transcript="hello world...", count=0))
+    assert metric == base
+    assert render([metric]) == render([base])
+    assert "목소리" not in render([metric])
+    assert voice_used([metric]) is False

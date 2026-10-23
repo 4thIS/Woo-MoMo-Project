@@ -28,6 +28,7 @@ class PremiumInterview:
     report_raw: str | None = None
     briefing: str | None = None
     briefing_status: str = "none"
+    voice_consent: bool = False
 
 
 class NoTickets(Exception):
@@ -56,6 +57,7 @@ def _interview(row: sqlite3.Row) -> PremiumInterview:
         report_raw=row["report_raw"],
         briefing=row["briefing"],
         briefing_status=row["briefing_status"],
+        voice_consent=bool(row["voice_consent"]),
     )
 
 
@@ -69,6 +71,7 @@ def start_interview(
     day_start: str,
     daily_limit: int,
     briefing_status: str = "none",
+    voice_consent: bool = False,
 ) -> str:
     """하루 상한 확인 → 티켓 차감 → 행 생성을 한 트랜잭션으로."""
     interview_id = new_id("pi")
@@ -85,8 +88,8 @@ def start_interview(
             raise NoTickets
         conn.execute(
             "INSERT INTO premium_interviews"
-            " (id, user_id, track, inputs_json, created_at, briefing_status)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            " (id, user_id, track, inputs_json, created_at, briefing_status, voice_consent)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 interview_id,
                 user_id,
@@ -94,6 +97,7 @@ def start_interview(
                 json.dumps(inputs, ensure_ascii=False),
                 created_at,
                 briefing_status,
+                1 if voice_consent else 0,
             ),
         )
     return interview_id

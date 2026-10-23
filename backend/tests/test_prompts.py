@@ -233,3 +233,17 @@ def test_truncated_posting_section_does_not_add_the_posting_rule():
 
 def test_posting_focus_states_the_shared_budget():
     assert "합쳐 2~3개" in prompts.POSTING_FOCUS
+
+
+def test_report_messages_voice_note_only_with_voice_flag():
+    plain = prompts.report_messages(HISTORY, BLOCK)
+    assert prompts.report_messages(HISTORY, BLOCK, voice=False) == plain
+    assert prompts.report_messages(HISTORY, None, voice=True) == prompts.report_messages(HISTORY)
+    last = prompts.report_messages(HISTORY, BLOCK, voice=True)[-1]["content"]
+    assert last == (
+        f"{prompts.report_instruction()}\n\n{prompts.DELIVERY_INSTRUCTION} "
+        f"{prompts.VOICE_NOTE}\n\n{BLOCK}"
+    )
+    assert prompts.VOICE_NOTE == (
+        "목소리 항목은 녹음을 들은 AI의 판정입니다. 단정하지 말고 근거를 들어 '~하게 들렸다'로 말하세요."
+    )
