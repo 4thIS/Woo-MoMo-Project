@@ -1,5 +1,6 @@
 """가입·로그인·로그아웃 (spec 4.1, docs/API.md 인증)."""
 
+import hmac
 import logging
 import math
 import re
@@ -72,6 +73,26 @@ def _start_session(
     )
 
 
+def _check_code(request: Request, conn: sqlite3.Connection, email: str, code: str) -> None:
+    """가입 PIN 확인(spec 4절 2). 오답 수는 요청이 실패해도 남도록 먼저 커밋한다."""
+    code = code.strip()
+    if not code:
+        raise ApiError(422, "code_required", field="code")
+    row = signup_codes.get(conn, email)
+    now = request.app.state.clock()
+    if row is None or now >= row.expires_at or row.attempts >= signup_codes.CODE_MAX_ATTEMPTS:
+        raise ApiError(422, "code_expired", field="code")
+    if hmac.compare_digest(row.code_hash, signup_codes.hash_code(email, code)):
+        return
+    with transaction(conn):
+        attempts = signup_codes.add_attempt(conn, email)
+    if attempts >= signup_codes.CODE_MAX_ATTEMPTS:
+        raise ApiError(422, "code_expired", field="code")
+    raise ApiError(
+        422, "code_invalid", field="code", attemptsLeft=signup_codes.CODE_MAX_ATTEMPTS - attempts
+    )
+
+
 @router.post("/auth/signup", status_code=201, response_model=Session)
 def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> Session:
     rate_limit(request, "signup", SIGNUP_PER_MINUTE)
@@ -87,6 +108,9 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
         raise ApiError(422, "invalid", field="name")
     if body.consent is not True:
         raise ApiError(422, "consent_required", field="consent")
+    verify = request.app.state.settings.signup_email_verify
+    if verify:
+        _check_code(request, conn, email, body.code)
     password_hash = hash_password(body.password)
     created_at = iso(request.app.state.clock())
     try:
@@ -94,6 +118,8 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
             user = users.create_user(
                 conn, email=email, password_hash=password_hash, name=name, created_at=created_at
             )
+            if verify:
+                signup_codes.delete(conn, email)
             _start_session(request, response, conn, user)
     except users.EmailTaken:
         raise ApiError(409, "email_taken") from None

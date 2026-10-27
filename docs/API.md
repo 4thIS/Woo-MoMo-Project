@@ -175,7 +175,7 @@
 
 ```jsonc
 // 요청
-{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true }
+{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true, "code": "123456" }
 // 201 → Session (쿠키 설정)
 // 409 { "error": "email_taken" }
 // 422 { "error": "invalid_email", "field": "email" }        // 앞뒤 공백 제거·소문자 뒤 형식 검사
@@ -184,9 +184,13 @@
 // 422 { "error": "invalid", "field": "name" }               // 100자 초과
 // 422 { "error": "consent_required", "field": "consent" }   // true가 아니거나 없음
 // 429 { "error": "rate_limited" }                           // IP당 분당 10회
+// 아래 셋은 SIGNUP_EMAIL_VERIFY가 켜져 있을 때만 (칸 검사 다음, 이메일 중복 409 이전)
+// 422 { "error": "code_required", "field": "code" }         // code가 비었음
+// 422 { "error": "code_expired", "field": "code" }          // 받은 인증번호 없음·10분 만료·오답 5회로 폐기 → 다시 받기
+// 422 { "error": "code_invalid", "field": "code", "attemptsLeft": 3 }  // 틀림(남은 시도 수)
 ```
 
-이메일 인증은 하지 않는다. `name`은 `Session.profile.name`에 들어간다.
+`code`(기본 빈 문자열)는 `POST /api/auth/signup/code`로 메일에 받은 6자리 PIN이다(앞뒤 공백 제거). `SIGNUP_EMAIL_VERIFY`가 꺼져 있으면 `code`는 무시되고 동작은 이전과 같다. 켜져 있으면 PIN이 맞을 때만 계정이 만들어지고 PIN은 한 번 쓰면 지워진다(재사용 불가). 5번째 오답은 PIN을 폐기하고 `code_expired`로 답한다. 인증 사용 여부는 `GET /api/auth/signup/config`의 `emailVerify`로 안다. `name`은 `Session.profile.name`에 들어간다.
 
 #### POST /api/auth/signup/code — 가입 인증번호 받기
 

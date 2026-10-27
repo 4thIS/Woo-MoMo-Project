@@ -6,8 +6,9 @@ import re
 import pytest
 
 from app.config import Settings
-from app.repos import signup_codes
-from tests.helpers import open_db, signup
+from app.repos import signup_codes, users
+from app.security import hash_password
+from tests.helpers import open_db
 
 URL = "/api/auth/signup/code"
 MAIL = "me@example.com"
@@ -107,8 +108,12 @@ def test_ip_rate_limit(vc):
     assert res.status_code == 429 and res.json() == {"error": "rate_limited"}
 
 
-def test_taken_email_409_no_mail(vc, fake_mailer):
-    signup(vc, email=MAIL)
+def test_taken_email_409_no_mail(vc, fake_mailer, on_settings):
+    # 인증이 켜져 있으면 가입에 PIN이 필요하니 계정은 직접 만든다
+    with open_db(on_settings) as conn:
+        users.create_user(
+            conn, email=MAIL, password_hash=hash_password("password123"), name="a", created_at="x"
+        )
     res = vc.post(URL, json={"email": MAIL})
     assert res.status_code == 409 and res.json() == {"error": "email_taken"}
     assert fake_mailer.sent == []

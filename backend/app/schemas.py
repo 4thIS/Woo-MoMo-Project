@@ -173,6 +173,7 @@ class SignupBody(BaseModel):
     password: str = ""
     name: str = ""
     consent: bool | None = None
+    code: str = ""
 
 
 class LoginBody(BaseModel):
