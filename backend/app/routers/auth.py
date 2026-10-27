@@ -74,22 +74,23 @@ def _start_session(
 
 
 def _check_code(request: Request, conn: sqlite3.Connection, email: str, code: str) -> None:
-    """가입 PIN 확인(spec 4절 2). 오답 수는 요청이 실패해도 남도록 먼저 커밋한다."""
+    """가입 PIN 확인(spec 4절 2). 시도는 비교 전에 예약·커밋해 요청이 실패해도 남는다."""
     code = code.strip()
     if not code:
         raise ApiError(422, "code_required", field="code")
-    row = signup_codes.get(conn, email)
-    now = request.app.state.clock()
-    if row is None or now >= row.expires_at or row.attempts >= signup_codes.CODE_MAX_ATTEMPTS:
+    with transaction(conn):  # 시도 예약과 읽기를 한 번에 — 동시 추측은 줄을 선다
+        row = signup_codes.reserve_attempt(conn, email, request.app.state.clock())
+    if row is None:
         raise ApiError(422, "code_expired", field="code")
     if hmac.compare_digest(row.code_hash, signup_codes.hash_code(email, code)):
         return
-    with transaction(conn):
-        attempts = signup_codes.add_attempt(conn, email)
-    if attempts >= signup_codes.CODE_MAX_ATTEMPTS:
+    if row.attempts >= signup_codes.CODE_MAX_ATTEMPTS:
         raise ApiError(422, "code_expired", field="code")
     raise ApiError(
-        422, "code_invalid", field="code", attemptsLeft=signup_codes.CODE_MAX_ATTEMPTS - attempts
+        422,
+        "code_invalid",
+        field="code",
+        attemptsLeft=signup_codes.CODE_MAX_ATTEMPTS - row.attempts,
     )
 
 

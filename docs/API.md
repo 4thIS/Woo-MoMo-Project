@@ -190,11 +190,11 @@
 // 422 { "error": "code_invalid", "field": "code", "attemptsLeft": 3 }  // 틀림(남은 시도 수)
 ```
 
-`code`(기본 빈 문자열)는 `POST /api/auth/signup/code`로 메일에 받은 6자리 PIN이다(앞뒤 공백 제거). `SIGNUP_EMAIL_VERIFY`가 꺼져 있으면 `code`는 무시되고 동작은 이전과 같다. 켜져 있으면 PIN이 맞을 때만 계정이 만들어지고 PIN은 한 번 쓰면 지워진다(재사용 불가). 5번째 오답은 PIN을 폐기하고 `code_expired`로 답한다. 인증 사용 여부는 `GET /api/auth/signup/config`의 `emailVerify`로 안다. `name`은 `Session.profile.name`에 들어간다.
+`code`(기본 빈 문자열)는 **JSON 문자열**이어야 한다(숫자로 보내면 앞자리 0이 사라진다). `POST /api/auth/signup/code`로 메일에 받은 6자리 PIN이다(앞뒤 공백 제거). `SIGNUP_EMAIL_VERIFY`가 꺼져 있으면 `code`는 무시되고 동작은 이전과 같다. 켜져 있으면 PIN이 맞을 때만 계정이 만들어지고 PIN은 한 번 쓰면 지워진다(재사용 불가). 5번째 오답은 PIN을 폐기하고 `code_expired`로 답한다. 인증 사용 여부는 `GET /api/auth/signup/config`의 `emailVerify`로 안다. `name`은 `Session.profile.name`에 들어간다.
 
 #### POST /api/auth/signup/code — 가입 인증번호 받기
 
-`SIGNUP_EMAIL_VERIFY`가 켜져 있을 때만 쓴다. 메일로 6자리 PIN(10분 유효)을 보낸다. PIN은 서버에 해시로만 둔다.
+`SIGNUP_EMAIL_VERIFY`가 켜져 있을 때만 쓴다. 메일로 6자리 PIN(10분 유효)을 보낸다. PIN은 서버에 해시로만 둔다. 같은 이메일로는 1시간에 5통까지만 보낸다(`code_limit`).
 
 ```jsonc
 { "email": "me@example.com" }

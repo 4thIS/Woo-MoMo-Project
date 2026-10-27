@@ -4,7 +4,6 @@ from typing import Protocol
 
 import httpx
 
-DEFAULT_MAIL_API_URL = "https://send.ssenu.cloud/v1/send"
 USER_AGENT = "woo-momo/1.0"
 MAIL_TIMEOUT = 10.0
 
@@ -37,7 +36,7 @@ class HttpMailer:
                 json={"to": to, "subject": subject, "text": text},
                 timeout=MAIL_TIMEOUT,
             )
-        except httpx.HTTPError as e:
+        except Exception as e:
             # 예외 문자열에 URL 등이 섞일 수 있어 클래스 이름만 남긴다
             raise MailError(type(e).__name__) from None
         if not res.is_success:

@@ -151,11 +151,38 @@ def test_send_failure_first_time_stores_nothing(vc, fake_mailer, on_settings):
     assert vc.post(URL, json={"email": MAIL}).status_code == 202
 
 
-def test_repo_add_attempt_and_delete(vc, on_settings):
+def test_repo_reserve_attempt_and_delete(vc, on_settings, clock):
     vc.post(URL, json={"email": MAIL})
+    now = clock.now
     with open_db(on_settings) as conn:
-        assert signup_codes.add_attempt(conn, MAIL) == 1
-        assert signup_codes.add_attempt(conn, MAIL) == 2
+        for n in range(1, 6):
+            row = signup_codes.reserve_attempt(conn, MAIL, now)
+            assert row is not None and row.attempts == n
+        assert signup_codes.reserve_attempt(conn, MAIL, now) is None  # 5번 뒤엔 예약 불가
+        assert signup_codes.get(conn, MAIL).attempts == 5
         signup_codes.delete(conn, MAIL)
         assert signup_codes.get(conn, MAIL) is None
-        assert signup_codes.add_attempt(conn, MAIL) == 0
+        assert signup_codes.reserve_attempt(conn, MAIL, now) is None
+
+
+def test_startup_purges_only_stale_codes(settings, clock) -> None:
+    from app.startup import prepare_storage
+
+    now = clock.now
+    prepare_storage(settings, now)
+    rows = {
+        "old@x.com": (now - 4000, now - 4000),  # 만료 + 창 지남 -> 삭제
+        "window@x.com": (now - 700, now - 1000),  # 만료됐지만 창 안 -> 유지
+        "live@x.com": (now + 300, now - 4000),  # 살아 있음 -> 유지
+    }
+    with open_db(settings) as conn:
+        for email, (expires, window) in rows.items():
+            conn.execute(
+                "INSERT INTO signup_codes (email, code_hash, expires_at, attempts, last_sent_at,"
+                " window_start, window_count) VALUES (?, 'h', ?, 0, ?, ?, 1)",
+                (email, expires, window, window),
+            )
+    prepare_storage(settings, now)
+    with open_db(settings) as conn:
+        left = {r[0] for r in conn.execute("SELECT email FROM signup_codes")}
+    assert left == {"window@x.com", "live@x.com"}

@@ -121,3 +121,14 @@ def test_create_app_injected_mailer_wins(tmp_path: Path) -> None:
     fake = FakeMailer()
     with TestClient(create_app(settings=s, mailer=fake)) as c:
         assert c.app.state.mailer is fake
+
+
+def test_non_httpx_error_becomes_mail_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise ValueError(f"secret {KEY} {TO}")
+
+    with pytest.raises(MailError) as exc:
+        _send(_mailer(handler))
+    assert str(exc.value) == "ValueError"
+    assert KEY not in repr(exc.value) and TO not in repr(exc.value)
+    assert exc.value.__cause__ is None

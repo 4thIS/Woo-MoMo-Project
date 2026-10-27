@@ -54,12 +54,25 @@ def save_sent(conn: sqlite3.Connection, *, email: str, code_hash: str, now: floa
     )
 
 
-def add_attempt(conn: sqlite3.Connection, email: str) -> int:
-    """오답 수를 1 올리고 올린 뒤 값을 돌려준다(줄이 없으면 0)."""
-    conn.execute("UPDATE signup_codes SET attempts = attempts + 1 WHERE email = ?", (email,))
-    row = conn.execute("SELECT attempts FROM signup_codes WHERE email = ?", (email,)).fetchone()
-    return 0 if row is None else row[0]
+def reserve_attempt(conn: sqlite3.Connection, email: str, now: float) -> CodeRow | None:
+    """확인 시도 1회를 먼저 잡는다(트랜잭션 안에서 부를 것). 줄 없음·만료·폐기면 None.
+
+    비교 전에 원자적으로 올리므로 동시에 들어온 추측도 5번을 넘기지 못한다."""
+    cur = conn.execute(
+        "UPDATE signup_codes SET attempts = attempts + 1"
+        " WHERE email = ? AND attempts < ? AND expires_at > ?",
+        (email, CODE_MAX_ATTEMPTS, now),
+    )
+    return get(conn, email) if cur.rowcount == 1 else None
 
 
 def delete(conn: sqlite3.Connection, email: str) -> None:
     conn.execute("DELETE FROM signup_codes WHERE email = ?", (email,))
+
+
+def purge_stale(conn: sqlite3.Connection, now: float) -> None:
+    """만료됐고 1시간 발송 창도 지난 줄을 지운다(창이 남은 줄은 발송 상한 때문에 둔다)."""
+    conn.execute(
+        "DELETE FROM signup_codes WHERE expires_at < ? AND window_start < ?",
+        (now, now - CODE_WINDOW_SEC),
+    )

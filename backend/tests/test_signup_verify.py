@@ -194,3 +194,17 @@ def test_accounts_created_before_migration_008_still_log_in(make_client, on_sett
         assert conn.execute("SELECT COUNT(*) FROM signup_codes").fetchone()[0] == 0
     res = c.post("/api/auth/login", json={"email": "old@example.com", "password": PASSWORD})
     assert res.status_code == 200
+
+
+def test_concurrent_wrong_guesses_are_capped_at_five(vc, fake_mailer, on_settings):
+    from concurrent.futures import ThreadPoolExecutor
+
+    _request(vc)
+    wrong = _wrong(_pin(fake_mailer))
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda _: vc.post(URL, json=_body(wrong)).json(), range(10)))
+    errors = [r["error"] for r in results]
+    assert errors.count("code_invalid") == 4  # 1~4번째 오답 — 남은 횟수 4,3,2,1이 한 번씩
+    assert sorted(r["attemptsLeft"] for r in results if "attemptsLeft" in r) == [1, 2, 3, 4]
+    assert errors.count("code_expired") == 6
+    assert _row(on_settings).attempts == 5

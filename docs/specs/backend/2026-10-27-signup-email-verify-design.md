@@ -46,6 +46,8 @@
 - 이미 가입한 이메일이면 PIN을 보내지 않고 `409 email_taken`. 가입 여부는 이미 `/api/auth/email-taken`으로 알 수 있어 새로 드러나는 정보는 없다.
 - 만료된 줄은 다음 요청 때 덮어쓰거나 서버 기동 때 정리한다.
 - PIN 비교는 해시끼리 상수 시간 비교(`hmac.compare_digest`).
+- 해시는 평문 `sha256(email:code)`다. PIN이 10분·1회용이라 HMAC 키까지는 필요 없다고 판단했다.
+- 오답 시도는 비교 전에 한 트랜잭션에서 원자적으로 예약한다(`attempts + 1`, 5 미만·미만료일 때만). 동시에 틀린 추측도 줄을 서서 5번을 넘기지 못한다.
 
 ### 메일 발송
 - `POST {MAIL_API_URL}`(기본 `https://send.ssenu.cloud/v1/send`), 헤더 `Authorization: Bearer {MAIL_API_KEY}`·`Content-Type: application/json`·`Idempotency-Key: signup-<발송마다 새 무작위 값>`, 본문 `{"to","subject","text"}`. 시간 제한 10초.
