@@ -1,6 +1,9 @@
 """가입·로그인·로그아웃 (spec 4.1, docs/API.md 인증)."""
 
+import logging
+import math
 import re
+import secrets
 import sqlite3
 
 from fastapi import APIRouter, Request, Response
@@ -8,10 +11,19 @@ from fastapi import APIRouter, Request, Response
 from app.db import transaction
 from app.deps import COOKIE_NAME, Db
 from app.errors import ApiError
+from app.mail import MailError
 from app.presenters import to_session
-from app.repos import sessions, users
+from app.repos import sessions, signup_codes, users
 from app.repos.users import User, normalize_login
-from app.schemas import EmailTakenResponse, LoginBody, Session, SignupBody
+from app.schemas import (
+    EmailTakenResponse,
+    LoginBody,
+    Session,
+    SignupBody,
+    SignupCodeBody,
+    SignupCodeSent,
+    SignupConfig,
+)
 from app.security import (
     burn_password_check,
     client_ip,
@@ -23,6 +35,7 @@ from app.security import (
 from app.timefmt import iso
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 EMAIL_MAX = 254
@@ -126,3 +139,61 @@ def email_taken(request: Request, conn: Db, email: str = "") -> EmailTakenRespon
     # 열거 공격에 열려 있다(데모 범위). 요청 수 제한으로만 막는다.
     rate_limit(request, "email-taken", EMAIL_TAKEN_PER_MINUTE)
     return EmailTakenResponse(taken=users.email_exists(conn, normalize_login(email)))
+
+
+@router.get("/auth/signup/config", response_model=SignupConfig)
+def signup_config(request: Request) -> SignupConfig:
+    return SignupConfig(emailVerify=request.app.state.settings.signup_email_verify)
+
+
+def _mail_text(code: str) -> str:
+    return (
+        f"인증번호: {code}\n\n10분 안에 입력해 주세요.\n"
+        "가입을 요청하지 않았다면 이 메일은 무시하셔도 됩니다."
+    )
+
+
+@router.post("/auth/signup/code", status_code=202, response_model=SignupCodeSent)
+def signup_code(body: SignupCodeBody, request: Request, conn: Db) -> SignupCodeSent:
+    state = request.app.state
+    if not state.settings.signup_email_verify:
+        raise ApiError(404, "verify_disabled")
+    rate_limit(request, "signup-code", signup_codes.CODE_PER_MINUTE)
+    email = normalize_login(body.email)
+    if not is_email(email):
+        raise ApiError(422, "invalid_email", field="email")
+    mailer = state.mailer
+    if mailer is None:
+        raise ApiError(503, "mail_unavailable")
+    if users.email_exists(conn, email):
+        raise ApiError(409, "email_taken")
+    now = state.clock()
+    row = signup_codes.get(conn, email)
+    if row is not None:
+        elapsed = now - row.last_sent_at
+        if elapsed < signup_codes.CODE_RESEND_SEC:
+            retry = max(1, math.ceil(signup_codes.CODE_RESEND_SEC - elapsed))
+            raise ApiError(429, "code_cooldown", retryAfterSec=retry)
+        if (
+            now - row.window_start < signup_codes.CODE_WINDOW_SEC
+            and row.window_count >= signup_codes.CODE_HOURLY_MAX
+        ):
+            raise ApiError(429, "code_limit")
+    code = signup_codes.new_code()
+    try:  # 발송은 열린 트랜잭션 밖에서. 로그엔 예외 이름만(PIN·이메일·키 금지)
+        mailer.send(
+            to=email,
+            subject="[모두의 모의면접] 가입 인증번호",
+            text=_mail_text(code),
+            idempotency_key=f"signup-{secrets.token_hex(8)}",
+        )
+    except MailError as e:
+        log.warning("signup code mail failed: %s", type(e).__name__)
+        raise ApiError(502, "mail_failed") from None
+    with transaction(conn):
+        signup_codes.save_sent(
+            conn, email=email, code_hash=signup_codes.hash_code(email, code), now=now
+        )
+    return SignupCodeSent(
+        expiresInSec=signup_codes.CODE_TTL_SEC, resendInSec=signup_codes.CODE_RESEND_SEC
+    )

@@ -188,6 +188,29 @@
 
 이메일 인증은 하지 않는다. `name`은 `Session.profile.name`에 들어간다.
 
+#### POST /api/auth/signup/code — 가입 인증번호 받기
+
+`SIGNUP_EMAIL_VERIFY`가 켜져 있을 때만 쓴다. 메일로 6자리 PIN(10분 유효)을 보낸다. PIN은 서버에 해시로만 둔다.
+
+```jsonc
+{ "email": "me@example.com" }
+// 202 { "expiresInSec": 600, "resendInSec": 60 }
+// 404 { "error": "verify_disabled" }                         // 인증 기능이 꺼져 있음
+// 422 { "error": "invalid_email", "field": "email" }
+// 409 { "error": "email_taken" }                             // 이미 가입한 이메일(메일 안 보냄)
+// 429 { "error": "rate_limited" }                            // IP당 분당 5회
+// 429 { "error": "code_cooldown", "retryAfterSec": 40 }     // 같은 이메일 60초 안에 다시 요청
+// 429 { "error": "code_limit" }                              // 같은 이메일 1시간 5통 초과
+// 503 { "error": "mail_unavailable" }                        // 켜졌는데 메일 키 없음
+// 502 { "error": "mail_failed" }                             // 메일 서버 오류·시간 초과(대기·횟수에 안 셈)
+```
+
+새로 보내면 이전 PIN은 즉시 무효다. 메일이 나간 뒤에만 새 PIN을 저장한다.
+
+#### GET /api/auth/signup/config
+
+`200 { "emailVerify": true | false }`. 프론트가 가입 화면의 PIN 칸 표시를 정한다.
+
 #### GET /api/auth/email-taken?email=a@b.com
 
 `200 { "taken": true }` · `429 rate_limited`(IP당 분당 20회). 이메일은 앞뒤 공백 제거·소문자로 비교한다.

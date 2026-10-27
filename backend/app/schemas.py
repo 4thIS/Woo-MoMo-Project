@@ -583,3 +583,16 @@ class AdminAuditPage(BaseModel):
     pageSize: int
     total: int
     items: list[AdminAuditItem]
+
+
+class SignupCodeBody(BaseModel):
+    email: str = ""
+
+
+class SignupCodeSent(BaseModel):
+    expiresInSec: int
+    resendInSec: int
+
+
+class SignupConfig(BaseModel):
+    emailVerify: bool
