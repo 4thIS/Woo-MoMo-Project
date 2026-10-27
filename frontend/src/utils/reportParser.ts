@@ -6,6 +6,8 @@ export interface ReportItem {
   question: string
   answerSummary: string
   feedback: string
+  /** 전달력 피드백(벤 전용, 선택). 녹음 측정을 보낸 면접에만 붙는다 — `docs/API.md` */
+  delivery?: string
 }
 
 function isItem(v: unknown): v is ReportItem {
@@ -88,7 +90,8 @@ export function reportToText(
   const body = items
     .map(
       (it, i) =>
-        `Q${i + 1}. ${strip(it.question)}\n${answerLines(answers[i] ?? [])}\n피드백: ${strip(it.feedback)}`,
+        `Q${i + 1}. ${strip(it.question)}\n${answerLines(answers[i] ?? [])}\n피드백: ${strip(it.feedback)}` +
+        (it.delivery ? `\n전달력: ${strip(it.delivery)}` : ''),
     )
     .join('\n\n')
   const time = timing

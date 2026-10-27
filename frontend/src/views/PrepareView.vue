@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useSectionWheel } from '@/composables/useSectionWheel'
+import { useInterviewerStore } from '@/stores/interviewer'
+import { useModalStore } from '@/stores/modal'
+import { useHintsStore } from '@/stores/hints'
+import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
+import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
+import { formatEta } from '@/utils/progressStages'
+import { normalizePostingUrl } from '@/utils/postingUrl'
+import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
@@ -18,6 +26,48 @@ const model = useModelStore()
 const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
 useSectionWheel(root)
+const iv = useInterviewerStore()
+const modal = useModalStore()
+
+/** 대입 입력 — 트랙이 대입일 때만 쓴다 */
+type AdField = 'name' | 'university' | 'department'
+const setAd = (k: AdField, v: string) => interview.setAdmission({ [k]: v })
+const setAge = (v: string) => {
+  const n = Number(v)
+  interview.setAdmission({ age: v.trim() && Number.isFinite(n) ? n : null })
+}
+/** 2단계에서 받는 긴 글의 이름 — 트랙에 따라 다르다 */
+const longDocLabel = computed(() => (interview.track === 'admission' ? '자기소개서' : '이력서'))
+/** 1단계(지원 정보)가 찼는가 — 트랙마다 보는 칸이 다르다 */
+const infoDone = computed(() => {
+  const p = interview.profile
+  return interview.track === 'admission'
+    ? Boolean(p.name.trim() && p.age !== null && p.university.trim() && p.department.trim())
+    : interview.profileDone
+})
+const hints = useHintsStore()
+/* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
+const pickerOpen = ref(false)
+const pickerBox = ref<HTMLElement | null>(null)
+/* 회사 브리핑은 벤(프리미엄)만 한다 — 무료 면접관은 서버를 거치지 않고, 대입은 쓰지 않는다 */
+const benCompany = computed(() => Boolean(iv.current?.premium) && interview.track === 'company')
+/** 공고 링크 안내 — 적는 동안은 형식 검사가, 보낸 뒤에는 서버가 짚어 준 것이 뜬다 */
+const postingProblem = computed(() => {
+  const r = normalizePostingUrl(interview.profile.postingUrl)
+  return r.ok ? interview.postingError : r.reason
+})
+/* 패널은 버튼 아래에 생겨 화면 밖에서 열리기 쉽다 — 열 때만 다 보이는 자리까지 내린다.
+   nearest라 이미 다 보이면 움직이지 않는다. 닫을 때는 보던 자리를 지킨다 */
+watch(pickerOpen, async (open) => {
+  if (!open) return
+  await nextTick()
+  // jsdom에는 scrollIntoView가 없다 — 없으면 그냥 넘어간다
+  pickerBox.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+})
+// 선택이 없으면 실제로 쓰일 기본 면접관(목소리 기본값과 같은 사람)의 이름
+const interviewerName = computed(
+  () => (iv.current ?? interviewerById(DEFAULT_INTERVIEWER)!).displayName,
+)
 
 const fieldItems = (Object.keys(FIELD_LABELS) as Field[]).map((value) => ({
   value,
@@ -29,7 +79,8 @@ const voice = computed(() => model.status === 'ready' && model.ttsEnabled)
 const phase = computed(() => {
   if (model.status === 'error' || (voice.value && model.ttsStatus === 'error')) return 'error'
   if (model.status !== 'ready') return model.status === 'initializing' ? 'init' : 'download'
-  return model.ready ? 'ready' : 'voice'
+  // 목소리를 받는 동안에도 면접은 열려 있다(model.ready) — 진행 창은 그래도 목소리 단계를 보여 준다
+  return model.voicePending ? 'voice' : 'ready'
 })
 /* 진행 창 제목도 단계를 따른다 — 아래 문구(PixelProgress caption)와 모순되지 않게 (#24) */
 const TITLE: Record<'download' | 'init' | 'voice' | 'ready' | 'error', string> = {
@@ -43,8 +94,12 @@ const fileName = computed(() =>
   voice.value ? (model.manifest?.tts?.id ?? '') : (model.active?.url.split('/').pop() ?? ''),
 )
 const ttsError = computed(() => voice.value && model.ttsStatus === 'error')
+/* 체크리스트 "목소리 준비" 완료 표시 — 교체 중이면 아직 아니다 */
+const voiceReady = computed(() => model.ttsStatus === 'ready' && !model.voiceSwitching)
 /* 남은 시간: 최근 표본 속도로 추정 */
 const eta = ref('')
+/** 지금 받는 속도 문구(예: 7.2MB/s). 비면 아무것도 안 보인다 */
+const speed = ref('')
 const samples: { t: number; r: number }[] = []
 const downloading = computed(
   () => model.status === 'downloading' || (voice.value && model.ttsStatus === 'downloading'),
@@ -54,6 +109,7 @@ watch(
   ([r, on]) => {
     if (!on) {
       eta.value = ''
+      speed.value = ''
       samples.length = 0
       return
     }
@@ -64,14 +120,17 @@ watch(
     const rate = (r - a.r) / Math.max(1, (now - a.t) / 1000)
     if (rate <= 0) {
       eta.value = ''
+      speed.value = ''
       return
     }
+    speed.value = `${formatBytes(rate)}/s`
     const s = Math.round((model.overallTotal - r) / rate)
     if (s <= 0) {
       eta.value = '' // 다 받았는데 상태가 아직 downloading인 짧은 순간 — "약 0초 남음"을 내지 않는다
       return
     }
-    eta.value = s >= 60 ? `약 ${Math.floor(s / 60)}분 ${s % 60}초 남음` : `약 ${s}초 남음`
+    // 초까지 보여 주면 회선이 흔들릴 때마다 숫자가 널뛴다 — 분으로 반올림한다
+    eta.value = `${formatEta(s)} 남음`
   },
   { immediate: true },
 )
@@ -80,14 +139,14 @@ watch(
 const step = ref<1 | 2>(1)
 const navigatedBack = ref(false)
 function tryAdvance() {
-  if (step.value === 1 && interview.profileDone && !navigatedBack.value) step.value = 2
+  if (step.value === 1 && infoDone.value && !navigatedBack.value) step.value = 2
 }
 function goBack() {
   step.value = 1
   navigatedBack.value = true
 }
 function goNext() {
-  if (interview.profileDone) step.value = 2
+  if (infoDone.value) step.value = 2
 }
 async function onField(field: Field) {
   await interview.setField(field)
@@ -141,7 +200,7 @@ function usePasted() {
 /* 막힌 이유(#41): 간단 이력서를 열어 두고 '이력서 완성'을 안 누른 상태가 가장 흔한 "다 채웠는데 안 열림" */
 const startLabel = computed(() => {
   if (interview.canStart) return '면접 시작'
-  if (formOpen.value && !interview.resumeDone && interview.profileDone)
+  if (formOpen.value && !interview.resumeDone && infoDone.value)
     return "면접 시작 — 간단 이력서의 '이력서 완성'을 눌러 주세요"
   return `면접 시작 — ${interview.startBlockReason}`
 })
@@ -152,11 +211,23 @@ const blockedByError = computed(
 function scrollToProgress() {
   root.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
-/* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중이면 텍스트 전용으로 바로 시작할 길을 연다 */
+/* 벤으로 왔다가 무료 면접관으로 바꾸면 그제야 브라우저 모델이 필요해진다.
+   벤일 때는 아예 받지 않으므로(model.llmSkipped) 여기서 받기 시작한다 */
+watch(
+  () => model.llmSkipped,
+  (skipped) => {
+    if (!skipped && model.engineMissing && model.active) void model.download()
+  },
+)
+
+/* 목소리 없이 시작(#41): TTS가 실패했거나 Gemma가 된 뒤 TTS_STUCK_MS 넘게 준비 중(목소리 교체 중 포함)이면 텍스트 전용으로 바로 시작할 길을 연다 */
 const ttsStuck = ref(false)
 let stuckTimer: ReturnType<typeof setTimeout> | null = null
 watch(
-  () => model.status === 'ready' && model.ttsEnabled && model.ttsStatus !== 'ready',
+  () =>
+    model.status === 'ready' &&
+    model.ttsEnabled &&
+    (model.ttsStatus !== 'ready' || model.voiceSwitching),
   (waiting) => {
     if (stuckTimer) clearTimeout(stuckTimer)
     stuckTimer = null
@@ -166,12 +237,16 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => stuckTimer && clearTimeout(stuckTimer))
+/** 목소리가 끝내 실패했는가. 시작을 막지는 않고 왜 자막인지만 알린다 */
+const voiceFailed = computed(
+  () => model.status === 'ready' && model.ttsEnabled && model.ttsStatus === 'error',
+)
 const voicelessOffer = computed(
   () =>
     model.status === 'ready' &&
     model.ttsEnabled &&
     (model.ttsStatus === 'error' || ttsStuck.value) &&
-    interview.profileDone &&
+    infoDone.value &&
     interview.resumeDone,
 )
 function startVoiceless() {
@@ -204,7 +279,7 @@ async function clearAndRetry() {
   <div ref="root" class="prepare stars snap-root">
     <header class="mono topbar">
       <span>모두의 모의면접 · 준비</span>
-      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다</span>
+      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>
     </header>
 
     <!-- 1. 다운로드 / 초기화 -->
@@ -218,6 +293,7 @@ async function clearAndRetry() {
             :total="model.overallTotal"
             :file-name="fileName"
             :eta="eta"
+            :speed="speed"
             :error-text="
               ttsError ? `목소리를 준비하지 못했습니다: ${model.ttsError}` : (model.error ?? '')
             "
@@ -253,7 +329,7 @@ async function clearAndRetry() {
         <PixelWindow :title="step === 1 ? '어디에 지원하시나요?' : '이력서'">
           <template #tag>
             <div class="stepnav">
-              <PixelTag v-if="step === 1 && interview.profileDone" tone="ok">입력 완료</PixelTag>
+              <PixelTag v-if="step === 1 && infoDone" tone="ok">입력 완료</PixelTag>
               <PixelTag v-if="step === 2 && interview.resumeDone" tone="ok">
                 {{ interview.resumeText.length.toLocaleString() }}자 추출
               </PixelTag>
@@ -273,7 +349,7 @@ async function clearAndRetry() {
                 class="arrow press"
                 data-test="step-next"
                 aria-label="다음: 이력서"
-                :disabled="step === 2 || !interview.profileDone"
+                :disabled="step === 2 || !infoDone"
                 @click="goNext"
               >
                 <CursorIcon />
@@ -283,34 +359,138 @@ async function clearAndRetry() {
 
           <Transition name="fade" mode="out-in">
             <div v-if="step === 1" key="profile" class="step" data-test="step-profile">
-              <div class="field">
-                <span class="mono label">기업 분야</span>
-                <ChoiceMenu
-                  :items="fieldItems"
-                  :model-value="interview.profile.field"
-                  direction="horizontal"
-                  aria-label="기업 분야"
-                  @update:model-value="onField"
-                />
-              </div>
-              <div class="field">
-                <label class="mono label" for="job">지원 직무</label>
-                <input
-                  id="job"
-                  data-test="job"
-                  class="input"
-                  :value="interview.profile.job"
-                  maxlength="40"
-                  placeholder="예: 백엔드 개발자"
-                  @input="interview.setJob(($event.target as HTMLInputElement).value)"
-                  @keydown.enter="tryAdvance"
-                  @blur="tryAdvance"
-                />
-                <span class="mono hint"
-                  >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산 관리
-                  — 입력을 마치면 이력서 단계로 넘어갑니다</span
-                >
-              </div>
+              <!-- 트랙이 보는 칸만 그린다. 2단계 구조는 그대로 두고 안의 칸만 바뀐다 -->
+              <template v-if="interview.track === 'admission'">
+                <div class="two-up">
+                  <div class="field">
+                    <label class="mono label" for="ad-name">이름</label>
+                    <input
+                      id="ad-name"
+                      data-test="ad-name"
+                      class="input"
+                      maxlength="20"
+                      :value="interview.profile.name"
+                      placeholder="예: 홍길동"
+                      @input="setAd('name', ($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="mono label" for="ad-age">나이</label>
+                    <input
+                      id="ad-age"
+                      data-test="ad-age"
+                      class="input"
+                      type="number"
+                      min="10"
+                      max="99"
+                      :value="interview.profile.age ?? ''"
+                      placeholder="예: 19"
+                      @input="setAge(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="mono label" for="ad-univ">지원 대학</label>
+                  <input
+                    id="ad-univ"
+                    data-test="ad-university"
+                    class="input"
+                    maxlength="40"
+                    :value="interview.profile.university"
+                    placeholder="예: 한국대학교"
+                    @input="setAd('university', ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="field">
+                  <label class="mono label" for="ad-dept">지원 학과</label>
+                  <input
+                    id="ad-dept"
+                    data-test="ad-department"
+                    class="input"
+                    maxlength="40"
+                    :value="interview.profile.department"
+                    placeholder="예: 컴퓨터공학과"
+                    @input="setAd('department', ($event.target as HTMLInputElement).value)"
+                    @keydown.enter="tryAdvance"
+                    @blur="tryAdvance"
+                  />
+                  <span class="mono hint"
+                    >면접관이 질문의 방향을 잡는 데 씁니다 — 입력을 마치면 자기소개서 단계로
+                    넘어갑니다</span
+                  >
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="field">
+                  <span class="mono label">기업 분야</span>
+                  <ChoiceMenu
+                    :items="fieldItems"
+                    :model-value="interview.profile.field"
+                    direction="horizontal"
+                    aria-label="기업 분야"
+                    @update:model-value="onField"
+                  />
+                </div>
+                <div class="field">
+                  <label class="mono label" for="job">지원 직무</label>
+                  <input
+                    id="job"
+                    data-test="job"
+                    class="input"
+                    :value="interview.profile.job"
+                    maxlength="40"
+                    placeholder="예: 백엔드 개발자"
+                    @input="interview.setJob(($event.target as HTMLInputElement).value)"
+                    @keydown.enter="tryAdvance"
+                    @blur="tryAdvance"
+                  />
+                  <span class="mono hint"
+                    >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산
+                    관리 — 입력을 마치면 이력서 단계로 넘어갑니다</span
+                  >
+                </div>
+                <!-- 회사명은 벤만 쓴다(서버가 웹을 뒤져 브리핑을 만든다). 선택 입력이라
+                     비워도 시작을 막지 않는다 — 체크리스트에도 넣지 않는다 -->
+                <div v-if="benCompany" class="field">
+                  <label class="mono label" for="company-name"
+                    >지원 회사 <span class="dim">(선택)</span></label
+                  >
+                  <input
+                    id="company-name"
+                    data-test="company-name"
+                    class="input"
+                    :value="interview.profile.companyName"
+                    maxlength="100"
+                    placeholder="예: 삼성전자 DS부문(반도체), 토스(비바리퍼블리카)"
+                    @input="interview.setCompanyName(($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="mono hint"
+                    >회사 이름이 비슷한 곳이 많으면 사업부·서비스명까지 적어 주세요</span
+                  >
+                </div>
+                <!-- 공고 링크도 선택 입력. 회사명과 따로 — 둘 중 하나만 있어도 조사가 돈다 -->
+                <div v-if="benCompany" class="field">
+                  <label class="mono label" for="posting-url"
+                    >모집공고 링크 <span class="dim">(선택)</span></label
+                  >
+                  <input
+                    id="posting-url"
+                    data-test="posting-url"
+                    class="input"
+                    :value="interview.profile.postingUrl"
+                    maxlength="500"
+                    placeholder="예: https://careers.example.com/jobs/1234"
+                    @input="interview.setPostingUrl(($event.target as HTMLInputElement).value)"
+                  />
+                  <span v-if="postingProblem" class="mono warn" data-test="posting-error">{{
+                    postingProblem
+                  }}</span>
+                  <span v-else class="mono hint"
+                    >공고를 열어 요구사항을 질문에 반영합니다. 회사명만 적어도 됩니다</span
+                  >
+                </div>
+              </template>
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
@@ -324,7 +504,7 @@ async function clearAndRetry() {
               >
                 <DocIcon />
                 <span class="mono name">{{
-                  interview.resumeName ?? 'PDF 파일을 끌어다 놓거나 클릭해서 선택'
+                  interview.resumeName ?? `${longDocLabel} PDF를 끌어다 놓거나 클릭해서 선택`
                 }}</span>
                 <span class="mono pick">{{
                   interview.resumeName && interview.resumeName !== FORM_NAME
@@ -347,8 +527,8 @@ async function clearAndRetry() {
               >
                 {{
                   interview.resumeName === FORM_NAME
-                    ? '간단 이력서 수정'
-                    : 'PDF가 없다면 간단 이력서 작성'
+                    ? `간단 ${longDocLabel} 수정`
+                    : `PDF가 없다면 간단 ${longDocLabel} 작성`
                 }}
               </PixelButton>
               <ResumeForm v-show="formOpen" @done="onFormDone" />
@@ -358,15 +538,15 @@ async function clearAndRetry() {
               </div>
               <template v-if="tooShort && !formOpen">
                 <p class="mono warn">
-                  글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 이력서 내용을 직접
-                  붙여넣어 주세요.
+                  글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을
+                  직접 붙여넣어 주세요.
                 </p>
                 <textarea
                   v-model="pasted"
                   data-test="paste"
                   class="input paste"
                   rows="6"
-                  placeholder="이력서 내용을 붙여넣기"
+                  :placeholder="`${longDocLabel} 내용을 붙여넣기`"
                   @input="usePasted"
                   @blur="usePasted"
                 />
@@ -380,14 +560,66 @@ async function clearAndRetry() {
         </PixelWindow>
 
         <!-- 시작 -->
+        <div class="interviewer-row">
+          <span class="mono" data-test="interviewer-chip">면접관: {{ interviewerName }}</span>
+          <!-- 면접 시작을 기다리는 동안(busy)은 잠근다 — 면접은 옛 페르소나로 고정되는데 목소리만 바뀌지 않게 -->
+          <button
+            type="button"
+            class="mono link press"
+            data-test="change-interviewer"
+            :disabled="busy"
+            @click="pickerOpen = !pickerOpen"
+          >
+            {{ pickerOpen ? '닫기' : '바꾸기' }}
+          </button>
+          <!-- 힌트를 꺼 둔 사람이 다시 켜는 유일한 길 -->
+          <button
+            v-if="!hints.enabled"
+            type="button"
+            class="mono link press"
+            data-test="hints-on"
+            @click="hints.enable()"
+          >
+            도움말 다시 보기
+          </button>
+        </div>
+        <div v-if="pickerOpen && !busy" ref="pickerBox">
+          <InterviewerPicker @need-premium="modal.show('premium')" />
+        </div>
+        <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
+             웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
+        <p v-if="iv.current?.premium" class="mono notice" data-test="ben-notice">
+          벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
+          <template v-if="interview.track === 'company'">
+            회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
+            <template v-if="interview.profile.postingUrl.trim()">
+              모집공고 링크를 열어 요구사항을 참고합니다.
+            </template>
+          </template>
+        </p>
+        <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
+             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다 -->
+        <label v-if="iv.current?.premium" class="mono voice-consent" data-test="voice-consent-row">
+          <input
+            type="checkbox"
+            data-test="voice-consent"
+            :checked="interview.voiceConsent"
+            @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
+          />
+          <span>
+            답변 녹음을 목소리 분석을 위해 외부 AI(학교 BAZE 게이트웨이 경유 Google Gemini)로
+            보냅니다. 분석 후 서버에서 지웁니다.
+          </span>
+        </label>
         <div class="start-row">
           <ul class="mono checklist">
             <li>
-              <i :class="{ ok: interview.profileDone, wait: !interview.profileDone }" /> 분야 · 직무
-              입력
+              <i :class="{ ok: infoDone, wait: !infoDone }" />
+              {{ interview.track === 'admission' ? '이름 · 학교 · 학과 입력' : '분야 · 직무 입력' }}
             </li>
             <li>
-              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" /> 이력서 읽기
+              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" />
+              {{ longDocLabel }} 읽기
             </li>
             <li>
               <i
@@ -404,20 +636,32 @@ async function clearAndRetry() {
             <li v-if="model.ttsEnabled">
               <i
                 :class="{
-                  ok: model.ttsStatus === 'ready',
-                  wait: model.ttsStatus !== 'ready',
-                  blink: model.ttsStatus !== 'ready' && model.ttsStatus !== 'error',
+                  ok: voiceReady,
+                  wait: !voiceReady,
+                  blink:
+                    model.voiceSwitching ||
+                    (model.ttsStatus !== 'ready' && model.ttsStatus !== 'error'),
                 }"
               />
-              목소리 준비 ({{
-                model.ttsStatus === 'ready'
-                  ? '완료'
-                  : model.ttsStatus === 'error'
-                    ? '실패'
-                    : `${model.ttsProgress}%`
+              목소리 준비 · {{ interviewerName }} ({{
+                model.voiceSwitching
+                  ? '바꾸는 중'
+                  : model.ttsStatus === 'ready'
+                    ? '완료'
+                    : model.ttsStatus === 'error'
+                      ? '실패'
+                      : `${model.ttsProgress}%`
               }})
             </li>
           </ul>
+          <!-- 목소리를 기다리지 않고 시작할 수 있다. 무엇을 포기하는지는 알고 누르게 한다 -->
+          <p v-if="model.voicePending" class="mono voice-pending" data-test="voice-pending">
+            목소리는 아직 받는 중입니다 — 지금 시작하면 자막으로 진행하다가 준비되는 질문부터
+            말합니다.
+          </p>
+          <p v-else-if="voiceFailed" class="mono voice-pending" data-test="voice-failed">
+            목소리를 준비하지 못했습니다 — 자막으로 진행합니다.
+          </p>
           <div class="start-btns">
             <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
               startLabel
@@ -441,6 +685,9 @@ async function clearAndRetry() {
               ▲ 진행 창으로
             </button>
           </div>
+          <p v-if="model.voiceError" class="mono start-error" data-test="voice-error">
+            {{ model.voiceError }}
+          </p>
           <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
         </div>
       </div>
@@ -449,6 +696,17 @@ async function clearAndRetry() {
 </template>
 
 <style scoped>
+/* 이름·나이는 짧아 나란히 둔다 */
+.two-up {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--sp-4);
+}
+@media (max-width: 560px) {
+  .two-up {
+    grid-template-columns: 1fr;
+  }
+}
 .prepare {
   scroll-padding-top: 72px; /* 고정 상단바 아래에 섹션이 맞춰진다 */
 }
@@ -578,6 +836,31 @@ async function clearAndRetry() {
   max-height: 120px;
   overflow: hidden;
 }
+.interviewer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.notice {
+  margin: 0 0 var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-label);
+}
+.voice-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  line-height: 1.7;
+  cursor: pointer;
+}
+.voice-consent input {
+  margin-top: 0.25em;
+  flex: none;
+}
 .start-row {
   display: flex;
   align-items: center;
@@ -613,6 +896,13 @@ async function clearAndRetry() {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--sp-2);
+}
+
+.voice-pending {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
 }
 .link {
   background: none;

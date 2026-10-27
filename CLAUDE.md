@@ -6,10 +6,10 @@
 
 ## 프로젝트 개요
 
-- 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 이력서·대화·리포트가 사용자 기기를 떠나지 않는다. 포트폴리오 겸 공모전 데모.
-- 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/arm64)
+- 목적: 브라우저 안에서 로컬 LLM(Gemma 4, WebGPU)이 면접관 역할을 하는 모의면접 사이트. 비로그인 사용자의 이력서·대화·리포트는 기기를 떠나지 않는다(로그인 사용자는 동의 후 서버 보관, 프리미엄 면접관 벤은 Claude API — "절대 하지 말 것" 8번). 포트폴리오 겸 공모전 데모.
+- 스택: 프론트 Vite + Vue 3 + TypeScript + Pinia (MediaPipe LLM Inference, pdf.js, Web Speech API) / 백엔드 FastAPI (Python 3.12, uv) / 배포 nginx + docker-compose (linux/amd64, 2026-10-18 파이 → x86 서버 이전)
 - 호스팅: https://github.com/4thIS/Woo-MoMo-Project
-- 배포: 개인 라즈베리파이 웹서버. 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
+- 배포: 개인 웹서버(2026-10-18부터 x86_64 `myserver`, 이전엔 라즈베리파이). 기존 리버스 프록시·도메인 뒤에 docker-compose로 올린다. 모델 파일(`.litertlm`)은 호스트 볼륨 `/srv/momo/models`. 단, 2026-09-17부터 원본 모델·TTS는 브라우저가 Hugging Face에서 직접 받는다(파인튜닝 모델은 파이 서빙으로 복귀, `docs/specs/backend/2026-09-17-model-hosting-hf-design.md`).
 - 설계 문서: `docs/superpowers/specs/2026-09-15-mock-interview-design.md` (전체 아키텍처·화면·LLM 흐름·일정)
 
 ## 역할 분담
@@ -59,17 +59,26 @@ Woo-MoMo-Project/
 - 두 영역이 만나는 지점(`/api` 계약)은 `docs/API.md` 하나로만 정의한다. 각 영역 spec은 이를 참조만 한다.
 - 다른 영역의 spec/plan을 대신 쓰지 않는다. 필요하면 이슈로 요청한다.
 
+## 브랜치 체계
+
+| 브랜치 | 배포처 | 역할 |
+|---|---|---|
+| `main` | https://momo.ssenu.cloud | 운영. 검증이 끝난 것만 올라간다 |
+| `dev` | https://demomo.ssenu.cloud | **개발 기준.** 모든 작업 브랜치가 여기서 갈라지고 여기로 돌아온다 |
+
+작업 브랜치는 `dev`에서 끊고 PR base도 `dev`다(`gh pr create --base dev`). 아직 정식 서비스가 아니므로 검증 전 변경이 운영 도메인에 나가지 않게 한다(이슈 #61).
+
 ## 작업 흐름
 
 ### 새 기능
 
 1. brainstorming → `docs/specs/{area}/`에 spec 작성·커밋
 2. writing-plans → `docs/plans/{area}/`에 plan 작성·커밋 (Task 단위)
-3. `main`에서 `feature/` 브랜치 생성 → plan대로 구현
+3. **`dev`에서** `feature/` 브랜치 생성 → plan대로 구현
 4. 매 작업 TDD (실패 테스트 먼저)
 5. 변경 제안 전 검증 + 리뷰 요청
 6. 리뷰 → Squash merge
-7. `main` 머지 → CI가 arm64 이미지 빌드·GHCR 푸시 → 파이에서 `docker compose pull && up -d`
+7. `dev` 머지 → `demomo.ssenu.cloud`에서 확인 → 묶어서 `main`으로 → CI가 amd64 이미지 빌드·GHCR 푸시 → 배포 서버가 `docker compose pull && up -d`(demomo는 자동 재배포 타이머)
 
 ### 버그 수정
 
@@ -103,20 +112,20 @@ finetune: ...           # 파인튜닝 트랙
 ## 절대 하지 말 것
 
 1. 비밀키·`.env`·인증서 커밋 금지 (`.gitignore` + 훅이 차단)
-2. `main` 직접 push 금지 (Protected Branches)
+2. `main`·`dev` 직접 push 금지 (Protected Branches)
 3. 계약(`backend/data/manifest.json`, `/api` 응답 스키마) 변경과 그 계약에 의존하는 프론트 코드를 같은 변경 제안에 섞지 않음 — **계약 먼저 배포 후 코드**(lockstep). 새 필드는 additive로.
 4. 계층 규율 경로를 기준 대조 없이 수정 금지
 5. `git push --force`, `git reset --hard` 금지
 6. 파괴적 명령 임의 실행 금지 — 막히면 이슈로 남김
 7. 모델 파일(`.litertlm`)·이력서 샘플 PDF 등 대용량/개인정보 파일 커밋 금지 (500KB 훅이 차단)
-8. 이력서 텍스트·대화 내용을 서버로 전송하는 코드 작성 금지 (프로젝트 핵심 가치)
+8. 개인정보는 등급으로 가른다(2026-10-13 개정, 공동 승인 — `docs/specs/backend/2026-10-13-accounts-backend-design.md` 1절). **비로그인** 사용자의 이력서·대화·리포트를 서버로 보내는 코드 작성 금지(기기를 떠나지 않는다). **로그인** 사용자의 데이터는 가입 때 받은 동의 범위(이력서 슬롯·보관함·녹음) 안에서만 서버에 저장한다. **프리미엄 면접관(벤)**의 대화는 외부 AI(Claude API)로 가므로 면접 시작 전에 알린다. (2026-10-23 개정, 공동 승인 — `docs/specs/backend/2026-10-23-ben-voice-baze-design.md`) **프리미엄 면접관(벤)** 사용자가 면접을 시작할 때 **목소리 분석에 동의한 경우에 한해**, 답변 녹음을 학교 BAZE 게이트웨이(외부 AI, Google Gemini)로 보내 분석한다. 서버의 임시 녹음은 분석이 끝나면 바로 지운다. 분석 결과(받아쓰기·등급)는 그 면접의 리포트 생성에만 쓴다. 이 밖으로 사용자 데이터를 보내거나 비밀번호·이력서·대화 본문을 로그에 남기는 코드 작성 금지
 
 ## 문서 인덱스
 
 | 문서 | 내용 |
 |------|------|
 | `docs/superpowers/specs/2026-09-15-mock-interview-design.md` | 전체 설계서 (아키텍처·화면·LLM·배포·일정) |
-| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크 응답 형식 (백엔드 담당이 소유) |
+| `docs/API.md` | 백엔드 계약: 매니페스트·폴백 질문·헬스체크·계정·이력서·보관함·프리미엄(벤)·녹음 (백엔드 담당이 소유) |
 | `docs/specs/{area}/`·`docs/plans/{area}/` | 영역별 설계서·작업지시서 (템플릿: `docs/specs/spec.template.md`, `docs/plans/plan.template.md`) |
 | `docs/demo-checklist.md` | 데모 리허설 수동 시나리오 |
 | `frontend/CLAUDE.md` | frontend 영역 규칙 |

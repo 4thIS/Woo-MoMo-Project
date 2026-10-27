@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
-import { clip, reportHeader, reportToText, splitEmphasis } from '@/utils/reportParser'
+import { clip, reportHeader, reportToText } from '@/utils/reportParser'
+import { reportV2ToText } from '@/utils/reportV2'
 import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
 import { answersForReport } from '@/utils/reportAnswers'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
+import ReportCards from '@/components/report/ReportCards.vue'
+import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
+import { useAccountStore } from '@/stores/account'
+import { useModalStore } from '@/stores/modal'
+import { ARCHIVE_LIMIT } from '@/utils/archive'
 
 const s = useInterviewStore()
+const acc = useAccountStore()
+const modal = useModalStore()
 const fieldLabel = computed(() => (s.profile.field ? FIELD_LABELS[s.profile.field] : ''))
 const modelTurns = computed(() => s.messages.filter((m) => m.role === 'model').length)
 const nQ = computed(() => s.report?.length ?? 0)
@@ -28,9 +36,11 @@ const timing = computed(() =>
 
 const copied = ref(false)
 async function copy() {
-  const text = s.report
-    ? reportToText(s.report, answers.value, fieldLabel.value, s.profile.job, timing.value)
-    : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
+  const text = s.reportV2
+    ? reportV2ToText(s.reportV2, fieldLabel.value, s.profile.job)
+    : s.report
+      ? reportToText(s.report, answers.value, fieldLabel.value, s.profile.job, timing.value)
+      : `${reportHeader(fieldLabel.value, s.profile.job)}\n\n${s.reportRaw}`
   await navigator.clipboard.writeText(text)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
@@ -52,7 +62,10 @@ function printReport() {
     <header class="head">
       <h1 class="display">면접 리포트</h1>
       <div class="meta">
-        <PixelTag tone="muted">{{ fieldLabel }} · {{ s.profile.job }}</PixelTag>
+        <PixelTag tone="muted"
+          >{{ fieldLabel }} · {{ s.profile.job }} · 면접관:
+          {{ s.sessionInterviewer.displayName }}</PixelTag
+        >
         <PixelTag v-if="s.reportStatus === 'done' && s.report" tone="muted"
           >질문 {{ nQ }} · 꼬리질문 {{ nFollow }}</PixelTag
         >
@@ -60,7 +73,9 @@ function printReport() {
           >총 {{ formatDuration(total) }}</PixelTag
         >
       </div>
-      <p class="mono note">이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.</p>
+      <p v-if="!s.archiveSaved" class="mono note">
+        이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.
+      </p>
       <div class="btns">
         <PixelButton
           variant="secondary"
@@ -79,6 +94,22 @@ function printReport() {
         <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
       </div>
     </header>
+
+    <!-- 보관 안내. 리포트가 다 나온 뒤에만 말한다 — 쓰는 중에 꺼내면 아직 거짓이다 -->
+    <div v-if="s.reportStatus === 'done'" class="shelf mono">
+      <p v-if="!acc.signedIn" data-test="save-cta">
+        <span>로그인하면 이 리포트가 보관함에 남습니다.</span>
+        <PixelButton variant="secondary" @click="modal.show('login')">로그인</PixelButton>
+      </p>
+      <p v-else-if="s.archiveSaved" class="ok" data-test="saved">보관함에 남겼습니다.</p>
+      <p v-else data-test="save-failed">
+        보관함에 남기지 못했습니다 — 이 리포트는 이 화면에만 있습니다.
+      </p>
+      <p v-if="s.archiveEvicted.length" class="gone" data-test="evicted">
+        보관 한도({{ ARCHIVE_LIMIT }}개)를 넘어 가장 오래된 기록 {{ s.archiveEvicted.length }}개가
+        사라졌습니다.
+      </p>
+    </div>
 
     <PixelWindow v-if="timing && turns.length" title="시간" data-test="timing" padding="sm">
       <template #tag>
@@ -109,28 +140,8 @@ function printReport() {
       <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
     </PixelWindow>
 
-    <template v-else-if="s.report">
-      <PixelWindow
-        v-for="(it, i) in s.report"
-        :key="i"
-        :title="`Q${i + 1}. ${it.question}`"
-        data-test="card"
-      >
-        <dl class="kv">
-          <dt class="mono">내 답변</dt>
-          <dd class="answers" data-test="answers">
-            <p v-for="(a, j) in answers[i]" :key="j">{{ a }}</p>
-            <p v-if="!answers[i]?.length" class="none">(답변 없음)</p>
-          </dd>
-          <dt class="mono">피드백</dt>
-          <dd>
-            <template v-for="(p, j) in splitEmphasis(it.feedback)" :key="j">
-              <span :class="{ strong: p.strong }">{{ p.text }}</span>
-            </template>
-          </dd>
-        </dl>
-      </PixelWindow>
-    </template>
+    <ReportV2Cards v-else-if="s.reportV2" :report="s.reportV2" />
+    <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
 
     <PixelWindow v-else title="리포트 원문" data-test="raw">
       <pre class="mono raw">{{ s.reportRaw }}</pre>
@@ -153,7 +164,7 @@ function printReport() {
 .report {
   max-width: var(--content-w);
   margin: 0 auto;
-  padding: var(--sp-8) var(--page-x) var(--sp-14);
+  padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
@@ -171,38 +182,29 @@ function printReport() {
 .btns.bottom {
   justify-content: center;
 }
+.shelf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-label);
+}
+.shelf p {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  color: var(--text-2);
+}
+.shelf .ok {
+  color: var(--accent-2);
+}
+.shelf .gone {
+  color: var(--text-3);
+}
 .note {
   color: var(--text-3);
   font-size: var(--fs-meta);
   margin: 0;
-}
-.kv {
-  display: grid;
-  grid-template-columns: 80px 1fr;
-  gap: var(--sp-2) var(--sp-4);
-  margin: 0;
-}
-.answers p {
-  margin: 0;
-  white-space: pre-wrap; /* 지원자가 친 줄바꿈 그대로 */
-}
-.answers p + p {
-  margin-top: var(--sp-2);
-  padding-top: var(--sp-2);
-  border-top: 2px dashed var(--raise); /* 꼬리질문 답변 구분 */
-}
-.answers .none {
-  color: var(--text-3);
-}
-.kv dt {
-  color: var(--text-3);
-}
-.kv dd {
-  margin: 0;
-  line-height: 1.6;
-}
-.strong {
-  color: var(--accent);
 }
 /* .danger를 쓰지 않는 이유: scoped 규칙이 자식(PixelTag) 루트의 tone 클래스에도 걸려 태그 글자색을 덮어쓴다 */
 .err {
@@ -249,15 +251,12 @@ function printReport() {
     gap: var(--sp-4);
   }
   .btns,
-  .note {
+  .note,
+  .shelf {
     display: none;
   }
   .head h1 {
     font-size: var(--fs-h2);
-  }
-  .strong {
-    font-weight: 700;
-    text-decoration: underline;
   }
   /* 카드가 페이지 중간에서 잘리지 않게 */
   .report > * {

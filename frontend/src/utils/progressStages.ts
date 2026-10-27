@@ -1,5 +1,8 @@
-export type WalkAnim = 'walk_underwear' | 'walk_suit' | 'walk_suit_bag'
+export type WalkAnim = 'walk_tee' | 'walk_suit' | 'walk_suit_bag'
 export type OnceAnim = 'pickup_suit' | 'pickup_bag' | 'look_up'
+/** 구간이 길 때 끼어드는 잔동작. 1회 재생하고 걷기로 돌아간다.
+ *  **차림마다 시트가 따로다** — 양복만 입은 구간에 가방 든 판을 쓰면 없던 가방이 생긴다 */
+export type IdleAnim = 'walk_watch' | 'walk_watch_suit'
 export type ItemSprite = 'suit_ground' | 'bag_ground'
 
 export interface Stage {
@@ -7,16 +10,19 @@ export interface Stage {
   walk: WalkAnim | null
   once?: OnceAnim
   item?: ItemSprite
+  /** 이 구간에서 끼어들 수 있는 잔동작 */
+  idles?: readonly IdleAnim[]
   caption: string
 }
 
 export const STAGES: readonly Stage[] = [
-  { at: 0, walk: 'walk_underwear', caption: '출근 준비 중…' },
+  { at: 0, walk: 'walk_tee', caption: '출근 준비 중…' },
   {
     at: 30,
     walk: 'walk_suit',
     once: 'pickup_suit',
     item: 'suit_ground',
+    idles: ['walk_watch_suit'],
     caption: '양복은 챙겼습니다. 가방을 찾는 중…',
   },
   {
@@ -24,6 +30,7 @@ export const STAGES: readonly Stage[] = [
     walk: 'walk_suit_bag',
     once: 'pickup_bag',
     item: 'bag_ground',
+    idles: ['walk_watch'],
     caption: '가방도 챙겼습니다. 회사가 보이기 시작했어요.',
   },
   { at: 100, walk: null, once: 'look_up', caption: '회사 앞입니다' }, // 모델+TTS를 다 받은 뒤 도착 (#26)
@@ -77,6 +84,19 @@ export function progressRate(samples: Sample[], now: number, window = RATE_WINDO
   return dt > 0 && b.p > a.p ? (b.p - a.p) / dt : 0
 }
 
+/**
+ * 남은 시간 문구. **분 단위로 반올림한다** — 회선이 흔들릴 때마다 초가 널뛰면
+ * 숫자가 있는 편이 없느니만 못하다.
+ */
+export function formatEta(sec: number | null): string {
+  if (sec === null) return ''
+  if (sec <= 0) return '곧 끝납니다'
+  if (sec < 60) return '1분 안'
+  const m = Math.round(sec / 60)
+  if (m < 60) return `약 ${m}분`
+  return `약 ${Math.floor(m / 60)}시간 ${m % 60}분`
+}
+
 /** 물건까지 남은 거리(px): (at − 진행률) ÷ 진행 속도 × 걷는 속도. 이미 지났으면 0, 속도를 모르면 null(제자리 유지) */
 export function distanceAhead(
   at: number,
@@ -125,6 +145,10 @@ export function overallFraction(p: DownloadParts): number {
  * 다운로드가 느리면 도착 예정 거리가 수천 px이 되는데, 화면 밖은 어차피 안 보이면서
  * 되돌아와 닿기까지 수십 초가 걸려 구간이 진행률을 못 따라간다. */
 export const MAX_AHEAD = 640
+/** 물건끼리 최소한 이만큼은 떨어뜨린다.
+ * 상한만 두면 느린 다운로드에서 양복·가방·건물의 예상 거리가 **전부** 상한에 걸려
+ * 한 자리에 겹쳐 선다(실제 서버 10% 언저리에서 본 뭉침). 뒤엣것을 차례로 밀어 둔다. */
+export const PROP_SPACING = 140
 
 export interface SceneProp {
   stage: number
@@ -155,12 +179,35 @@ export function stepScene(
 ): SceneStep {
   let next = state
   const out = props.map((pr) => ({ ...pr }))
+  // 아직 안 주운 것들을 가까운 순(at 오름차순)으로 보며 앞엣것 뒤에 줄 세운다.
+  // 개별로 상한만 걸면 멀리 있는 것들이 모두 같은 자리에 선다
+  const queue = out.filter((pr) => !pr.done).sort((a, b) => a.at - b.at)
+  const targets = new Map<SceneProp, number | null>()
+  /** 아직 제 거리에 못 온 물건 — 바닥과 함께 흐르지 않고 제자리에 둔다 */
+  const parked = new Set<SceneProp>()
+  let floor = 0
+  for (const pr of queue) {
+    const dist = distanceAhead(pr.at, progress, rate, speed)
+    if (dist === null) {
+      targets.set(pr, null)
+      continue
+    }
+    const ahead = Math.max(Math.min(dist, MAX_AHEAD), floor)
+    floor = ahead + PROP_SPACING
+    targets.set(pr, charX + pr.gap + ahead)
+    // 보여 주는 자리가 예상 거리와 다르면(상한에 걸렸거나 앞엣것에 막혔으면) **화면 밖에서 기다린다**.
+    // 안 붙들면 바닥 속도로 끌려 들어와 10%에서 양복·가방을 다 주워 버린다
+    if (ahead !== dist) parked.add(pr)
+  }
   for (const pr of out) {
     if (pr.done) continue
-    const dist = distanceAhead(pr.at, progress, rate, speed)
-    const target = dist === null ? null : charX + pr.gap + Math.min(dist, MAX_AHEAD)
+    const target = targets.get(pr) ?? null
     if (pr.x === null) {
       if (target !== null) pr.x = target
+      continue
+    }
+    if (parked.has(pr) && target !== null) {
+      pr.x = target
       continue
     }
     pr.x = approach(pr.x, target, dt, speed)
@@ -184,4 +231,57 @@ export function stepScene(
     }
   }
   return { state: next, props: out }
+}
+
+/* ---------- 잔동작 ----------
+ * 다운로드가 5~15분이라 한 구간을 몇 분씩 본다. 같은 걷기 루프만 돌면 지루하므로
+ * 15~25초마다 하나씩 끼워 넣는다. 일정은 진행률이 아니라 시간으로 돈다 —
+ * 초기화 구간처럼 진행이 멈춰도 캐릭터는 살아 있어야 한다. */
+
+export const IDLE_GAP: readonly [number, number] = [15_000, 25_000]
+
+/** 다음 잔동작 예정 시각(ms) */
+export function nextIdleAt(now: number, rnd: () => number): number {
+  const [a, b] = IDLE_GAP
+  return now + a + rnd() * (b - a)
+}
+
+/** 이 구간에서 나올 잔동작 하나. 없으면 null */
+export function pickIdle(stage: Stage, rnd: () => number): IdleAnim | null {
+  const list = stage.idles
+  if (!list || !list.length) return null
+  return list[Math.min(list.length - 1, Math.floor(rnd() * list.length))]
+}
+
+/* ---------- 지나가는 소품 ----------
+ * 바닥과 같은 속도로 흘러 길이 이어져 보이게 한다. */
+
+/** 지나가는 소품. 고양이·비둘기·자판기를 뺐고 남은 그림이 없어 지금은 비어 있다.
+ *  새 소품 그림을 넣으면 키만 여기 더하면 된다(없는 키를 적으면 조용히 안 그려진다) */
+export const PROP_KEYS: readonly string[] = []
+export const PROP_GAP: readonly [number, number] = [3_000, 7_000]
+/** 한 프레임에 소품이 움직일 수 있는 최대 거리(화면 폭). 탭 복귀로 dt가 커져도 순간이동하지 않게 */
+const MAX_PROP_STEP_RATIO = 1
+
+export interface ScenicProp {
+  key: string
+  x: number
+}
+
+/** 띄울 소품이 없으면 null — 그릴 그림이 없는 키를 만들어 두지 않는다 */
+export function spawnProp(width: number, rnd: () => number): ScenicProp | null {
+  if (!PROP_KEYS.length) return null
+  const key = PROP_KEYS[Math.min(PROP_KEYS.length - 1, Math.floor(rnd() * PROP_KEYS.length))]
+  return { key, x: width + Math.round(rnd() * 40) }
+}
+
+/** 소품을 왼쪽으로 흘리고, 화면 밖으로 나간 것은 버린다 */
+export function stepProps(
+  list: ScenicProp[],
+  dt: number,
+  speed: number,
+  width: number,
+): ScenicProp[] {
+  const move = Math.min(speed * dt, width * MAX_PROP_STEP_RATIO)
+  return list.map((p) => ({ ...p, x: p.x - move })).filter((p) => p.x > -64)
 }

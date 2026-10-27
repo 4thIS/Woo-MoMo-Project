@@ -4,16 +4,47 @@ import { createPinia, setActivePinia } from 'pinia'
 vi.mock('@/services/api', () => ({ getQuestions: vi.fn(), getManifest: vi.fn() }))
 vi.mock('@/services/llm', () => ({ startSession: vi.fn() }))
 vi.mock('@/services/tts', () => ({ synthesize: vi.fn(), initTts: vi.fn(), disposeTts: vi.fn() }))
-vi.mock('@/services/audio', () => ({ playClip: vi.fn(), setMuted: vi.fn(), warmUpAudio: vi.fn() }))
+vi.mock('@/services/audio', () => ({
+  playClip: vi.fn(),
+  setMuted: vi.fn(),
+  warmUpAudio: vi.fn(),
+  decodeClip: vi.fn(async () => null),
+}))
+vi.mock('@/services/recorder', () => ({ startRecording: vi.fn() }))
+vi.mock('@/services/benInterview', async (orig) => ({
+  ...(await orig<typeof import('@/services/benInterview')>()),
+  startInterview: vi.fn(),
+  turnStream: vi.fn(),
+  reportStream: vi.fn(),
+  uploadVoice: vi.fn(),
+}))
 import { getQuestions } from '@/services/api'
 import { startSession } from '@/services/llm'
 import type { LlmSession } from '@/services/llm'
 import { useModelStore } from './model'
 import { synthesize } from '@/services/tts'
-import { playClip, setMuted } from '@/services/audio'
-import { PLAY_GRACE_MS, SYNTH_TIMEOUT_MS, TTS_WARNING, useInterviewStore } from './interview'
+import { decodeClip, playClip, setMuted } from '@/services/audio'
+import { startRecording } from '@/services/recorder'
+import {
+  BenError,
+  reportStream,
+  startInterview,
+  turnStream,
+  uploadVoice,
+} from '@/services/benInterview'
+import {
+  PLAY_GRACE_MS,
+  RECORDING_FULL,
+  RECORDING_MAX_BYTES,
+  RESUME_MIN,
+  SYNTH_TIMEOUT_MS,
+  TTS_WARNING,
+  useInterviewStore,
+} from './interview'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
+import { useAccountStore, setAccountApi } from './account'
+import { makeMockAccount } from '@/services/accountMock'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -45,6 +76,9 @@ function fakeSession(replies: string[], tokens = 100): LlmSession & { sent: stri
     async dispose() {},
   }
 }
+
+/** 리포트 JSON을 모델이 내놓는 코드펜스로 감싼다 */
+const fenced = (json: string) => ['```json', json, '```'].join('\n')
 
 async function readyStore() {
   const model = useModelStore()
@@ -575,16 +609,23 @@ describe('interview flow — 음성', () => {
   })
 })
 
-describe('canStart — TTS', () => {
-  it('manifest.tts가 있고 ttsStatus가 ready가 아니면 잠기고 이유를 말한다', async () => {
+describe('canStart — TTS (멘토링 보완: 목소리를 기다리지 않는다)', () => {
+  it('목소리를 받는 중이어도 시작할 수 있다 — 자막으로 가다가 합류한다', async () => {
     const s = await readyStore()
     const m = useModelStore()
     m.manifest = { ...m.manifest!, tts: TTS }
     m.ttsStatus = 'downloading'
-    expect(s.canStart).toBe(false)
-    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
-    m.ttsStatus = 'ready'
     expect(s.canStart).toBe(true)
+    expect(s.startBlockReason).toBeNull()
+    expect(m.voicePending).toBe(true)
+  })
+
+  it('모델이 아직이면 그대로 잠긴다 — 면접관 없이는 못 연다', async () => {
+    const s = await readyStore()
+    const m = useModelStore()
+    m.status = 'downloading'
+    expect(s.canStart).toBe(false)
+    expect(s.startBlockReason).toBe('면접관이 자리에 앉으면 열립니다')
   })
 })
 
@@ -713,15 +754,1118 @@ describe('startBlockReason — 실패와 대기를 구분한다 (#41)', () => {
     useModelStore().status = 'error'
     expect(s.startBlockReason).toBe('면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도')
   })
-  it('TTS 실패 vs 준비 중', async () => {
+  it('목소리는 실패해도 준비 중이어도 시작을 막지 않는다 — 이유는 준비 화면 문구가 말한다', async () => {
     const s = await readyStore()
     const m = useModelStore()
     m.manifest = { ...m.manifest!, tts: TTS }
     m.ttsStatus = 'error'
-    expect(s.startBlockReason).toBe(
-      '목소리를 준비하지 못했습니다 — 다시 시도하거나 목소리 없이 시작',
-    )
+    expect(s.startBlockReason).toBeNull()
     m.ttsStatus = 'initializing'
-    expect(s.startBlockReason).toBe('면접관 목소리를 준비하면 열립니다')
+    expect(s.startBlockReason).toBeNull()
+  })
+})
+
+import { useInterviewerStore } from './interviewer'
+import { PERSONAS } from '@/prompts/personas'
+import { buildReportInstruction } from '@/prompts/report'
+
+describe('interview store — 면접관 페르소나', () => {
+  it('시작할 때 고른 면접관을 고정하고 그 면접관의 페르소나로 프롬프트를 만든다(이후 선택을 바꿔도 그대로)', async () => {
+    // 벤(m2)은 서버가 프롬프트를 가지므로 여기서는 브라우저 모델을 쓰는 면접관으로 본다
+    useInterviewerStore().select('f2')
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('f2')
+    expect(s.sessionInterviewer.displayName).toBe('쥴리')
+    expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
+    useInterviewerStore().select('m1')
+    expect(s.sessionInterviewer.id).toBe('f2')
+  })
+  it('면접관 id가 아니라 persona로 페르소나를 찾는다: 압박 면접관(여) f2도 sharp', async () => {
+    useInterviewerStore().select('f2')
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('f2')
+    expect(startSession).toHaveBeenCalledWith(expect.stringContaining(PERSONAS.sharp.character!))
+  })
+  it('기본 면접관(남) m1은 standard — 성격 문장이 없다', async () => {
+    useInterviewerStore().select('m1')
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).not.toContain(PERSONAS.gentle.character!)
+    expect(prompt).not.toContain(PERSONAS.sharp.character!)
+  })
+  it('선택이 없으면 기본 면접관(m1·데이빗, standard) — 온화·압박 성격 문장이 없다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(s.interviewerId).toBe('m1')
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).not.toContain(PERSONAS.gentle.character!)
+    expect(prompt).not.toContain(PERSONAS.sharp.character!)
+  })
+  it('리포트는 면접관 페르소나의 말투 지시문으로 요청한다', async () => {
+    useInterviewerStore().select('f2')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(sess.sent).toContain(buildReportInstruction(PERSONAS.sharp))
+    expect(sess.sent).not.toContain(REPORT_INSTRUCTION)
+  })
+  it('기본 면접관(standard)의 리포트 지시문은 기존 지시문 그대로', async () => {
+    useInterviewerStore().select('m1')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(sess.sent.at(-1)).toBe(buildReportInstruction(PERSONAS.standard))
+  })
+  it('매니페스트에 systemPromptOverride가 있으면 리포트도 말투 없이 기본 지시문 그대로(spec 5.1·7절)', async () => {
+    // 리포트 지시문은 브라우저 모델 쪽 이야기다 — 벤은 서버가 리포트를 쓴다
+    useInterviewerStore().select('f2')
+    const json = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+    const sess = fakeSession(['q', json])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = await readyStore()
+    useModelStore().manifest!.systemPromptOverride = '파인튜닝 모델 전용 프롬프트'
+    await s.start()
+    await s.finish()
+    expect(sess.sent.at(-1)).toBe(REPORT_INSTRUCTION)
+  })
+  it('시작하면 미리 듣기를 멈추고, reset은 면접관 스냅샷을 비운다', async () => {
+    const iv = useInterviewerStore()
+    iv.$patch({ playingId: 'm1' })
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(iv.playingId).toBeNull()
+    await s.reset()
+    expect(s.interviewerId).toBeNull()
+  })
+})
+
+describe('interview store — 트랙별 입력', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  const ready = () => {
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+  }
+
+  it('트랙은 고른 면접관에서 끌어낸다 — 따로 들고 있지 않는다', () => {
+    const s = useInterviewStore()
+    // 선택이 없으면 기본 면접관(데이빗)으로 떨어진다 — 칩·프롬프트와 같다
+    expect(s.track).toBe('company')
+    useInterviewerStore().select('f3')
+    expect(s.track).toBe('admission')
+    useInterviewerStore().select('m1')
+    expect(s.track).toBe('company')
+  })
+
+  it('벤은 트랙을 고르기 전에는 null이다', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    expect(s.track).toBeNull()
+    s.setTrack('admission')
+    expect(s.track).toBe('admission')
+  })
+
+  it('대입은 다섯 칸이 다 차야 시작할 수 있다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    expect(s.canStart).toBe(false)
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.canStart).toBe(true)
+  })
+
+  it('대입은 칸을 다 채우면 실제로 면접이 열린다 — 버튼만 켜지고 안 열리면 안 된다', async () => {
+    const sess = fakeSession(['자기소개를 해주세요.'])
+    vi.mocked(startSession).mockResolvedValue(sess)
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.canStart).toBe(true)
+    await s.start()
+    expect(s.phase).toBe('interview')
+  })
+
+  it('대입 프롬프트는 학교·학과·이름을 담고 자기소개서라고 부른다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['자기소개를 해주세요.']))
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('f3')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    await s.start()
+    const prompt = vi.mocked(startSession).mock.calls.at(-1)![0]
+    expect(prompt).toContain('한국대 컴퓨터공학과')
+    expect(prompt).toContain('홍길동')
+    expect(prompt).toContain('자기소개서')
+    expect(prompt).not.toContain('분야 기업의 채용 면접관') // 회사용 문구가 새면 안 된다
+  })
+
+  it('면접관을 바꿔 트랙이 바뀌면 앞 트랙의 입력은 쓰지 않는다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('m1')
+    s.setResume('이력서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setField('it')
+    s.setJob('백엔드 개발자')
+    expect(s.canStart).toBe(true)
+    // 대입으로 바꾸면 회사 입력만으로는 못 간다
+    useInterviewerStore().select('f3')
+    expect(s.canStart).toBe(false)
+  })
+
+  it('벤으로 트랙을 고르면 그 트랙의 조건을 본다', () => {
+    const s = useInterviewStore()
+    ready()
+    useInterviewerStore().select('m2')
+    s.setResume('이력서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setField('it')
+    s.setJob('백엔드 개발자')
+    expect(s.canStart).toBe(false) // 트랙 미선택
+    s.setTrack('company')
+    expect(s.canStart).toBe(true)
+  })
+
+  it('면접관을 바꾸면 벤에서 고른 트랙은 지워진다', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    s.setTrack('admission')
+    useInterviewerStore().select('m1')
+    s.setTrack(null)
+    expect(s.track).toBe('company')
+  })
+})
+
+describe('면접이 끝나면 보관함에 남긴다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+  const withReport = () => fakeSession(['q', '```json\n' + REPORT + '\n```'])
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+  })
+
+  async function signedIn() {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    return a
+  }
+
+  it('로그인 상태로 면접을 마치면 보관함에 남는다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(a.archive).toHaveLength(1)
+    expect(s.archiveSaved).toBe(true)
+    expect(a.archive[0]).toMatchObject({ interviewerId: 'm1', premium: false, track: 'company' })
+  })
+
+  it('대화와 리포트를 함께 남긴다 — 상세로 다시 볼 수 있어야 한다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    const full = await a.getArchive(a.archive[0].id)
+    expect(full?.report).toHaveLength(1)
+    expect(full?.messages.length).toBeGreaterThan(0)
+    expect(full?.field).toBe('it')
+    expect(full?.job).toBe('백엔드')
+  })
+
+  it('비로그인은 저장하지 않는다 — 조용히 실패하지도 않는다', async () => {
+    const a = useAccountStore()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(a.archive).toEqual([])
+    expect(a.error).toBeNull()
+    expect(s.reportStatus).toBe('done')
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('리포트가 실패하면 저장하지 않는다 — 반쪽짜리를 남기지 않는다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue({
+      ...withReport(),
+      send: vi.fn().mockRejectedValue(new Error('down')),
+    } as unknown as LlmSession)
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportStatus).toBe('error')
+    expect(a.archive).toEqual([])
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('저장이 실패하면 리포트는 그대로 보이고 저장만 안 된 것으로 둔다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue(null)
+    await s.finish()
+    expect(s.reportStatus).toBe('done')
+    expect(s.report).toHaveLength(1)
+    expect(s.archiveSaved).toBe(false)
+  })
+
+  it('밀려난 기록이 있으면 알려 준다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue({
+      entry: a.archive[0] ?? ({ id: 'a1' } as never),
+      evicted: ['old1'],
+    })
+    await s.finish()
+    expect(s.archiveEvicted).toEqual(['old1'])
+  })
+
+  it('벤으로 본 면접은 premium: true로 저장된다', async () => {
+    const a = await signedIn()
+    useInterviewerStore().select('m2')
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    s.setTrack('company')
+    await s.start()
+    await s.finish()
+    expect(a.archive[0]).toMatchObject({ interviewerId: 'm2', premium: true })
+  })
+
+  it('finish가 두 번 불려도 한 번만 저장한다', async () => {
+    const a = await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    await s.finish()
+    expect(a.archive).toHaveLength(1)
+  })
+
+  it('reset은 저장 흔적을 지운다 — 다음 면접에 남으면 안 된다', async () => {
+    await signedIn()
+    vi.mocked(startSession).mockResolvedValue(withReport())
+    const s = await readyStore()
+    await s.start()
+    await s.finish()
+    await s.reset()
+    expect(s.archiveSaved).toBe(false)
+    expect(s.archiveEvicted).toEqual([])
+  })
+})
+
+describe('프리미엄 면접 녹음', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+  /** 질문 → (답변) → 질문 → 리포트 */
+  const replies = () => fakeSession(['q1', 'q2', '```json\n' + REPORT + '\n```'])
+
+  function fakeRecorder(size = 10) {
+    const cut = vi.fn(async () => new Blob([new Uint8Array(size)], { type: 'audio/webm' }))
+    const stop = vi.fn(async () => null)
+    return { cut, stop }
+  }
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(startRecording).mockReset()
+    // 벤은 서버 면접이다 — 녹음은 엔진과 무관하지만 면접이 열려야 볼 수 있다
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_rec',
+      session: {
+        userId: 'u1',
+        email: 'a@b.com',
+        tier: 'premium',
+        tickets: 9,
+        isAdmin: false,
+        profile: { name: null, age: null },
+        createdAt: '2026-10-13T00:00:00.000Z',
+      },
+    })
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta) => {
+      onDelta('질문입니다.')
+      return { ended: false }
+    })
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta) => {
+      onDelta(fenced(REPORT))
+    })
+  })
+
+  async function premiumStore() {
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    return s
+  }
+
+  it('버전 2 리포트가 오면 그것으로 그린다 — 예전 파서는 쓰지 않는다', async () => {
+    const v2 = {
+      version: 2 as const,
+      items: [
+        {
+          id: 'Q1',
+          parent: null,
+          answer: 1,
+          kind: 'main' as const,
+          question: '자기소개',
+          answerSummary: '요약',
+          feedback: '피드백',
+          delivery: null,
+          measurements: null,
+        },
+      ],
+      summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+    }
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta, _s, _d, hooks) => {
+      onDelta('{"items":')
+      hooks?.onReport?.(v2)
+    })
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportV2).toEqual(v2)
+    // 원문은 JSON 조각이라 예전 파서로는 못 읽는다. 그래도 화면은 비지 않는다
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('reset이 오면 쓰다 만 원문과 리포트를 버린다', async () => {
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta, _s, _d, hooks) => {
+      onDelta('쓰다 만 것')
+      hooks?.onReset?.()
+      onDelta(fenced(REPORT))
+    })
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportRaw).not.toContain('쓰다 만 것')
+    expect(s.report?.length).toBeGreaterThan(0)
+  })
+
+  it('버전 2가 없으면 예전 파서로 읽는다 — 플래그가 꺼진 서버', async () => {
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(s.reportV2).toBeNull()
+    expect(s.report?.length).toBeGreaterThan(0)
+  })
+
+  it('목소리 분석 동의는 기본 꺼짐이고, 켜야 시작 요청에 실린다', async () => {
+    const s = await premiumStore()
+    expect(s.voiceConsent).toBe(false)
+    expect(s.benRequest()).not.toHaveProperty('voiceAnalysisConsent')
+    s.setVoiceConsent(true)
+    expect(s.benRequest()).toMatchObject({ voiceAnalysisConsent: true })
+  })
+
+  it('서버가 on이라고 해야 녹음을 올린다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(decodeClip).mockResolvedValue({
+      samples: new Float32Array(16_000),
+      sampleRate: 16_000,
+    })
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: { tickets: 9 } as never,
+      voiceAnalysis: 'on',
+    })
+    const s = await premiumStore()
+    s.setVoiceConsent(true)
+    await s.start()
+    await s.send('첫 답변입니다')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vi.mocked(uploadVoice)).toHaveBeenCalled()
+    const [id, answer, wav] = vi.mocked(uploadVoice).mock.calls[0]
+    expect(id).toBe('pi_1')
+    expect(answer).toBe(1)
+    // RIFF 머리가 붙은 WAV여야 한다
+    expect(String.fromCharCode(...new Uint8Array(wav, 0, 4))).toBe('RIFF')
+  })
+
+  it('서버가 off·unavailable이면 올리지 않는다 — 브라우저 측정만 쓴다', async () => {
+    for (const voiceAnalysis of ['off', 'unavailable'] as const) {
+      vi.mocked(uploadVoice).mockClear()
+      vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+      vi.mocked(decodeClip).mockResolvedValue({
+        samples: new Float32Array(16_000),
+        sampleRate: 16_000,
+      })
+      vi.mocked(startInterview).mockResolvedValue({
+        interviewId: 'pi_1',
+        session: { tickets: 9 } as never,
+        voiceAnalysis,
+      })
+      const s = await premiumStore()
+      s.setVoiceConsent(true)
+      await s.start()
+      await s.send('답변')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(vi.mocked(uploadVoice)).not.toHaveBeenCalled()
+    }
+  })
+
+  it('올리기가 실패해도 면접은 그대로 간다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(decodeClip).mockResolvedValue({
+      samples: new Float32Array(16_000),
+      sampleRate: 16_000,
+    })
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: { tickets: 9 } as never,
+      voiceAnalysis: 'on',
+    })
+    vi.mocked(uploadVoice).mockResolvedValue(false)
+    const s = await premiumStore()
+    s.setVoiceConsent(true)
+    await s.start()
+    await s.send('답변')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(vi.mocked(uploadVoice)).toHaveBeenCalled() // 올리려 시도는 했다
+    expect(s.genError).toBeNull()
+    expect(s.messages.length).toBeGreaterThan(1)
+  })
+
+  it('프리미엄 면접이 아니면 녹음을 시작하지 않는다', async () => {
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await readyStore()
+    await s.start()
+    expect(startRecording).not.toHaveBeenCalled()
+    expect(s.recordingCount).toBe(0)
+  })
+
+  it('프리미엄 면접이면 녹음을 시작한다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    expect(startRecording).toHaveBeenCalledOnce()
+  })
+
+  it('권한을 거절해도 면접은 그대로 간다 — 티켓은 이미 썼다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(null)
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    expect(s.stage).toBe('waiting')
+    await s.send('답변입니다')
+    expect(s.messages.filter((m) => m.role === 'model')).toHaveLength(2)
+    expect(s.recordingCount).toBe(0)
+  })
+
+  it('답변마다 조각을 남긴다 — 면접관 말은 버린다', async () => {
+    const rec = fakeRecorder()
+    vi.mocked(startRecording).mockResolvedValue(rec)
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.send('답변입니다')
+    expect(s.recordingCount).toBe(1)
+    // 질문 2번 + 답변 1번 = cut 3번. 질문 조각은 버려진다
+    expect(rec.cut).toHaveBeenCalledTimes(3)
+  })
+
+  it('상한을 넘으면 더 녹음하지 않고 알린다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder(RECORDING_MAX_BYTES + 1))
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.send('답변입니다')
+    expect(s.recordingWarning).toBe(RECORDING_FULL)
+    await s.send('두 번째 답변')
+    expect(s.recordingCount).toBe(1)
+  })
+
+  it('녹음이 있으면 hasRecording: true로 저장된다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.send('답변입니다')
+    await s.finish()
+    expect(a.archive[0]).toMatchObject({ hasRecording: true, premium: true })
+  })
+
+  it('녹음이 없으면 hasRecording: false로 저장된다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    vi.mocked(startRecording).mockResolvedValue(null)
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(a.archive[0]).toMatchObject({ hasRecording: false })
+  })
+
+  it('면접이 끝나면 마이크를 놓는다 — 빨간 점이 계속 켜져 있으면 안 된다', async () => {
+    const rec = fakeRecorder()
+    vi.mocked(startRecording).mockResolvedValue(rec)
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.finish()
+    expect(rec.stop).toHaveBeenCalled()
+  })
+
+  it('reset은 녹음 흔적을 지운다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(fakeRecorder())
+    vi.mocked(startSession).mockResolvedValue(replies())
+    const s = await premiumStore()
+    await s.start()
+    await s.send('답변입니다')
+    await s.reset()
+    expect(s.recordingCount).toBe(0)
+    expect(s.recordingWarning).toBeNull()
+  })
+})
+
+describe('벤 면접 — 서버가 대화를 가진다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(startInterview).mockReset()
+    vi.mocked(turnStream).mockReset()
+    vi.mocked(reportStream).mockReset()
+    vi.mocked(startInterview).mockResolvedValue({
+      interviewId: 'pi_1',
+      session: {
+        userId: 'u1',
+        email: 'a@b.com',
+        tier: 'premium',
+        tickets: 9,
+        isAdmin: false,
+        profile: { name: null, age: null },
+        createdAt: '2026-10-13T00:00:00.000Z',
+      },
+    })
+    vi.mocked(turnStream).mockImplementation(async (_id, _answer, onDelta) => {
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta) => {
+      onDelta('```json\n' + REPORT + '\n```')
+    })
+  })
+
+  async function benStore() {
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    return s
+  }
+
+  it('벤이면 서버 면접을 시작하고 브라우저 모델은 부르지 않는다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(startInterview).toHaveBeenCalledOnce()
+    expect(startSession).not.toHaveBeenCalled()
+    expect(s.phase).toBe('interview')
+  })
+
+  it('트랙에 맞는 묶음을 보낸다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      track: 'company',
+      company: { field: 'it', job: '백엔드' },
+    })
+  })
+
+  it('벤의 대입 면접도 열린다 — 대입은 분야 칸을 쓰지 않는다', async () => {
+    const m = useModelStore()
+    m.status = 'ready'
+    m.ttsStatus = 'ready'
+    useInterviewerStore().select('m2')
+    const s = useInterviewStore()
+    s.setTrack('admission')
+    s.setResume('자소서.pdf', 'x'.repeat(RESUME_MIN))
+    s.setAdmission({ name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' })
+    expect(s.profile.field).toBeNull() // 대입은 분야를 고르는 칸이 없다
+    expect(s.canStart).toBe(true)
+    await s.start()
+    expect(s.phase).toBe('interview')
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      track: 'admission',
+      admission: { name: '홍길동', age: 19, university: '한국대', department: '컴퓨터공학과' },
+    })
+  })
+
+  it('회사명을 적으면 시작 요청에 실어 보낸다 — 비우면 보내지 않는다', async () => {
+    const s = await benStore()
+    s.setCompanyName('  토스(비바리퍼블리카)  ')
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      company: { field: 'it', job: '백엔드', name: '토스(비바리퍼블리카)' },
+    })
+    // 공백만 넣으면 아예 보내지 않는다 (이미 면접이 열려 start는 다시 안 되므로 묶음만 본다)
+    s.setCompanyName('   ')
+    expect(s.benRequest()).toMatchObject({ track: 'company' })
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('name')
+  })
+
+  it('모집공고 링크를 적으면 시작 요청에 실어 보낸다 — 비우면 보내지 않는다', async () => {
+    const s = await benStore()
+    s.setPostingUrl('  https://careers.example.com/jobs/1  ')
+    await s.start()
+    expect(vi.mocked(startInterview).mock.calls[0][0]).toMatchObject({
+      company: { postingUrl: 'https://careers.example.com/jobs/1' },
+    })
+    s.setPostingUrl('')
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('postingUrl')
+  })
+
+  it('한글이 든 공고 링크는 퍼센트 인코딩해서 보낸다 — 서버는 ASCII만 받는다', async () => {
+    const s = await benStore()
+    s.setPostingUrl('https://example.com/채용')
+    expect((s.benRequest() as { company: object }).company).toHaveProperty(
+      'postingUrl',
+      'https://example.com/%EC%B1%84%EC%9A%A9',
+    )
+  })
+
+  it('형식이 틀린 공고 링크는 아예 보내지 않는다 — 티켓을 먼저 쓰지 않게', async () => {
+    const s = await benStore()
+    s.setPostingUrl('example.com/jobs')
+    expect((s.benRequest() as { company: object }).company).not.toHaveProperty('postingUrl')
+  })
+
+  it('서버가 공고 링크를 퇴짜 놓으면 그 칸 옆 안내로 남긴다 — 고쳐 넣으면 사라진다', async () => {
+    const s = await benStore()
+    vi.mocked(startInterview).mockRejectedValueOnce(new BenError('invalid', 'postingUrl'))
+    s.setPostingUrl('https://example.com/a')
+    await s.start()
+    expect(s.postingError).toMatch(/\S/)
+    expect(s.phase).not.toBe('interview')
+    s.setPostingUrl('https://example.com/b')
+    expect(s.postingError).toBeNull()
+  })
+
+  it('조사 중이면 회사명과 함께 알리고, 끝나면 내린다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'researching' })
+      expect(useInterviewStore().briefing).toBe('researching')
+      onStatus?.({ phase: 'briefing', ok: true })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('토스')
+    await s.start()
+    expect(s.briefing).toBeNull() // 성공이면 아무 말도 남기지 않는다
+  })
+
+  it('reset은 회사명과 브리핑 표시를 지운다 — 다음 면접에 묻어 가면 안 된다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'briefing', ok: false })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('토스')
+    await s.start()
+    expect(s.briefing).toBe('failed')
+    await s.reset()
+    expect(s.briefing).toBeNull()
+    expect(s.profile.companyName).toBe('')
+  })
+
+  it('조사에 실패하면 한 줄 남긴다 — 면접은 그대로 이어진다', async () => {
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta, _sig, onStatus) => {
+      onStatus?.({ phase: 'briefing', ok: false })
+      onDelta('자기소개를 해 주세요.')
+      return { ended: false }
+    })
+    const s = await benStore()
+    s.setCompanyName('없는회사')
+    await s.start()
+    expect(s.briefing).toBe('failed')
+    expect(s.messages.at(-1)).toMatchObject({ role: 'model', text: '자기소개를 해 주세요.' })
+  })
+
+  it('첫 질문은 답변 없이 받아 와 대화에 남는다', async () => {
+    const s = await benStore()
+    await s.start()
+    expect(vi.mocked(turnStream).mock.calls[0][1]).toBeUndefined()
+    expect(s.messages.at(-1)).toMatchObject({ role: 'model', text: '자기소개를 해 주세요.' })
+  })
+
+  it('답변은 서버로 간다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.send('안녕하세요')
+    expect(vi.mocked(turnStream).mock.calls[1][1]).toBe('안녕하세요')
+    expect(s.messages.filter((m) => m.role === 'user')).toHaveLength(1)
+  })
+
+  it('서버가 끝났다고 하면 끝난다 — 종료 문장을 프론트가 다시 찾지 않는다', async () => {
+    const s = await benStore()
+    await s.start()
+    vi.mocked(turnStream).mockImplementation(async (_id, _a, onDelta) => {
+      onDelta('수고하셨습니다.')
+      return { ended: true }
+    })
+    await s.send('네')
+    expect(s.ended).toBe(true)
+  })
+
+  it('티켓이 없으면 면접이 시작되지 않고 이유를 남긴다', async () => {
+    vi.mocked(startInterview).mockRejectedValue(new BenError('no_tickets'))
+    const s = await benStore()
+    await s.start()
+    expect(s.phase).not.toBe('interview')
+    expect(s.genError).toContain('티켓')
+  })
+
+  it('턴이 실패해도 면접은 살아 있다 — 같은 답변을 다시 보낼 수 있다', async () => {
+    const s = await benStore()
+    await s.start()
+    vi.mocked(turnStream).mockRejectedValueOnce(new BenError('claude_error'))
+    await s.send('안녕하세요')
+    expect(s.genError).toMatch(/\S/)
+    expect(s.ended).toBe(false)
+    await s.retryLast()
+    expect(s.genError).toBeNull()
+  })
+
+  it('리포트는 서버가 쓴다 — 원문을 파서에 넣는다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(reportStream).toHaveBeenCalledOnce()
+    expect(s.reportStatus).toBe('done')
+    expect(s.report).toEqual([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+  })
+
+  it('보관함에 어느 벤 면접인지 함께 남긴다 — 없으면 서버가 거절한다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(s.archiveDraft()).toMatchObject({ premium: true, premiumInterviewId: 'pi_1' })
+  })
+
+  it('버전 2 리포트는 받은 그대로 보관함에 남긴다 — 상세가 같은 화면을 다시 그린다', async () => {
+    const v2 = {
+      version: 2 as const,
+      items: [
+        {
+          id: 'Q1',
+          parent: null,
+          answer: 1,
+          kind: 'main' as const,
+          question: '자기소개',
+          answerSummary: '요약',
+          feedback: '피드백',
+          delivery: null,
+          measurements: null,
+        },
+      ],
+      summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+    }
+    vi.mocked(reportStream).mockImplementation(async (_id, _onDelta, _s, _d, hooks) => {
+      hooks?.onReport?.(v2)
+    })
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    const draft = s.archiveDraft()
+    expect(draft.reportV2).toEqual(v2)
+    expect(draft.questionCount).toBe(1)
+  })
+
+  it('버전 1 리포트에는 reportV2 칸을 넣지 않는다 — 옛 기록과 같게 둔다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    const s = await benStore()
+    await s.start()
+    await s.finish()
+    expect(s.archiveDraft()).not.toHaveProperty('reportV2')
+  })
+
+  it('무료 면접관은 서버를 부르지 않는다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    expect(startInterview).not.toHaveBeenCalled()
+  })
+
+  it('reset은 서버 면접 id를 지운다 — 다음 면접이 남의 id로 가면 안 된다', async () => {
+    const s = await benStore()
+    await s.start()
+    await s.reset()
+    await s.finish()
+    // 지운 뒤에는 부를 면접이 없다 — 남은 id로 남의 리포트를 받아 오면 안 된다
+    expect(reportStream).not.toHaveBeenCalled()
+  })
+})
+
+describe('녹음은 보관함에 올라가야 남는다', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+
+  function fakeRecorder() {
+    return {
+      cut: vi.fn(async () => new Blob([new Uint8Array(32)], { type: 'audio/webm' })),
+      stop: vi.fn(async () => null),
+    }
+  }
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(startRecording).mockReset().mockResolvedValue(fakeRecorder())
+    vi.mocked(startInterview)
+      .mockReset()
+      .mockResolvedValue({
+        interviewId: 'pi_rec',
+        session: {
+          userId: 'u1',
+          email: 'a@b.com',
+          tier: 'premium',
+          tickets: 9,
+          isAdmin: false,
+          profile: { name: null, age: null },
+          createdAt: '2026-10-13T00:00:00.000Z',
+        },
+      })
+    vi.mocked(turnStream)
+      .mockReset()
+      .mockImplementation(async (_id, _a, onDelta) => {
+        onDelta('질문입니다.')
+        return { ended: false }
+      })
+    vi.mocked(reportStream)
+      .mockReset()
+      .mockImplementation(async (_id, onDelta) => {
+        onDelta(fenced(REPORT))
+      })
+  })
+
+  async function benWithClip() {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    // 서버는 **그 계정의** 세션을 돌려준다 — 지어낸 세션을 넣으면 뒤따르는 저장이 남의 것이 된다
+    vi.mocked(startInterview).mockResolvedValue({ interviewId: 'pi_rec', session: a.session! })
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    await s.start()
+    await s.send('답변입니다')
+    return { s, a }
+  }
+
+  it('기록을 만든 뒤에 올린다 — 기록 id가 있어야 서버가 받는다', async () => {
+    const { s, a } = await benWithClip()
+    const spy = vi.spyOn(a, 'uploadRecording')
+    await s.finish()
+    expect(spy).toHaveBeenCalledOnce()
+    const [archiveId, turn, clip] = spy.mock.calls[0]
+    expect(archiveId).toBe(a.archive[0].id)
+    expect(turn).toBe(0)
+    expect(clip).toBeInstanceOf(Blob)
+  })
+
+  it('올린 녹음이 상세에 보인다', async () => {
+    const { s, a } = await benWithClip()
+    await s.finish()
+    const full = await a.getArchive(a.archive[0].id)
+    expect(full?.recordings).toHaveLength(1)
+    expect(full?.hasRecording).toBe(true)
+  })
+
+  it('기록을 못 남겼으면 올리지 않는다 — 붙일 기록이 없다', async () => {
+    const { s, a } = await benWithClip()
+    vi.spyOn(a, 'saveArchive').mockResolvedValue(null)
+    const up = vi.spyOn(a, 'uploadRecording')
+    await s.finish()
+    expect(up).not.toHaveBeenCalled()
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('업로드가 실패해도 리포트는 그대로 보인다 — 녹음은 덤이다', async () => {
+    const { s, a } = await benWithClip()
+    vi.spyOn(a, 'uploadRecording').mockRejectedValue(new Error('too large'))
+    await s.finish()
+    expect(s.reportStatus).toBe('done')
+    expect(s.archiveSaved).toBe(true)
+    expect(s.recordingWarning).toMatch(/\S/)
+  })
+
+  it('reset은 들고 있던 녹음을 버린다', async () => {
+    const { s } = await benWithClip()
+    expect(s.recordingCount).toBe(1)
+    await s.reset()
+    expect(s.recordingCount).toBe(0)
+  })
+})
+
+describe('벤 리포트에 전달력 측정을 싣는다 (#99)', () => {
+  const REPORT = JSON.stringify([{ question: 'Q', answerSummary: 'A', feedback: 'F' }])
+
+  /** 말 10초 + 쉼 3초 + 말 10초 — 측정이 나오는 파형 */
+  function spoken(): { samples: Float32Array; sampleRate: number } {
+    const rate = 16_000
+    const samples = new Float32Array(rate * 23)
+    const loud = (from: number, to: number) => {
+      for (let i = from * rate; i < to * rate; i++) samples[i] = 0.3 * ((i % 100) / 50 - 1)
+    }
+    loud(0, 10)
+    loud(13, 23)
+    return { samples, sampleRate: rate }
+  }
+
+  function fakeRecorder() {
+    return {
+      cut: vi.fn(async () => new Blob([new Uint8Array(32)], { type: 'audio/webm' })),
+      stop: vi.fn(async () => null),
+    }
+  }
+
+  beforeEach(() => {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    vi.mocked(decodeClip).mockReset().mockResolvedValue(spoken())
+    vi.mocked(startRecording).mockReset().mockResolvedValue(fakeRecorder())
+    vi.mocked(startInterview)
+      .mockReset()
+      .mockResolvedValue({
+        interviewId: 'pi_d',
+        session: {
+          userId: 'u1',
+          email: 'a@b.com',
+          tier: 'premium',
+          tickets: 9,
+          isAdmin: false,
+          profile: { name: null, age: null },
+          createdAt: '2026-10-13T00:00:00.000Z',
+        },
+      })
+    vi.mocked(turnStream)
+      .mockReset()
+      .mockImplementation(async (_id, _a, onDelta) => {
+        onDelta('질문입니다.')
+        return { ended: false }
+      })
+    vi.mocked(reportStream)
+      .mockReset()
+      .mockImplementation(async (_id, onDelta) => {
+        onDelta(fenced(REPORT))
+      })
+  })
+
+  async function benStore() {
+    useInterviewerStore().select('m2')
+    const s = await readyStore()
+    s.setTrack('company')
+    await s.start()
+    return s
+  }
+
+  const sentDelivery = () => vi.mocked(reportStream).mock.calls[0][3]
+
+  it('답변마다 잰 숫자를 리포트 요청에 싣는다 — 소리는 보내지 않는다', async () => {
+    const s = await benStore()
+    await s.send('안녕하세요 저는 프론트엔드 개발자로 삼 년 일했습니다')
+    await s.finish()
+
+    expect(sentDelivery()).toHaveLength(1)
+    expect(sentDelivery()?.[0]).toMatchObject({
+      answer: 1,
+      longPauses: 1,
+      syllables: 23,
+      fillerLevel: 'low',
+    })
+    expect(sentDelivery()?.[0].speechSec).toBeGreaterThan(19)
+    expect(sentDelivery()?.[0].firstWordSec).toBe(0)
+  })
+
+  it('답변 번호는 1부터 답변 순서를 따른다', async () => {
+    const s = await benStore()
+    await s.send('첫 번째 답변입니다 이렇게 길게 말했습니다')
+    await s.send('두 번째 답변입니다 이렇게 길게 말했습니다')
+    await s.finish()
+    expect(sentDelivery()?.map((d) => d.answer)).toEqual([1, 2])
+  })
+
+  it('소리가 없는 답변은 빠진다 — 타이핑으로 답하면 잴 것이 없다', async () => {
+    const s = await benStore()
+    vi.mocked(decodeClip).mockResolvedValue({
+      samples: new Float32Array(16_000 * 20),
+      sampleRate: 16_000,
+    })
+    await s.send('타이핑으로 적은 답변입니다 이렇게 길게 적었습니다')
+    await s.finish()
+    expect(sentDelivery()).toEqual([]) // 빈 배열은 요청 본문에서 빠진다(benInterview)
+  })
+
+  it('조각을 못 푸는 브라우저에서도 리포트는 그대로 나온다', async () => {
+    const s = await benStore()
+    vi.mocked(decodeClip).mockResolvedValue(null)
+    await s.send('답변입니다 이렇게 길게 말했습니다 정말로요')
+    await s.finish()
+    expect(sentDelivery()).toEqual([]) // 빈 배열은 요청 본문에서 빠진다(benInterview)
+    expect(s.reportStatus).toBe('done')
+  })
+
+  it('녹음을 못 켰으면 측정도 없다', async () => {
+    vi.mocked(startRecording).mockResolvedValue(null)
+    const s = await benStore()
+    await s.send('답변입니다 이렇게 길게 말했습니다 정말로요')
+    await s.finish()
+    expect(decodeClip).not.toHaveBeenCalled()
+    expect(sentDelivery()).toEqual([]) // 빈 배열은 요청 본문에서 빠진다(benInterview)
+  })
+
+  it('벤이 쓴 전달력 문장은 보관함까지 간다 — 다시 열어도 그대로다', async () => {
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    vi.mocked(startInterview).mockResolvedValue({ interviewId: 'pi_d', session: a.session! })
+    const spoken = JSON.stringify([
+      { question: 'Q', answerSummary: 'A', feedback: 'F', delivery: '분당 352음절로 빠릅니다' },
+    ])
+    vi.mocked(reportStream).mockImplementation(async (_id, onDelta) => onDelta(fenced(spoken)))
+
+    const s = await benStore()
+    await s.send('답변입니다 이렇게 길게 말했습니다 정말로요')
+    await s.finish()
+
+    const full = await a.getArchive(a.archive[0].id)
+    expect(full?.report[0].delivery).toBe('분당 352음절로 빠릅니다')
+  })
+
+  it('reset은 측정도 버린다 — 지난 면접의 숫자가 다음 리포트에 붙으면 안 된다', async () => {
+    const s = await benStore()
+    await s.send('첫 면접의 답변입니다 이렇게 길게 말했습니다')
+    await s.reset()
+    const s2 = await benStore()
+    await s2.send('두 번째 면접의 답변입니다 이렇게 길게 말했습니다')
+    await s2.finish()
+    expect(sentDelivery()).toHaveLength(1)
+    expect(sentDelivery()?.[0].answer).toBe(1)
   })
 })

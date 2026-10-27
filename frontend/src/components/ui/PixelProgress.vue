@@ -4,13 +4,20 @@ import {
   RATE_WINDOW_MS,
   SCROLL,
   STAGES,
+  PROP_GAP,
   captionFor,
+  nextIdleAt,
+  pickIdle,
   progressRate,
+  spawnProp,
   stageIndexFor,
+  stepProps,
   stepScene,
+  type IdleAnim,
   type OnceAnim,
   type Sample,
   type SceneProp,
+  type ScenicProp,
   type StageState,
 } from '@/utils/progressStages'
 import { formatBytes } from '@/utils/format'
@@ -23,10 +30,12 @@ const props = withDefaults(
     total: number
     fileName: string
     eta?: string
+    /** 지금 받는 속도(예: 7.2MB/s). '내 회선이 느린 건가'에 답한다 */
+    speed?: string
     errorText?: string
     scale?: number
   }>(),
-  { eta: '', errorText: '', scale: 3 },
+  { eta: '', speed: '', errorText: '', scale: 3 },
 )
 
 /** 표시용 정수 % (장면은 소수 progress를 그대로 쓴다) */
@@ -64,7 +73,12 @@ const ITEM_GAP = 18 // 물건이 캐릭터 발 앞에 놓이는 간격
 const BUILDING_GAP = 40
 let sheets: Record<string, SheetMeta> = {}
 let state: StageState = { stage: 0, queue: [] }
-let once: { name: OnceAnim; start: number } | null = null
+let once: { name: OnceAnim | IdleAnim; start: number } | null = null
+/** 다음 잔동작·소품 예정 시각(ms). 진행률이 아니라 시간으로 돈다 */
+let idleAt = 0
+let propAt = 0
+/** 길에 지나가는 소품 */
+let scenic: ScenicProp[] = []
 let scroll = 0 // 바닥·구름 위상(px)
 let last = 0
 let raf = 0
@@ -102,6 +116,9 @@ function setScene(p: number) {
   once = null
   scroll = 0
   samples = []
+  scenic = []
+  idleAt = 0
+  propAt = 0
   props_ = STAGES.map((s, i) => ({
     stage: i,
     at: s.at,
@@ -137,6 +154,24 @@ function frame(now: number) {
   if (!once && state.queue.length) {
     const next = state.queue.shift()
     if (next) once = { name: next, start: now }
+  }
+
+  // 2-1) 잔동작: 구간이 길면 같은 걷기만 보게 된다. 전환(줍기)이 없을 때만 끼어든다
+  if (!idleAt) idleAt = nextIdleAt(now, Math.random)
+  if (!once && !arrived() && now >= idleAt) {
+    const pick = pickIdle(stage, Math.random)
+    if (pick) once = { name: pick, start: now }
+    idleAt = nextIdleAt(now, Math.random)
+  }
+
+  // 2-2) 소품: 걷는 동안만 흐르고 생긴다
+  scenic = stepProps(scenic, step, SCROLL, W)
+  if (!propAt) propAt = now + PROP_GAP[0]
+  if (walking && now >= propAt) {
+    const sp = spawnProp(W, Math.random)
+    if (sp) scenic.push(sp)
+    const [a, b] = PROP_GAP
+    propAt = now + a + Math.random() * (b - a)
   }
 
   // 3) 캐릭터 시트: 1회성(줍기·올려다보기) > 걷기 > 서 있기
@@ -175,6 +210,11 @@ function frame(now: number) {
   for (let x = -(Math.round(sx * 0.3) % 90); x < W; x += 90) {
     ctx.fillRect(x + 10, 14, 14, 3)
     ctx.fillRect(x + 14, 11, 8, 3)
+  }
+  for (const sp of scenic) {
+    const img = sheets[sp.key]
+    const x = Math.round(sp.x)
+    if (ready(img) && x < W && x > -img.w) ctx.drawImage(img.img, x, GROUND - img.h + 2)
   }
   for (const pr of props_) {
     const s = STAGES[pr.stage]
@@ -241,6 +281,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
     <div class="mono meta">
       <span
         >{{ formatBytes(received) }} / {{ formatBytes(total) }}
+        <span v-if="speed" class="speed" data-test="speed">· {{ speed }}</span>
         <span class="file">· {{ fileName }}</span></span
       >
       <span class="caption" :class="{ danger: phase === 'error' }">{{ caption }}</span>

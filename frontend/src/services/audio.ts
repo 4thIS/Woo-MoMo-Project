@@ -27,6 +27,21 @@ export function setMuted(on: boolean): void {
   if (current) current.gain.value = on ? 0 : 1
 }
 
+/** 녹음 조각을 파형으로. 못 풀면 null — 측정은 덤이지 조건이 아니다(recorder와 같은 약속).
+ *  채널 0만 쓴다. 마이크는 모노이고, 스테레오여도 말·쉼 판별에는 한 채널이면 된다 */
+export async function decodeClip(
+  blob: Blob,
+): Promise<{ samples: Float32Array; sampleRate: number } | null> {
+  try {
+    const buf = await blob.arrayBuffer()
+    const decoded = await context().decodeAudioData(buf)
+    return { samples: decoded.getChannelData(0), sampleRate: decoded.sampleRate }
+  } catch {
+    // 코덱을 모르거나 조각이 깨졌다 — 그 답변만 측정에서 빠진다
+    return null
+  }
+}
+
 /** 파형을 그대로 재생. muted면 GainNode 0으로 소리만 죽이고 길이·타이밍은 유지 */
 export function playClip(
   clip: AudioClip,

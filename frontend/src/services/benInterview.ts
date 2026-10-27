@@ -1,0 +1,290 @@
+/** 벤(프리미엄) 면접 — 서버가 대화를 가진다 (`docs/API.md` 벤 면접 3단계).
+ *
+ * 무료 면접관은 브라우저 안 모델이 답하지만, 벤은 **서버가 Claude를 부른다.**
+ * 그래서 이 서비스는 답변만 올리고 돌아오는 SSE를 흘려보낸다 — 대화 기록은 서버 몫이다.
+ *
+ * `EventSource`를 못 쓴다(POST라서). fetch 스트림을 직접 읽어 `SseParser`에 넣는다.
+ */
+import { SseParser } from '@/utils/sse'
+import { asReportV2, type ReportV2 } from '@/utils/reportV2'
+import type { Session, Track } from './account'
+
+const BASE = '/api/premium/interviews'
+
+export type BenErrorCode =
+  | 'no_tickets'
+  | 'premium_required'
+  | 'daily_limit'
+  | 'ben_unavailable'
+  | 'interview_over'
+  | 'interview_not_started'
+  | 'missing_answer'
+  | 'answer_too_long'
+  | 'missing_field'
+  | 'invalid'
+  | 'not_found'
+  | 'rate_limited'
+  /** 리포트 버전 2 (2026-10-23) */
+  | 'no_answers'
+  | 'bad_report'
+  | 'too_long'
+  /** 스트림 안에서 온 것 */
+  | 'claude_error'
+  | 'refused'
+  | 'turn_conflict'
+  | 'server_error'
+  /** done 없이 끊김 */
+  | 'stream_broken'
+  | 'network'
+  | 'unknown'
+
+const MESSAGES: Record<BenErrorCode, string> = {
+  no_tickets: '남은 티켓이 없습니다',
+  premium_required: '모모 프리미엄 계정만 벤과 면접할 수 있습니다',
+  daily_limit: '오늘은 벤 면접이 가득 찼습니다 — 내일 다시 시도해 주세요',
+  ben_unavailable: '지금은 벤을 부를 수 없습니다',
+  interview_over: '이 면접은 끝났습니다',
+  interview_not_started: '아직 주고받은 말이 없습니다',
+  missing_answer: '답변을 입력하세요',
+  answer_too_long: '답변이 너무 깁니다 (2,000자까지)',
+  missing_field: '빠진 칸이 있습니다',
+  invalid: '입력한 값을 다시 확인해 주세요',
+  not_found: '없는 면접입니다',
+  rate_limited: '요청이 너무 잦습니다 — 잠시 뒤 다시 시도하세요',
+  no_answers: '답변이 하나도 없어 리포트를 만들 수 없습니다',
+  bad_report: '리포트를 제대로 만들지 못했습니다 — 다시 시도해 주세요',
+  too_long: '리포트가 너무 길어 끊겼습니다',
+  claude_error: '응답이 끊겼습니다',
+  refused: '이 내용으로는 답할 수 없습니다',
+  turn_conflict: '같은 면접이 두 번 겹쳐 들어왔습니다',
+  server_error: '서버에서 문제가 생겼습니다',
+  stream_broken: '응답이 끊겼습니다',
+  network: '연결하지 못했습니다',
+  unknown: '요청을 처리하지 못했습니다',
+}
+
+/** 다시 보내면 될 수 있는 것들. 거절·끝남·티켓 없음은 다시 보내도 같다 */
+const RETRYABLE = new Set<BenErrorCode>([
+  'claude_error',
+  'turn_conflict',
+  'server_error',
+  'stream_broken',
+  'network',
+])
+
+const KNOWN = new Set(Object.keys(MESSAGES))
+
+export class BenError extends Error {
+  readonly retryable: boolean
+  /** 422에서 서버가 짚어 준 칸 이름. 화면이 그 칸 옆에 안내를 붙인다 */
+  constructor(
+    readonly code: BenErrorCode,
+    readonly field?: string,
+  ) {
+    super(MESSAGES[code])
+    this.name = 'BenError'
+    this.retryable = RETRYABLE.has(code)
+  }
+}
+
+function codeOf(raw: unknown): BenErrorCode {
+  return (typeof raw === 'string' && KNOWN.has(raw) ? raw : 'unknown') as BenErrorCode
+}
+
+/** 두 트랙이 함께 쓰는 선택 칸 */
+interface StartCommon {
+  /** 목소리 분석 동의(2026-10-23, 기본 false). 켠 면접만 녹음을 올릴 수 있다 */
+  voiceAnalysisConsent?: boolean
+}
+export interface StartCompany extends StartCommon {
+  track: Extract<Track, 'company'>
+  resumeText: string
+  /** `name`(선택, 2026-10-15): 있으면 첫 턴에 서버가 회사명·직무로 웹을 뒤져 브리핑을 만든다 */
+  company: { field: string; job: string; name?: string }
+}
+export interface StartAdmission extends StartCommon {
+  track: Extract<Track, 'admission'>
+  resumeText: string
+  admission: { name: string; age: number; university: string; department: string }
+}
+export type StartRequest = StartCompany | StartAdmission
+
+/** 목소리 분석이 실제로 도는가. `on`일 때만 녹음을 올린다 */
+export type VoiceAnalysis = 'on' | 'off' | 'unavailable'
+
+export interface Started {
+  interviewId: string
+  /** 티켓 1장이 빠진 세션 */
+  session: Session
+  /** 2026-10-23. 없는 서버(옛 배포)는 off로 친다 */
+  voiceAnalysis?: VoiceAnalysis
+}
+
+async function post(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    })
+  } catch {
+    throw new BenError('network')
+  }
+}
+
+export async function startInterview(req: StartRequest): Promise<Started> {
+  const res = await post(BASE, req)
+  const body = await res.json().catch(() => undefined)
+  if (!res.ok) {
+    const b = body as { error?: unknown; field?: unknown } | undefined
+    throw new BenError(codeOf(b?.error), typeof b?.field === 'string' ? b.field : undefined)
+  }
+  return body as Started
+}
+
+/** 회사 브리핑 진행 상황 (`docs/API.md`, 회사명이 있는 면접의 첫 턴만).
+ *  `researching`은 조사 시작(캐시가 있으면 생략), `briefing`은 결과. 모르는 phase도 그대로 넘긴다 */
+export interface BenStatus {
+  phase: string
+  ok?: boolean
+}
+
+/** SSE 본문을 끝까지 읽는다. `done`의 data를 돌려주고, error 이벤트는 던진다 */
+/** 리포트 버전 2에서만 오는 것들 (`docs/API.md` 벤 3) */
+export interface ReportHooks {
+  /** 검증에 실패해 서버가 다시 만든다 — 지금까지 받은 원문 버퍼를 비운다 */
+  onReset?: () => void
+  /** 검증·정리를 마친 리포트. 화면은 원문이 아니라 이것으로 그린다 */
+  onReport?: (report: ReportV2) => void
+}
+
+async function readStream(
+  res: Response,
+  onDelta: (text: string) => void,
+  onStatus?: (s: BenStatus) => void,
+  hooks?: ReportHooks,
+): Promise<Record<string, unknown>> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => undefined)
+    throw new BenError(codeOf((body as { error?: unknown } | undefined)?.error))
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new BenError('stream_broken')
+
+  let done: Record<string, unknown> | null = null
+  let failed: BenErrorCode | null = null
+  const parser = new SseParser((e) => {
+    if (e.event === 'delta') {
+      const text = (JSON.parse(e.data) as { text?: unknown }).text
+      if (typeof text === 'string') onDelta(text)
+    } else if (e.event === 'status') {
+      const s = JSON.parse(e.data || '{}') as BenStatus
+      if (typeof s.phase === 'string') onStatus?.(s)
+    } else if (e.event === 'reset') {
+      hooks?.onReset?.()
+    } else if (e.event === 'report') {
+      const r = asReportV2(JSON.parse(e.data || 'null'))
+      if (r) hooks?.onReport?.(r)
+    } else if (e.event === 'done') {
+      done = JSON.parse(e.data || '{}') as Record<string, unknown>
+    } else if (e.event === 'error') {
+      failed = codeOf((JSON.parse(e.data || '{}') as { code?: unknown }).code)
+    }
+  })
+
+  const dec = new TextDecoder()
+  try {
+    for (;;) {
+      const r = await reader.read()
+      if (r.done) break
+      parser.push(dec.decode(r.value, { stream: true }))
+      // error가 오면 그 턴은 서버에 기록되지 않는다 — 더 읽을 것이 없다
+      if (failed || done) break
+    }
+  } catch {
+    throw new BenError('network')
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+
+  if (failed) throw new BenError(failed)
+  // done을 못 본 채 끊겼으면 반쪽이다. 성공으로 치면 빈 질문이 대화에 남는다
+  if (!done) throw new BenError('stream_broken')
+  return done
+}
+
+/** 한 턴. 첫 턴은 `answer`를 비워 보낸다 — 서버가 첫 질문을 만든다 */
+export async function turnStream(
+  interviewId: string,
+  answer: string | undefined,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+  onStatus?: (s: BenStatus) => void,
+): Promise<{ ended: boolean }> {
+  const res = await post(
+    `${BASE}/${interviewId}/turns`,
+    answer === undefined ? {} : { answer },
+    signal,
+  )
+  const done = await readStream(res, onDelta, onStatus)
+  return { ended: done.ended === true }
+}
+
+/** 브라우저가 잰 답변 하나의 전달력 (`docs/API.md` 리포트 본문, 2026-10-16). **숫자만** 간다 */
+export interface DeliveryMetric {
+  /** 몇 번째 지원자 답변인지 (1부터) */
+  answer: number
+  speechSec: number
+  syllables: number
+  longPauses: number
+  longestPauseSec: number
+  firstWordSec: number
+  fillerLevel: 'low' | 'normal' | 'high' | null
+}
+
+/** 서버가 받는 상한. 넘겨 보내면 통째로 422가 되므로 앞쪽만 보낸다 */
+export const DELIVERY_MAX = 8
+
+/** 리포트 원문. 이미 받은 면접에 다시 부르면 서버가 보관한 원문을 그대로 돌려준다.
+ *  `delivery`는 선택 — 비면 본문을 `{}`로 보내 예전과 같은 요청이 된다 */
+/**
+ * 답변 녹음 한 조각을 목소리 분석에 올린다. **실패해도 던지지 않는다** — 면접 중에 끼어드는
+ * 일이라, 분석이 안 되는 것과 면접이 끊기는 것은 무게가 다르다(`docs/API.md`: 조용히 넘어간다).
+ */
+export async function uploadVoice(
+  interviewId: string,
+  answer: number,
+  wav: ArrayBuffer,
+): Promise<boolean> {
+  const form = new FormData()
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), `answer-${answer}.wav`)
+  try {
+    // Content-Type을 직접 붙이지 않는다 — 브라우저가 경계(boundary)를 넣어야 한다
+    const res = await fetch(`${BASE}/${interviewId}/voice/${answer}`, {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function reportStream(
+  interviewId: string,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+  delivery?: DeliveryMetric[],
+  hooks?: ReportHooks,
+): Promise<void> {
+  const metrics = (delivery ?? []).filter((d) => d.answer <= DELIVERY_MAX).slice(0, DELIVERY_MAX)
+  const res = await post(
+    `${BASE}/${interviewId}/report`,
+    metrics.length ? { delivery: metrics } : {},
+    signal,
+  )
+  await readStream(res, onDelta, undefined, hooks)
+}

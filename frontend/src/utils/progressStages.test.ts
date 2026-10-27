@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   SCROLL,
   advance,
+  IDLE_GAP,
   MAX_AHEAD,
+  PROP_SPACING,
+  PROP_GAP,
+  PROP_KEYS,
+  nextIdleAt,
+  pickIdle,
+  spawnProp,
+  stepProps,
   stepScene,
   STAGES,
   approach,
@@ -12,6 +20,7 @@ import {
   progressRate,
   type SceneProp,
   type StageState,
+  formatEta,
 } from './progressStages'
 
 describe('progressStages', () => {
@@ -162,10 +171,49 @@ describe('stepScene — 진행률이 장면을 끈다', () => {
       ),
     ).toBe(STAGES.length - 1)
   })
-  it('물건은 화면 밖 MAX_AHEAD 너머에 생기지 않는다', () => {
+  it('가장 가까운 물건은 화면 밖 MAX_AHEAD 너머에 생기지 않는다', () => {
     const r = stepScene({ stage: 0, queue: [] }, fresh(), 0, 0.08, 1 / 60, CHAR_X)
-    for (const pr of r.props) {
-      if (pr.x !== null) expect(pr.x).toBeLessThanOrEqual(CHAR_X + pr.gap + MAX_AHEAD)
+    const first = r.props[0]
+    expect(first.x).not.toBeNull()
+    expect(first.x!).toBeLessThanOrEqual(CHAR_X + first.gap + MAX_AHEAD)
+  })
+
+  it('아직 먼 물건은 걸어 들어오지 않는다 — 제 구간보다 먼저 주워지면 안 된다', () => {
+    // 상한에 걸린 동안에는 화면 밖에서 기다려야 한다. 끌려 들어오면 10%에서 양복을 줍는다
+    let state: StageState = { stage: 0, queue: [] }
+    let props = fresh()
+    const dt = 1 / 60
+    for (let i = 0; i < 60 * 180; i++) {
+      const r = stepScene(state, props, 10, 0.02, dt, CHAR_X)
+      state = r.state
+      props = r.props
+    }
+    expect(state.stage).toBe(0)
+    expect(props.every((pr) => !pr.done)).toBe(true)
+  })
+
+  it('느린 다운로드에서 물건이 한 자리에 뭉치지 않는다', () => {
+    // 실제 서버에서 10% 언저리면 분당 몇 %밖에 안 오른다. 예상 거리가 수천 px이라
+    // 셋 다 상한(MAX_AHEAD)에 걸려 **같은 자리**에 서서 양복·가방·건물이 겹쳐 보였다
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 10, 0.02, 1 / 60, CHAR_X)
+    const xs = r.props.map((pr) => pr.x)
+    expect(xs.every((x) => x !== null)).toBe(true)
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(PROP_SPACING)
+    }
+  })
+
+  it('순서는 at 오름차순 그대로다 — 가방이 양복보다 먼저 오면 안 된다', () => {
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 10, 0.02, 1 / 60, CHAR_X)
+    const byAt = [...r.props].sort((a, b) => a.at - b.at)
+    expect(byAt.map((pr) => pr.x)).toEqual([...byAt.map((pr) => pr.x)].sort((a, b) => a! - b!))
+  })
+
+  it('빠르게 받아 거리가 가까울 때도 최소 간격은 지킨다', () => {
+    const r = stepScene({ stage: 0, queue: [] }, fresh(), 29, 5, 1 / 60, CHAR_X)
+    const xs = r.props.map((pr) => pr.x!)
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(PROP_SPACING)
     }
   })
   it('빠른 다운로드에서는 줍기 전환이 순서대로 큐에 쌓인다', () => {
@@ -179,5 +227,105 @@ describe('stepScene — 진행률이 장면을 끈다', () => {
       while (state.queue.length) seen.push(state.queue.shift() as string)
     }
     expect(seen).toEqual(['pickup_suit', 'pickup_bag', 'look_up'])
+  })
+})
+
+describe('잔동작 — 구간이 길 때 끼어든다', () => {
+  it('다음 예정 시각은 15~25초 뒤다', () => {
+    expect(nextIdleAt(1000, () => 0)).toBe(1000 + IDLE_GAP[0])
+    expect(nextIdleAt(1000, () => 1)).toBe(1000 + IDLE_GAP[1])
+  })
+  it('그 구간에 정의된 잔동작만 고른다', () => {
+    const bag = STAGES.find((s) => s.walk === 'walk_suit_bag')!
+    expect(bag.idles).toContain(pickIdle(bag, () => 0) as string)
+  })
+  it('잔동작이 없는 구간은 null을 준다', () => {
+    expect(pickIdle(STAGES[0], () => 0)).toBeNull()
+  })
+  it('진행률이 멈춰 있어도 일정은 시간으로만 돈다', () => {
+    const t = nextIdleAt(0, () => 0)
+    expect(t).toBeGreaterThan(0)
+    expect(t).toBeLessThanOrEqual(IDLE_GAP[1])
+  })
+})
+
+describe('지나가는 소품', () => {
+  it('띄울 소품이 있으면 오른쪽 화면 밖에서 생긴다', () => {
+    const p = spawnProp(320, () => 0)
+    if (!PROP_KEYS.length) return expect(p).toBeNull()
+    expect(p!.x).toBeGreaterThanOrEqual(320)
+    expect(PROP_KEYS).toContain(p!.key)
+  })
+  it('바닥과 같은 속도로 왼쪽으로 흐른다', () => {
+    expect(stepProps([{ key: 'cat', x: 200 }], 0.5, 40, 320)[0].x).toBe(180)
+  })
+  it('화면 왼쪽으로 나가면 사라진다', () => {
+    expect(stepProps([{ key: 'cat', x: -64 }], 0.1, 40, 320)).toEqual([])
+  })
+  it('탭 복귀로 dt가 커져도 화면을 한 번에 가로지르지 않는다', () => {
+    const out = stepProps([{ key: 'cat', x: 300 }], 5, 40, 320)
+    expect(300 - out[0].x).toBeLessThanOrEqual(320)
+  })
+  it('간격은 3~7초다', () => {
+    expect(PROP_GAP).toEqual([3000, 7000])
+  })
+})
+
+describe('구간마다 옷이 맞는 잔동작을 쓴다', () => {
+  it('양복만 입은 구간에서는 가방 든 시계 보기를 쓰지 않는다', () => {
+    // 40%에서 시계를 보면 없던 가방이 손에 생겼다 — 시트가 가방 든 판 하나뿐이었다
+    const suit = STAGES[1]
+    expect(suit.walk).toBe('walk_suit')
+    expect(suit.idles).toEqual(['walk_watch_suit'])
+  })
+
+  it('가방까지 든 구간에서만 가방 든 판을 쓴다', () => {
+    const bag = STAGES[2]
+    expect(bag.walk).toBe('walk_suit_bag')
+    expect(bag.idles).toEqual(['walk_watch'])
+  })
+
+  it('잔동작은 그 구간의 옷과 같은 차림이어야 한다 — 시트 이름으로 묶어 둔다', () => {
+    for (const st of STAGES) {
+      for (const idle of st.idles ?? []) {
+        // walk_suit → walk_watch_suit, walk_suit_bag → walk_watch
+        const want = st.walk === 'walk_suit_bag' ? 'walk_watch' : 'walk_watch_suit'
+        expect(idle, st.caption).toBe(want)
+      }
+    }
+  })
+
+  it('첫 구간은 속옷이 아니라 반팔티 차림이다', () => {
+    expect(STAGES[0].walk).toBe('walk_tee')
+  })
+})
+
+describe('지나가는 소품', () => {
+  it('목록에 없는 키를 만들지 않는다 — 그릴 그림이 없으면 아예 안 띄운다', () => {
+    if (PROP_KEYS.length === 0) {
+      expect(spawnProp(320, () => 0)).toBeNull()
+    } else {
+      expect(PROP_KEYS).toContain(spawnProp(320, () => 0)!.key)
+    }
+  })
+})
+
+describe('formatEta — 널뛰지 않게 다듬는다', () => {
+  it('분 단위로 반올림한다 — 초 단위로 흔들리면 없느니만 못하다', () => {
+    expect(formatEta(250)).toBe('약 4분')
+    expect(formatEta(260)).toBe('약 4분')
+  })
+
+  it('1분 미만은 분으로 쪼개지 않는다', () => {
+    expect(formatEta(40)).toBe('1분 안')
+    expect(formatEta(0)).toBe('곧 끝납니다')
+  })
+
+  it('한 시간을 넘으면 시간으로', () => {
+    expect(formatEta(4000)).toBe('약 1시간 7분')
+  })
+
+  it('모르면 빈 문자열 — 자리만 비운다', () => {
+    expect(formatEta(null)).toBe('')
   })
 })

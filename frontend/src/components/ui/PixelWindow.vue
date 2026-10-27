@@ -19,9 +19,12 @@ withDefaults(defineProps<{ title?: string; padding?: 'md' | 'sm' }>(), {
 
 <style scoped>
 .win {
-  background: var(--win);
+  background-color: var(--win);
+  /* 주사선: 패널을 '화면'처럼 보이게 하는 유일한 장식. 가상요소를 쓰지 않아
+     안쪽의 absolute 배치나 z-index를 건드리지 않는다 */
+  background-image: repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
   border: var(--win-border);
-  box-shadow: var(--win-inner);
+  box-shadow: var(--win-shadow);
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
@@ -31,6 +34,15 @@ withDefaults(defineProps<{ title?: string; padding?: 'md' | 'sm' }>(), {
 }
 .pad-sm {
   padding: 22px 28px;
+}
+/* 휴대폰: 좌우 28~32px은 390px 화면에서 내용 폭을 1/6이나 먹는다 (멘토링 2026-10-12) */
+@media (max-width: 640px) {
+  .pad-md {
+    padding: var(--sp-5) var(--sp-4);
+  }
+  .pad-sm {
+    padding: var(--sp-4);
+  }
 }
 .head {
   display: flex;

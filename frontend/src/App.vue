@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import { useInterviewStore } from '@/stores/interview'
 import LandingView from '@/views/LandingView.vue'
 import PrepareView from '@/views/PrepareView.vue'
 import InterviewView from '@/views/InterviewView.vue'
 import ReportView from '@/views/ReportView.vue'
+import HintBar from '@/components/ui/HintBar.vue'
+import TopBar from '@/components/TopBar.vue'
+import { isAdminPath } from '@/services/route'
+
+// 관리자 화면은 따로 쪼개 내려받는다 — 일반 사용자의 번들에 들어가지 않게
+const AdminView = defineAsyncComponent(() => import('@/views/admin/AdminView.vue'))
+const onAdmin = isAdminPath()
 
 const interview = useInterviewStore()
 const view = computed(
@@ -16,5 +23,36 @@ const view = computed(
 </script>
 
 <template>
-  <component :is="view" />
+  <TopBar />
+  <!-- 화면 전환: 나가는 화면이 먼저 사라지고 들어오는 화면이 떠오른다.
+       둘을 겹치면 100vh 화면끼리 포개져 스크롤이 튄다 -->
+  <AdminView v-if="onAdmin" />
+  <Transition v-else name="view" mode="out-in">
+    <component :is="view" :key="interview.phase" />
+  </Transition>
+  <!-- 면접 화면은 무대 안에 쪽지로 띄운다(InterviewView) — 여기서 또 띄우면 둘이 된다 -->
+  <HintBar v-if="!onAdmin && interview.phase !== 'interview'" />
 </template>
+
+<style>
+.view-enter-active,
+.view-leave-active {
+  transition:
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+.view-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.view-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-enter-active,
+  .view-leave-active {
+    transition: none;
+  }
+}
+</style>

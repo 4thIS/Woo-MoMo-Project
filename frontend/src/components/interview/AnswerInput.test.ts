@@ -8,9 +8,14 @@ vi.mock('@/services/speech', () => ({
   isSpeechActive: vi.fn(() => false),
 }))
 import { speechSupported, startSpeech, stopSpeech } from '@/services/speech'
-import AnswerInput, { SILENCE_MS } from './AnswerInput.vue'
+import AnswerInput, { SILENCE_MS, SPEECH_NOTICE_KEY } from './AnswerInput.vue'
+import AnswerInputSource from './AnswerInput.vue?raw'
 
-beforeEach(() => vi.mocked(speechSupported).mockReturnValue(false))
+beforeEach(() => {
+  vi.mocked(speechSupported).mockReturnValue(false)
+  // 경로 고지는 기기마다 한 번뿐이다. 그 흐름을 보는 테스트 말고는 '이미 본' 상태로 둔다
+  localStorage.setItem(SPEECH_NOTICE_KEY, '1')
+})
 
 describe('AnswerInput', () => {
   it('Enter로 전송, Shift+Enter는 줄바꿈', async () => {
@@ -269,5 +274,72 @@ describe('AnswerInput 답변 타이머(60초 게이지)', () => {
     await w.find('textarea').setValue('늦은 답')
     await w.find('[data-test="send"]').trigger('click')
     expect(w.emitted('send')?.[0]).toEqual(['늦은 답'])
+  })
+})
+
+describe('AnswerInput — 버튼이 카드 밖으로 나가지 않는다', () => {
+  const css = () => AnswerInputSource.split('<style')[1] ?? ''
+
+  it('판은 남은 자리만 차지한다 — height: 100%는 위쪽 알림을 못 보고 그만큼 넘친다', () => {
+    expect(css()).not.toMatch(/\.input-panel\s*\{[^}]*height:\s*100%/)
+    expect(css()).toMatch(/\.input-panel\s*\{[^}]*flex:\s*1/)
+    expect(css()).toMatch(/\.input-panel\s*\{[^}]*min-height:\s*0/)
+  })
+})
+
+describe('AnswerInput — 음성 인식 경로 고지 (멘토링 보완)', () => {
+  beforeEach(() => {
+    vi.mocked(speechSupported).mockReturnValue(true)
+    try {
+      localStorage.removeItem(SPEECH_NOTICE_KEY)
+    } catch {
+      /* 저장소가 막힌 환경 */
+    }
+  })
+
+  const open = () => mount(AnswerInput, { props: { generating: false, disabled: false } })
+
+  it('처음 말하기를 누르면 어디로 가는지 먼저 알린다 — 누르자마자 듣지 않는다', async () => {
+    const w = open()
+    await w.find('[data-test="mic"]').trigger('click')
+    const notice = w.find('[data-test="speech-notice"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('구글')
+    expect(startSpeech).not.toHaveBeenCalled()
+  })
+
+  it('알겠다고 하면 그때부터 듣는다', async () => {
+    const w = open()
+    await w.find('[data-test="mic"]').trigger('click')
+    await w.find('[data-test="speech-ok"]').trigger('click')
+    expect(startSpeech).toHaveBeenCalledOnce()
+  })
+
+  it('직접 입력하겠다고 하면 듣지 않는다 — 마이크도 꺼진 채로 남는다', async () => {
+    const w = open()
+    await w.find('[data-test="mic"]').trigger('click')
+    await w.find('[data-test="speech-cancel"]').trigger('click')
+    expect(startSpeech).not.toHaveBeenCalled()
+    expect(w.find('[data-test="mic"]').attributes('aria-pressed')).toBe('false')
+  })
+
+  it('한 번 본 사람에게는 다시 묻지 않는다', async () => {
+    const w1 = open()
+    await w1.find('[data-test="mic"]').trigger('click')
+    await w1.find('[data-test="speech-ok"]').trigger('click')
+
+    const w2 = open()
+    await w2.find('[data-test="mic"]').trigger('click')
+    expect(w2.find('[data-test="speech-notice"]').exists()).toBe(false)
+    expect(startSpeech).toHaveBeenCalledTimes(2)
+  })
+
+  it('듣는 중에는 어디로 가는지 계속 보인다 — 끄면 사라진다', async () => {
+    const w = open()
+    await w.find('[data-test="mic"]').trigger('click')
+    await w.find('[data-test="speech-ok"]').trigger('click')
+    expect(w.find('[data-test="speech-live"]').text()).toContain('구글')
+    await w.find('[data-test="mic"]').trigger('click')
+    expect(w.find('[data-test="speech-live"]').exists()).toBe(false)
   })
 })
