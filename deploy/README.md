@@ -412,3 +412,32 @@ python3 -c "import json,urllib.request as u; L=[l.strip().split('=',1)[1] for l 
 ```
 
 - 출력은 `키 1 <남은 크레딧>` 형태다. 응답 형식이 바뀌었거나 키가 틀리면 예외 메시지가 나올 수 있으니, 그 메시지에 키 값이 섞이지 않았는지 확인한다.
+
+## 가입 이메일 인증 (2026-10-27~)
+
+가입할 때 메일로 6자리 인증번호(PIN)를 보내고, 맞게 입력한 뒤에만 계정을 만든다. 메일은 개인 메일 API(`send.ssenu.cloud`)로 보낸다.
+
+### `.env` 항목 (커밋 금지)
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `SIGNUP_EMAIL_VERIFY` | `false` | `true`로 켜면 가입에 인증번호가 필요하다. 꺼져 있으면 가입은 예전과 같다. |
+| `MAIL_API_KEY` | (없음) | 메일 API 키. |
+| `MAIL_API_URL` | `https://send.ssenu.cloud/v1/send` | 발송 주소. |
+
+키는 셸 기록이나 화면에 남지 않게 `read -rsp`로 넣는다.
+
+```
+cd /srv/apps/Woo-MoMo-Project-dev/deploy      # 운영은 /srv/apps/Woo-MoMo-Project/deploy
+read -rsp 'MAIL_API_KEY: ' K; echo; sed -i '/^MAIL_API_KEY=/d' .env; printf 'MAIL_API_KEY=%s\n' "$K" >> .env; unset K; chmod 600 .env
+docker compose up -d --no-build
+```
+
+### 켜는 순서
+
+1. 백엔드를 꺼진 채(`SIGNUP_EMAIL_VERIFY=false`)로 먼저 배포하고 `MAIL_API_KEY`를 넣는다.
+2. 프론트의 인증번호 입력 화면을 배포한다.
+3. 그다음 `SIGNUP_EMAIL_VERIFY=true`로 바꾸고 `docker compose up -d --no-build`.
+
+- 켰는데 `MAIL_API_KEY`가 비어 있으면 인증번호 요청이 `503 mail_unavailable`이 되어 가입이 막힌다. 설정 실수로 인증이 조용히 빠지지 않게 한 것이다.
+- 로그에는 인증번호·메일 주소·키가 남지 않는다.

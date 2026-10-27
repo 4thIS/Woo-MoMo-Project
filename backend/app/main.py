@@ -19,6 +19,7 @@ from app.data import (
 from app.errors import install_error_handlers
 from app.llm.baze import BazeClient, VoiceAnalyzer
 from app.llm.claude import AnthropicClaude, ClaudeClient
+from app.mail import HttpMailer, Mailer
 from app.middleware import OriginGuard
 from app.routers import (
     admin,
@@ -60,6 +61,7 @@ def create_app(
     clock: Callable[[], float] = time.time,
     claude: ClaudeClient | None = None,
     baze: VoiceAnalyzer | None = None,
+    mailer: Mailer | None = None,
 ) -> FastAPI:
     base = data_dir or DATA_DIR
     cfg = settings or Settings.from_env()
@@ -90,6 +92,10 @@ def create_app(
     app.state.limiter = RateLimiter(clock)
     app.state.claude = claude if claude is not None else _default_claude(cfg)
     app.state.baze = baze if baze is not None else own_baze
+    # 주입한 발송기가 우선. 없으면 키가 있을 때만 실물, 둘 다 없으면 None(PIN 요청은 503)
+    if mailer is None and cfg.mail_api_key:
+        mailer = HttpMailer(cfg.mail_api_url, cfg.mail_api_key)
+    app.state.mailer = mailer
     # (면접, 답변)별 최신 업로드 토큰 - 재업로드 뒤 늦게 끝난 옛 분석이 결과를 덮지 않게
     app.state.voice_tokens = {}
     app.state.voice_lock = threading.Lock()
