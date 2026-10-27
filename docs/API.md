@@ -175,7 +175,7 @@
 
 ```jsonc
 // 요청
-{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true }
+{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true, "code": "123456" }
 // 201 → Session (쿠키 설정)
 // 409 { "error": "email_taken" }
 // 422 { "error": "invalid_email", "field": "email" }        // 앞뒤 공백 제거·소문자 뒤 형식 검사
@@ -184,9 +184,36 @@
 // 422 { "error": "invalid", "field": "name" }               // 100자 초과
 // 422 { "error": "consent_required", "field": "consent" }   // true가 아니거나 없음
 // 429 { "error": "rate_limited" }                           // IP당 분당 10회
+// 아래 셋은 SIGNUP_EMAIL_VERIFY가 켜져 있을 때만 (칸 검사 다음, 이메일 중복 409 이전)
+// 422 { "error": "code_required", "field": "code" }         // code가 비었음
+// 422 { "error": "code_expired", "field": "code" }          // 받은 인증번호 없음·10분 만료·오답 5회로 폐기 → 다시 받기
+// 422 { "error": "code_invalid", "field": "code", "attemptsLeft": 3 }  // 틀림(남은 시도 수)
 ```
 
-이메일 인증은 하지 않는다. `name`은 `Session.profile.name`에 들어간다.
+`code`(기본 빈 문자열)는 **JSON 문자열**이어야 한다(숫자로 보내면 앞자리 0이 사라진다). `POST /api/auth/signup/code`로 메일에 받은 6자리 PIN이다(앞뒤 공백 제거). `SIGNUP_EMAIL_VERIFY`가 꺼져 있으면 `code`는 무시되고 동작은 이전과 같다. 켜져 있으면 PIN이 맞을 때만 계정이 만들어지고 PIN은 한 번 쓰면 지워진다(재사용 불가). 5번째 오답은 PIN을 폐기하고 `code_expired`로 답한다. 인증 사용 여부는 `GET /api/auth/signup/config`의 `emailVerify`로 안다. `name`은 `Session.profile.name`에 들어간다.
+
+#### POST /api/auth/signup/code — 가입 인증번호 받기
+
+`SIGNUP_EMAIL_VERIFY`가 켜져 있을 때만 쓴다. 메일로 6자리 PIN(10분 유효)을 보낸다. PIN은 서버에 해시로만 둔다. 같은 이메일로는 1시간에 5통까지만 보낸다(`code_limit`).
+
+```jsonc
+{ "email": "me@example.com" }
+// 202 { "expiresInSec": 600, "resendInSec": 60 }
+// 404 { "error": "verify_disabled" }                         // 인증 기능이 꺼져 있음
+// 422 { "error": "invalid_email", "field": "email" }
+// 409 { "error": "email_taken" }                             // 이미 가입한 이메일(메일 안 보냄)
+// 429 { "error": "rate_limited" }                            // IP당 분당 5회
+// 429 { "error": "code_cooldown", "retryAfterSec": 40 }     // 같은 이메일 60초 안에 다시 요청
+// 429 { "error": "code_limit" }                              // 같은 이메일 1시간 5통 초과
+// 503 { "error": "mail_unavailable" }                        // 켜졌는데 메일 키 없음
+// 502 { "error": "mail_failed" }                             // 메일 서버 오류·시간 초과(대기·횟수에 안 셈)
+```
+
+새로 보내면 이전 PIN은 즉시 무효다. 메일이 나간 뒤에만 새 PIN을 저장한다.
+
+#### GET /api/auth/signup/config
+
+`200 { "emailVerify": true | false }`. 프론트가 가입 화면의 PIN 칸 표시를 정한다.
 
 #### GET /api/auth/email-taken?email=a@b.com
 

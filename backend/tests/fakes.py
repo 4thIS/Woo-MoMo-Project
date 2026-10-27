@@ -5,6 +5,7 @@ from typing import Any
 
 from app.llm.baze import VoiceOutcome, VoiceResult
 from app.llm.claude import ClaudeError, ResearchResult, Usage, UsageSink
+from app.mail import MailError
 
 DEFAULT_REPLY = ["자기소개를 ", "해 주세요."]
 DEFAULT_BRIEFING = (
@@ -26,6 +27,21 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
+
+
+class FakeMailer:
+    """Mailer 대역. 보낸 메일은 sent에 쌓고, fail이 켜져 있으면 MailError를 던진다."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, str]] = []
+        self.fail = False
+
+    def send(self, *, to: str, subject: str, text: str, idempotency_key: str) -> None:
+        if self.fail:
+            raise MailError("fake")
+        self.sent.append(
+            {"to": to, "subject": subject, "text": text, "idempotency_key": idempotency_key}
+        )
 
 
 class FakeClaude:

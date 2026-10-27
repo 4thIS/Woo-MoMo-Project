@@ -10,7 +10,7 @@ from app.config import Settings
 from app.llm.baze import BazeClient
 from app.llm.claude import ClaudeClient
 from app.main import create_app
-from tests.fakes import FakeBaze, FakeClaude, FakeClock
+from tests.fakes import FakeBaze, FakeClaude, FakeClock, FakeMailer
 from tests.helpers import ADMIN_LOGIN, ADMIN_PASSWORD, ORIGIN
 
 REPO_DATA = Path(__file__).resolve().parents[1] / "data"
@@ -44,6 +44,12 @@ def fake_baze() -> FakeBaze:
 
 
 @pytest.fixture
+def fake_mailer() -> FakeMailer:
+    # 기본 make_client는 주입하지 않는다(메일 키 없음) - 필요한 테스트가 mailer=fake_mailer로 넘긴다
+    return FakeMailer()
+
+
+@pytest.fixture
 def make_client(clock: FakeClock, fake_claude: FakeClaude) -> Iterator[Callable[..., TestClient]]:
     with ExitStack() as stack:
 
@@ -51,9 +57,10 @@ def make_client(clock: FakeClock, fake_claude: FakeClaude) -> Iterator[Callable[
             s: Settings,
             claude: ClaudeClient | None = fake_claude,
             baze: FakeBaze | BazeClient | None = None,
+            mailer: FakeMailer | None = None,
         ) -> TestClient:
             # claude=None이면 설정(ANTHROPIC_API_KEY)에 맡긴다 — 테스트 설정엔 키가 없어 None
-            app = create_app(settings=s, clock=clock, claude=claude, baze=baze)
+            app = create_app(settings=s, clock=clock, claude=claude, baze=baze, mailer=mailer)
             return stack.enter_context(TestClient(app, headers={"Origin": ORIGIN}))
 
         yield _make
