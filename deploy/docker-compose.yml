@@ -35,6 +35,7 @@ services:
       BAZE_VOICE_MODEL: ${BAZE_VOICE_MODEL:-gemini-3.8-flash}
       BAZE_MIN_REMAINING: ${BAZE_MIN_REMAINING:-50}
       SIGNUP_EMAIL_VERIFY: ${SIGNUP_EMAIL_VERIFY:-false}
+      SIGNUP_TERMS_REQUIRED: ${SIGNUP_TERMS_REQUIRED:-false}
       MAIL_API_KEY: ${MAIL_API_KEY:-}
       MAIL_API_URL: ${MAIL_API_URL:-https://send.ssenu.cloud/v1/send}
       BEN_REPORT_V2: ${BEN_REPORT_V2:-false}

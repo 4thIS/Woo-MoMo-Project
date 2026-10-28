@@ -65,13 +65,21 @@ def email_exists(conn: sqlite3.Connection, email: str) -> bool:
 
 
 def create_user(
-    conn: sqlite3.Connection, *, email: str, password_hash: str, name: str | None, created_at: str
+    conn: sqlite3.Connection,
+    *,
+    email: str,
+    password_hash: str,
+    name: str | None,
+    created_at: str,
+    terms_version: str | None = None,
+    terms_agreed_at: str | None = None,
 ) -> User:
     user_id = new_id("u")
     try:
         conn.execute(
-            "INSERT INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, email, password_hash, name, created_at),
+            "INSERT INTO users (id, email, password_hash, name, created_at,"
+            " terms_version, terms_agreed_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, email, password_hash, name, created_at, terms_version, terms_agreed_at),
         )
     except sqlite3.IntegrityError as exc:
         raise EmailTaken(email) from exc

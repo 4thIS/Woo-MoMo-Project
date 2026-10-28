@@ -441,3 +441,13 @@ docker compose up -d --no-build
 
 - 켰는데 `MAIL_API_KEY`가 비어 있으면 인증번호 요청이 `503 mail_unavailable`이 되어 가입이 막힌다. 설정 실수로 인증이 조용히 빠지지 않게 한 것이다.
 - 로그에는 인증번호·메일 주소·키가 남지 않는다.
+
+### 가입 약관 동의 (2026-10-28~)
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `SIGNUP_TERMS_REQUIRED` | `false` | `true`로 켜면 가입 요청에 `termsAgreed: true`가 있어야 한다(없으면 `422 terms_required`). 꺼져 있어도 `termsAgreed`를 보내면 약관 버전·시각이 저장된다. |
+
+켜는 순서: 백엔드를 꺼진 채로 먼저 배포 → 프론트의 약관 동의 화면 배포 → `SIGNUP_TERMS_REQUIRED=true`로 바꾸고 `docker compose up -d --no-build`. 프론트보다 먼저 켜면 예전 가입 화면은 가입이 막힌다.
+
+가입 비밀번호 규칙(8~64자·영문+숫자)은 설정 없이 바로 적용된다.
