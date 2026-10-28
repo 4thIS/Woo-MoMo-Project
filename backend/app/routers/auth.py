@@ -41,6 +41,8 @@ log = logging.getLogger(__name__)
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 EMAIL_MAX = 254
 PASSWORD_MIN = 8
+PASSWORD_MAX = 64
+TERMS_VERSION = "2026-10-28"
 NAME_MAX = 100
 SIGNUP_PER_MINUTE = 10
 LOGIN_PER_MINUTE = 10
@@ -55,6 +57,19 @@ def rate_limit(request: Request, bucket: str, per_minute: int) -> None:
 
 def is_email(value: str) -> bool:
     return len(value) <= EMAIL_MAX and EMAIL_RE.match(value) is not None
+
+
+def password_violation(password: str) -> str | None:
+    """가입 비밀번호 규칙(spec 2026-10-28 3절). 검사 순서대로 첫 위반 코드, 통과면 None."""
+    if not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
+        return "length"
+    if any(ch.isspace() for ch in password):
+        return "whitespace"
+    has_letter = any("a" <= ch <= "z" or "A" <= ch <= "Z" for ch in password)
+    has_digit = any("0" <= ch <= "9" for ch in password)
+    if not (has_letter and has_digit):
+        return "letter_digit"
+    return None
 
 
 def _cookie_args(request: Request) -> dict[str, object]:
@@ -100,8 +115,9 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
     email = normalize_login(body.email)
     if not is_email(email):
         raise ApiError(422, "invalid_email", field="email")
-    if len(body.password) < PASSWORD_MIN:
-        raise ApiError(422, "weak_password", field="password")
+    rule = password_violation(body.password)
+    if rule is not None:
+        raise ApiError(422, "weak_password", field="password", rule=rule)
     name = body.name.strip()
     if not name:
         raise ApiError(422, "missing_name", field="name")
@@ -109,15 +125,26 @@ def signup(body: SignupBody, request: Request, response: Response, conn: Db) -> 
         raise ApiError(422, "invalid", field="name")
     if body.consent is not True:
         raise ApiError(422, "consent_required", field="consent")
-    verify = request.app.state.settings.signup_email_verify
+    cfg = request.app.state.settings
+    if cfg.signup_terms_required and body.termsAgreed is not True:
+        raise ApiError(422, "terms_required", field="termsAgreed")
+    verify = cfg.signup_email_verify
     if verify:
         _check_code(request, conn, email, body.code)
     password_hash = hash_password(body.password)
     created_at = iso(request.app.state.clock())
+    terms = (
+        {"terms_version": TERMS_VERSION, "terms_agreed_at": created_at} if body.termsAgreed else {}
+    )
     try:
         with transaction(conn):
             user = users.create_user(
-                conn, email=email, password_hash=password_hash, name=name, created_at=created_at
+                conn,
+                email=email,
+                password_hash=password_hash,
+                name=name,
+                created_at=created_at,
+                **terms,
             )
             if verify:
                 signup_codes.delete(conn, email)
@@ -170,7 +197,12 @@ def email_taken(request: Request, conn: Db, email: str = "") -> EmailTakenRespon
 
 @router.get("/auth/signup/config", response_model=SignupConfig)
 def signup_config(request: Request) -> SignupConfig:
-    return SignupConfig(emailVerify=request.app.state.settings.signup_email_verify)
+    cfg = request.app.state.settings
+    return SignupConfig(
+        emailVerify=cfg.signup_email_verify,
+        termsVersion=TERMS_VERSION,
+        termsRequired=cfg.signup_terms_required,
+    )
 
 
 def _mail_text(code: str) -> str:

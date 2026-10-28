@@ -175,20 +175,25 @@
 
 ```jsonc
 // 요청
-{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true, "code": "123456" }
+{ "email": "a@b.com", "password": "...", "name": "이우진", "consent": true, "termsAgreed": true, "code": "123456" }
 // 201 → Session (쿠키 설정)
 // 409 { "error": "email_taken" }
 // 422 { "error": "invalid_email", "field": "email" }        // 앞뒤 공백 제거·소문자 뒤 형식 검사
-// 422 { "error": "weak_password", "field": "password" }     // 8자 미만
+// 422 { "error": "weak_password", "field": "password", "rule": "length" }  // 가입 비밀번호 규칙 위반(아래). 로그인엔 적용 안 함
 // 422 { "error": "missing_name", "field": "name" }          // 앞뒤 공백 제거 뒤 빈 값
 // 422 { "error": "invalid", "field": "name" }               // 100자 초과
-// 422 { "error": "consent_required", "field": "consent" }   // true가 아니거나 없음
+// 422 { "error": "consent_required", "field": "consent" }   // true가 아니거나 없음 (개인정보 수집·이용 동의)
+// 422 { "error": "terms_required", "field": "termsAgreed" }  // SIGNUP_TERMS_REQUIRED가 켜져 있고 termsAgreed가 true가 아님 (consent 다음)
 // 429 { "error": "rate_limited" }                           // IP당 분당 10회
 // 아래 셋은 SIGNUP_EMAIL_VERIFY가 켜져 있을 때만 (칸 검사 다음, 이메일 중복 409 이전)
 // 422 { "error": "code_required", "field": "code" }         // code가 비었음
 // 422 { "error": "code_expired", "field": "code" }          // 받은 인증번호 없음·10분 만료·오답 5회로 폐기 → 다시 받기
 // 422 { "error": "code_invalid", "field": "code", "attemptsLeft": 3 }  // 틀림(남은 시도 수)
 ```
+
+**비밀번호 규칙**(가입에만 적용, 검사 순서대로 첫 위반 하나가 `rule`): 8~64자(문자 수) `length` → 공백 문자 없음 `whitespace` → 영문(A–Z·a–z)과 숫자를 각각 1자 이상 `letter_digit`. 특수문자는 허용(필수 아님). 기존 계정의 예전 비밀번호는 그대로 로그인된다.
+
+**약관 동의**: `termsAgreed`(boolean, 기본 false)가 true면 설정과 무관하게 계정에 약관 버전(`terms_version`)과 시각(`terms_agreed_at`)을 저장한다. `SIGNUP_TERMS_REQUIRED`(기본 꺼짐)가 켜져 있으면 true가 아닐 때 `terms_required`. 검사 순서: 이메일 → 비밀번호 → 이름 → `consent` → `termsAgreed` → (PIN) → 이메일 중복. `Session` 응답은 바뀌지 않는다.
 
 `code`(기본 빈 문자열)는 **JSON 문자열**이어야 한다(숫자로 보내면 앞자리 0이 사라진다). `POST /api/auth/signup/code`로 메일에 받은 6자리 PIN이다(앞뒤 공백 제거). `SIGNUP_EMAIL_VERIFY`가 꺼져 있으면 `code`는 무시되고 동작은 이전과 같다. 켜져 있으면 PIN이 맞을 때만 계정이 만들어지고 PIN은 한 번 쓰면 지워진다(재사용 불가). 5번째 오답은 PIN을 폐기하고 `code_expired`로 답한다. 인증 사용 여부는 `GET /api/auth/signup/config`의 `emailVerify`로 안다. `name`은 `Session.profile.name`에 들어간다.
 
@@ -213,7 +218,7 @@
 
 #### GET /api/auth/signup/config
 
-`200 { "emailVerify": true | false }`. 프론트가 가입 화면의 PIN 칸 표시를 정한다.
+`200 { "emailVerify": true | false, "termsVersion": "2026-10-28", "termsRequired": true | false }`. 프론트가 가입 화면의 PIN 칸·약관 동의 칸 표시를 정한다. `termsVersion`은 현재 약관 버전(`docs/terms/`의 파일 날짜)이다.
 
 #### GET /api/auth/email-taken?email=a@b.com
 
