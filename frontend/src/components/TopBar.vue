@@ -53,6 +53,17 @@ onMounted(() => void account.load())
           <span class="led" aria-hidden="true" />
           모모 프리미엄
         </button>
+        <!-- 남은 티켓은 벤 면접을 시작할 수 있는지 그대로 말해 준다. 0장이면 흐리게 두되 숨기지 않는다 -->
+        <button
+          type="button"
+          class="mono link press tickets"
+          :class="{ empty: account.tickets === 0 }"
+          :aria-label="`보유 티켓 ${account.tickets}장 — 요금제 보기`"
+          data-test="top-tickets"
+          @click="modal.show('premium')"
+        >
+          <span aria-hidden="true">🎟</span> {{ account.tickets }}
+        </button>
         <button
           type="button"
           class="mono link press"
@@ -123,6 +134,14 @@ onMounted(() => void account.load())
 .link:hover,
 .link:focus-visible {
   color: var(--accent);
+}
+.tickets {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.tickets.empty {
+  opacity: 0.5;
 }
 .premium {
   display: inline-flex;
