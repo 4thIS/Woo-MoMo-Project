@@ -117,6 +117,17 @@ export function makeMockAccount(opts: { delayMs?: number } = {}): AccountApi {
       return load().users.some((u) => u.email === email)
     },
 
+    // 목업은 메일을 보낼 수 없다 — 인증을 끈 서버처럼 굴어 가입 흐름을 막지 않는다
+    async signupConfig() {
+      await wait()
+      return { emailVerify: false }
+    },
+
+    async sendSignupCode() {
+      await wait()
+      throw new AccountError('verify_disabled', '이메일 인증을 쓰지 않는 서버입니다')
+    },
+
     async signUp(email, password, name) {
       await wait()
       const db = load()

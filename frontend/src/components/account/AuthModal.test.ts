@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import AuthModal from './AuthModal.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
+import { AccountError } from '@/services/account'
 
 /** Teleport로 body에 붙으므로 끝나면 반드시 거둔다 — 안 그러면 다음 테스트의 querySelector가
  *  앞 테스트의 모달을 집는다 */
@@ -236,5 +237,114 @@ describe('AuthModal — 가입할 때 이름', () => {
     await click('auth-tab-signin')
     await click('auth-tab-signup')
     expect(q<HTMLInputElement>('auth-name').value).toBe('')
+  })
+})
+
+/** 인증을 켠 서버를 흉내 낸다 — 목업은 기본이 꺼짐이라 여기서 갈아 끼운다 */
+function verifyingApi(over: Partial<Record<string, unknown>> = {}) {
+  const api = makeMockAccount({ delayMs: 0 })
+  return {
+    ...api,
+    signupConfig: async () => ({ emailVerify: true }),
+    sendSignupCode: async () => ({ expiresInSec: 600, resendInSec: 60 }),
+    ...over,
+  }
+}
+
+describe('AuthModal — 가입 이메일 인증', () => {
+  it('인증이 꺼진 서버에서는 인증번호 칸이 없다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=auth-send-code]')).toBeNull()
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+  })
+
+  it('인증이 켜지면 받기 버튼이 생기고, 누르면 6자리 칸이 열린다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    expect(q('auth-send-code')).toBeTruthy()
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    expect(q('auth-code')).toBeTruthy()
+    expect(text('auth-code-hint')).toContain('10:00')
+  })
+
+  it('이메일이 비면 보내지 않는다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    await click('auth-send-code')
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+    expect(text('auth-error')).toContain('이메일')
+  })
+
+  it('이메일을 바꾸면 받아 둔 인증번호를 버린다 — 다른 이메일의 PIN은 맞지 않는다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    await set('auth-code', '123456')
+    await set('auth-email', 'c@d.com')
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+  })
+
+  it('가입할 때 인증번호를 함께 보낸다', async () => {
+    let sent: unknown = null
+    setAccountApi(
+      verifyingApi({
+        signUp: async (...args: unknown[]) => {
+          sent = args[3]
+          throw new AccountError('code_invalid', '인증번호가 맞지 않습니다')
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-send-code')
+    await set('auth-code', '012345')
+    await click('auth-submit')
+    expect(sent).toBe('012345')
+  })
+
+  it('틀리면 남은 시도 수를 알려 준다', async () => {
+    const e = new AccountError('code_invalid', '인증번호가 맞지 않습니다')
+    e.attemptsLeft = 3
+    setAccountApi(
+      verifyingApi({
+        signUp: async () => {
+          throw e
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-send-code')
+    await set('auth-code', '111111')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('3번')
+  })
+
+  it('너무 빨리 다시 받으면 기다릴 초를 보여 준다', async () => {
+    const e = new AccountError('code_cooldown', '잠시 뒤에 다시 받을 수 있습니다')
+    e.retryAfterSec = 40
+    setAccountApi(
+      verifyingApi({
+        sendSignupCode: async () => {
+          throw e
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    expect(q<HTMLButtonElement>('auth-send-code').disabled).toBe(true)
+    expect(text('auth-send-code')).toContain('40')
   })
 })

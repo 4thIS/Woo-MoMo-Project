@@ -69,6 +69,15 @@ export type AccountErrorCode =
   | 'invalid_premium_interview'
   | 'too_large'
   | 'unsupported_media'
+  /** 가입 이메일 인증(2026-10-27, `SIGNUP_EMAIL_VERIFY`가 켜진 서버에서만) */
+  | 'code_required'
+  | 'code_invalid'
+  | 'code_expired'
+  | 'code_cooldown'
+  | 'code_limit'
+  | 'mail_failed'
+  | 'mail_unavailable'
+  | 'verify_disabled'
   /** 연결 자체가 안 됨 */
   | 'network'
   /** 아직 없는 기능(구글 로그인) */
@@ -77,6 +86,12 @@ export type AccountErrorCode =
 
 /** 화면은 code로 분기하고 message를 그대로 보여 준다 */
 export class AccountError extends Error {
+  /** 서버가 짚어 준 칸 이름. 화면이 그 칸 옆에 안내를 붙인다 */
+  field?: string
+  /** `code_cooldown` — 이만큼 지나야 다시 보낼 수 있다 */
+  retryAfterSec?: number
+  /** `code_invalid` — 남은 시도 횟수 */
+  attemptsLeft?: number
   constructor(
     readonly code: AccountErrorCode,
     message: string,
@@ -86,6 +101,19 @@ export class AccountError extends Error {
     super(message)
     this.name = 'AccountError'
   }
+}
+
+/** 가입 화면이 PIN 칸을 띄울지 정하는 값 (`GET /api/auth/signup/config`) */
+export interface SignupConfig {
+  emailVerify: boolean
+}
+
+/** 인증번호를 보낸 뒤 서버가 알려 주는 시간 (`POST /api/auth/signup/code`) */
+export interface CodeSent {
+  /** PIN이 살아 있는 시간(초) */
+  expiresInSec: number
+  /** 다시 받기까지 기다려야 하는 시간(초) */
+  resendInSec: number
 }
 
 /** 보관함 목록용 — 가볍다. 대화·리포트는 담기지 않는다 */
@@ -135,8 +163,13 @@ export interface AccountApi {
   /** 비로그인은 오류가 아니라 null이다 */
   me(): Promise<Session | null>
   emailTaken(email: string): Promise<boolean>
-  /** 이름은 가입할 때 받는다 — 대입 면접의 이름 칸을 미리 채우는 값이다 */
-  signUp(email: string, password: string, name: string): Promise<Session>
+  /** 가입 화면이 열릴 때 한 번. 인증이 꺼진 서버면 PIN 칸을 아예 띄우지 않는다 */
+  signupConfig(): Promise<SignupConfig>
+  /** 가입 인증번호(6자리)를 메일로 보낸다. 인증이 켜진 서버에서만 */
+  sendSignupCode(email: string): Promise<CodeSent>
+  /** 이름은 가입할 때 받는다 — 대입 면접의 이름 칸을 미리 채우는 값이다.
+   *  `code`는 인증이 켜진 서버에서만 쓰인다 — 꺼져 있으면 서버가 무시한다 */
+  signUp(email: string, password: string, name: string, code?: string): Promise<Session>
   signIn(email: string, password: string): Promise<Session>
   /** 실제 구현은 리다이렉트. 목업은 이메일을 직접 받는다 */
   signInWithGoogle(email?: string): Promise<Session>
