@@ -14,6 +14,7 @@ import ReportCards from '@/components/report/ReportCards.vue'
 import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
 import { asReportV2 } from '@/utils/reportV2'
 import PixelButton from '@/components/ui/PixelButton.vue'
+import PixelAudio from '@/components/ui/PixelAudio.vue'
 
 const props = defineProps<{ entry: ArchiveDetail }>()
 defineEmits<{ back: []; remove: [] }>()
@@ -48,6 +49,17 @@ const subject = computed(() => {
 /** 답변 순번으로 녹음을 찾는다. 리포트 카드는 꼬리질문을 한 장에 합치므로
  *  카드 번호에는 맞출 수 없다 — 녹음은 **답변 옆**이 제 자리다 */
 const clipOf = (turn: number) => props.entry.recordings.find((r) => r.turn === turn)
+/** 리포트 화면과 같은 방식: Chrome "PDF로 저장" 대화상자.
+ *  탭 제목이 기본 파일명이 되므로 잠깐 바꿨다가 afterprint에 되돌린다 */
+function printReport() {
+  const prev = document.title
+  const d = new Date(props.entry.startedAt)
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  document.title = `모모_리포트_${ymd}_${iv.value.displayName}`
+  window.addEventListener('afterprint', () => (document.title = prev), { once: true })
+  window.print()
+}
+
 /** 이 메시지가 몇 번째 답변인가. 면접관 턴이면 -1 */
 function answerIndex(i: number): number {
   if (props.entry.messages[i].role !== 'user') return -1
@@ -65,6 +77,9 @@ function answerIndex(i: number): number {
         {{ iv.displayName }} · {{ when }} · {{ took
         }}<template v-if="subject"> · {{ subject }}</template>
       </span>
+      <PixelButton variant="secondary" data-test="archive-print" @click="printReport"
+        >PDF로 저장</PixelButton
+      >
       <PixelButton variant="secondary" data-test="archive-delete" @click="$emit('remove')"
         >지우기</PixelButton
       >
@@ -78,13 +93,12 @@ function answerIndex(i: number): number {
             <span class="mono who">{{ m.role === 'model' ? iv.displayName : '나' }}</span>
             <p>{{ m.text }}</p>
             <!-- 녹음이 없는 답변에는 줄을 그리지 않는다 — 빈 플레이어는 고장처럼 보인다 -->
-            <audio
+            <PixelAudio
               v-if="clipOf(answerIndex(i))"
               class="clip"
               data-test="archive-clip"
               :src="clipOf(answerIndex(i))!.url"
-              controls
-              preload="none"
+              :label="`답변 ${answerIndex(i) + 1} 녹음`"
             />
           </li>
         </ol>
@@ -181,6 +195,22 @@ function answerIndex(i: number): number {
 @media (max-width: 760px) {
   .cols {
     grid-template-columns: 1fr;
+  }
+}
+</style>
+
+<style scoped>
+@media print {
+  .head,
+  .log .clip {
+    display: none;
+  }
+  /* 대화 칸을 접고 리포트만 한 단으로 편다 */
+  .cols {
+    display: block;
+  }
+  .cols .pane:first-child {
+    display: none;
   }
 }
 </style>

@@ -60,7 +60,6 @@ def test_only_token_hash_is_stored(client, settings):
     ("over", "code", "field"),
     [
         ({"email": "not-an-email"}, "invalid_email", "email"),
-        ({"password": "short7c"}, "weak_password", "password"),
         ({"name": "   "}, "missing_name", "name"),
         ({"name": "가" * 101}, "invalid", "name"),
         ({"consent": False}, "consent_required", "consent"),

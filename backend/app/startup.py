@@ -5,7 +5,7 @@ import sqlite3
 from app import db
 from app.config import Settings
 from app.files import cleanup_orphan_recordings
-from app.repos import users, voice
+from app.repos import signup_codes, users, voice
 from app.security import hash_password, verify_password
 from app.timefmt import iso
 
@@ -23,6 +23,9 @@ def prepare_storage(settings: Settings, now: float) -> None:
         # 재시작으로 워커가 사라진 대기 분석은 실패로 닫는다
         with db.transaction(conn):
             voice.restart_cleanup(conn, now=iso(now))
+        # 만료되고 발송 창도 지난 가입 PIN 줄
+        with db.transaction(conn):
+            signup_codes.purge_stale(conn, now)
         sync_admin(conn, settings, now)
 
 

@@ -63,7 +63,7 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const keys = [...w.element.querySelectorAll('[data-test^=top-]')]
       .map((e) => (e as HTMLElement).dataset.test)
       .filter((k) => k !== 'top-admin')
-    expect(keys).toEqual(['top-premium', 'top-archive', 'top-me'])
+    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-archive', 'top-me'])
   })
 
   it('뜰 때 저장된 세션을 되찾는다', async () => {
@@ -177,5 +177,61 @@ describe('TopBar — 관리자 진입', () => {
     } finally {
       history.pushState({}, '', '/')
     }
+  })
+})
+
+describe('TopBar — 보유 티켓', () => {
+  const withTickets = (tickets: number, tier: 'member' | 'premium' = 'premium') => {
+    setAccountApi({
+      ...makeMockAccount({ delayMs: 0 }),
+      me: async () => ({
+        userId: 'u_1',
+        email: 'a@b.com',
+        tier,
+        tickets,
+        isAdmin: false,
+        profile: { name: 'x', age: null },
+        createdAt: '2026-10-01T00:00:00Z',
+      }),
+    })
+  }
+
+  it('비로그인에는 없다', async () => {
+    const w = bar()
+    await flushPromises()
+    expect(w.find('[data-test=top-tickets]').exists()).toBe(false)
+  })
+
+  it('로그인하면 보유 수를 보여 준다', async () => {
+    withTickets(7)
+    const w = bar()
+    await settle()
+    expect(w.get('[data-test=top-tickets]').text()).toContain('7')
+  })
+
+  it('0장이면 흐리게 — 없다는 것도 보여 줘야 한다', async () => {
+    withTickets(0)
+    const w = bar()
+    await settle()
+    expect(w.get('[data-test=top-tickets]').classes()).toContain('empty')
+  })
+
+  it('누르면 요금제 모달이 열린다', async () => {
+    withTickets(0)
+    const w = bar()
+    await settle()
+    await w.get('[data-test=top-tickets]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-test=plan-card]')).not.toBeNull()
+  })
+
+  it('세션의 티켓이 바뀌면 따라 바뀐다', async () => {
+    withTickets(3)
+    const w = bar()
+    await settle()
+    expect(w.get('[data-test=top-tickets]').text()).toContain('3')
+    useAccountStore().session!.tickets = 2
+    await flushPromises()
+    expect(w.get('[data-test=top-tickets]').text()).toContain('2')
   })
 })

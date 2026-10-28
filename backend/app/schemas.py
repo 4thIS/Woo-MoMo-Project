@@ -173,6 +173,8 @@ class SignupBody(BaseModel):
     password: str = ""
     name: str = ""
     consent: bool | None = None
+    code: str = ""
+    termsAgreed: bool = False
 
 
 class LoginBody(BaseModel):
@@ -583,3 +585,18 @@ class AdminAuditPage(BaseModel):
     pageSize: int
     total: int
     items: list[AdminAuditItem]
+
+
+class SignupCodeBody(BaseModel):
+    email: str = ""
+
+
+class SignupCodeSent(BaseModel):
+    expiresInSec: int
+    resendInSec: int
+
+
+class SignupConfig(BaseModel):
+    emailVerify: bool
+    termsVersion: str
+    termsRequired: bool

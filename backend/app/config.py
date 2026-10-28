@@ -14,6 +14,7 @@ DEFAULT_CORS_ORIGINS = (
 DEFAULT_BEN_DAILY_LIMIT = 30
 DEFAULT_BAZE_VOICE_MODEL = "gemini-3.8-flash"
 DEFAULT_BAZE_MIN_REMAINING = 50.0
+DEFAULT_MAIL_API_URL = "https://send.ssenu.cloud/v1/send"
 # DATA_DIR = 사용자 데이터(DB·녹음). 정적 계약 데이터(MOMO_DATA_DIR)와 다르다.
 DEFAULT_STORAGE_DIR = Path(__file__).resolve().parents[1] / "var"
 
@@ -66,6 +67,10 @@ class Settings:
     baze_voice_model: str = DEFAULT_BAZE_VOICE_MODEL
     baze_min_remaining: float = DEFAULT_BAZE_MIN_REMAINING
     ben_report_v2: bool = False
+    signup_email_verify: bool = False
+    signup_terms_required: bool = False
+    mail_api_key: str | None = field(default=None, repr=False)
+    mail_api_url: str = DEFAULT_MAIL_API_URL
 
     @property
     def db_path(self) -> Path:
@@ -101,4 +106,8 @@ class Settings:
             if min_remaining
             else DEFAULT_BAZE_MIN_REMAINING,
             ben_report_v2=_parse_bool(e.get("BEN_REPORT_V2"), default=False),
+            signup_email_verify=_parse_bool(e.get("SIGNUP_EMAIL_VERIFY"), default=False),
+            signup_terms_required=_parse_bool(e.get("SIGNUP_TERMS_REQUIRED"), default=False),
+            mail_api_key=_stripped(e.get("MAIL_API_KEY")),
+            mail_api_url=_stripped(e.get("MAIL_API_URL")) or DEFAULT_MAIL_API_URL,
         )

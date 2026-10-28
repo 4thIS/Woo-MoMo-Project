@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import AuthModal from './AuthModal.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
+import { AccountError } from '@/services/account'
 
 /** Teleport로 body에 붙으므로 끝나면 반드시 거둔다 — 안 그러면 다음 테스트의 querySelector가
  *  앞 테스트의 모달을 집는다 */
@@ -103,7 +104,7 @@ describe('AuthModal — 회원가입', () => {
     await click('auth-tab-signup')
     await fill('a@b.com', 'short', 'short')
     await click('auth-submit')
-    expect(text('auth-error')).toContain('8자 이상')
+    expect(text('auth-error')).toContain('8~64자')
   })
 
   it('이미 쓰는 이메일이면 알려 준다', async () => {
@@ -236,5 +237,252 @@ describe('AuthModal — 가입할 때 이름', () => {
     await click('auth-tab-signin')
     await click('auth-tab-signup')
     expect(q<HTMLInputElement>('auth-name').value).toBe('')
+  })
+})
+
+/** 인증을 켠 서버를 흉내 낸다 — 목업은 기본이 꺼짐이라 여기서 갈아 끼운다 */
+function verifyingApi(over: Partial<Record<string, unknown>> = {}) {
+  const api = makeMockAccount({ delayMs: 0 })
+  return {
+    ...api,
+    signupConfig: async () => ({ emailVerify: true }),
+    sendSignupCode: async () => ({ expiresInSec: 600, resendInSec: 60 }),
+    ...over,
+  }
+}
+
+describe('AuthModal — 가입 이메일 인증', () => {
+  it('인증이 꺼진 서버에서는 인증번호 칸이 없다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=auth-send-code]')).toBeNull()
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+  })
+
+  it('인증이 켜지면 받기 버튼이 생기고, 누르면 6자리 칸이 열린다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    expect(q('auth-send-code')).toBeTruthy()
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    expect(q('auth-code')).toBeTruthy()
+    expect(text('auth-code-hint')).toContain('10:00')
+  })
+
+  it('이메일이 비면 보내지 않는다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    await click('auth-send-code')
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+    expect(text('auth-error')).toContain('이메일')
+  })
+
+  it('이메일을 바꾸면 받아 둔 인증번호를 버린다 — 다른 이메일의 PIN은 맞지 않는다', async () => {
+    setAccountApi(verifyingApi())
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    await set('auth-code', '123456')
+    await set('auth-email', 'c@d.com')
+    expect(document.querySelector('[data-test=auth-code]')).toBeNull()
+  })
+
+  it('가입할 때 인증번호를 함께 보낸다', async () => {
+    let sent: unknown = null
+    setAccountApi(
+      verifyingApi({
+        signUp: async (...args: unknown[]) => {
+          sent = args[3]
+          throw new AccountError('code_invalid', '인증번호가 맞지 않습니다')
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-send-code')
+    await set('auth-code', '012345')
+    await click('auth-submit')
+    expect(sent).toMatchObject({ code: '012345' })
+  })
+
+  it('틀리면 남은 시도 수를 알려 준다', async () => {
+    const e = new AccountError('code_invalid', '인증번호가 맞지 않습니다')
+    e.attemptsLeft = 3
+    setAccountApi(
+      verifyingApi({
+        signUp: async () => {
+          throw e
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'pw123456', 'pw123456')
+    await click('auth-send-code')
+    await set('auth-code', '111111')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('3번')
+  })
+
+  it('너무 빨리 다시 받으면 기다릴 초를 보여 준다', async () => {
+    const e = new AccountError('code_cooldown', '잠시 뒤에 다시 받을 수 있습니다')
+    e.retryAfterSec = 40
+    setAccountApi(
+      verifyingApi({
+        sendSignupCode: async () => {
+          throw e
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-email', 'a@b.com')
+    await click('auth-send-code')
+    expect(q<HTMLButtonElement>('auth-send-code').disabled).toBe(true)
+    expect(text('auth-send-code')).toContain('40')
+  })
+})
+
+describe('AuthModal — 비밀번호 규칙', () => {
+  it('가입 탭에서만 조건 세 개를 보여 준다', async () => {
+    modal()
+    expect(document.querySelector('[data-test=pw-rules]')).toBeNull()
+    await click('auth-tab-signup')
+    expect(q('pw-rules')).toBeTruthy()
+  })
+
+  it('치는 동안 통과한 조건에 표시가 켜진다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-password', 'abcdefgh')
+    expect(q('pw-rule-length').className).toContain('on')
+    expect(q('pw-rule-letter-digit').className).not.toContain('on')
+    await set('auth-password', 'abcd1234')
+    expect(q('pw-rule-letter-digit').className).toContain('on')
+  })
+
+  it('공백이 있으면 공백 조건이 꺼진다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await set('auth-password', 'abcd 1234')
+    expect(q('pw-rule-no-space').className).not.toContain('on')
+  })
+
+  it('규칙을 어기면 제출을 막는다 — 서버까지 가지 않는다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'abcdefgh', 'abcdefgh')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('영문과 숫자')
+  })
+
+  it('서버가 준 rule별 문구를 보여 준다', async () => {
+    const e = new AccountError('weak_password', '비밀번호가 규칙에 맞지 않습니다')
+    e.rule = 'whitespace'
+    const api = makeMockAccount({ delayMs: 0 })
+    setAccountApi({
+      ...api,
+      signUp: async () => {
+        throw e
+      },
+    })
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'abcd1234', 'abcd1234')
+    await click('auth-submit')
+    expect(text('auth-error')).toContain('공백')
+  })
+
+  it('로그인 탭은 규칙을 걸지 않는다 — 예전 규칙으로 만든 비밀번호가 있다', async () => {
+    modal()
+    await fill('a@b.com', 'short')
+    await click('auth-submit')
+    expect(text('auth-error')).not.toContain('영문과 숫자')
+  })
+})
+
+/** 약관을 받는 서버를 흉내 낸다 */
+function termsApi(over: Partial<Record<string, unknown>> = {}) {
+  const api = makeMockAccount({ delayMs: 0 })
+  return {
+    ...api,
+    signupConfig: async () => ({
+      emailVerify: false,
+      termsRequired: true,
+      termsVersion: '2026-10-28',
+    }),
+    ...over,
+  }
+}
+
+describe('AuthModal — 약관 동의', () => {
+  it('약관을 받지 않는 서버에서는 체크박스가 없다', async () => {
+    modal()
+    await click('auth-tab-signup')
+    expect(document.querySelector('[data-test=terms-all]')).toBeNull()
+  })
+
+  it('받는 서버에서는 전체 동의와 항목 둘이 나온다', async () => {
+    setAccountApi(termsApi())
+    modal()
+    await click('auth-tab-signup')
+    expect(q('terms-all')).toBeTruthy()
+    expect(q('terms-service')).toBeTruthy()
+    expect(q('terms-privacy')).toBeTruthy()
+  })
+
+  it('전체 동의가 둘을 한 번에 켜고 끈다', async () => {
+    setAccountApi(termsApi())
+    modal()
+    await click('auth-tab-signup')
+    await click('terms-all')
+    expect(q<HTMLInputElement>('terms-service').checked).toBe(true)
+    expect(q<HTMLInputElement>('terms-privacy').checked).toBe(true)
+    await click('terms-all')
+    expect(q<HTMLInputElement>('terms-service').checked).toBe(false)
+  })
+
+  it('둘 다 체크해야 가입 버튼이 열린다', async () => {
+    setAccountApi(termsApi())
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'abcd1234', 'abcd1234')
+    expect(q<HTMLButtonElement>('auth-submit').disabled).toBe(true)
+    await click('terms-service')
+    expect(q<HTMLButtonElement>('auth-submit').disabled).toBe(true)
+    await click('terms-privacy')
+    expect(q<HTMLButtonElement>('auth-submit').disabled).toBe(false)
+  })
+
+  it('체크한 값을 그대로 보낸다 — consent를 자동으로 true로 넣지 않는다', async () => {
+    let got: unknown = null
+    setAccountApi(
+      termsApi({
+        signUp: async (...args: unknown[]) => {
+          got = args[3]
+          throw new AccountError('terms_required', '이용약관에 동의해 주세요')
+        },
+      }),
+    )
+    modal()
+    await click('auth-tab-signup')
+    await fill('a@b.com', 'abcd1234', 'abcd1234')
+    await click('terms-all')
+    await click('auth-submit')
+    expect(got).toMatchObject({ consent: true, termsAgreed: true })
+  })
+
+  it('[보기]를 누르면 약관 본문이 뜬다', async () => {
+    setAccountApi(termsApi())
+    modal()
+    await click('auth-tab-signup')
+    await click('terms-view-service')
+    expect(text('terms-body')).toContain('모의면접')
   })
 })

@@ -290,3 +290,17 @@ def test_report_system_includes_briefing_only_with_posting():
     assert prompts.report_system("company", COMPANY, None) == prompts.build_system(
         "company", COMPANY
     )
+
+
+def test_rules_forbid_parentheses_and_system_talk():
+    # 실제 면접관 말투: 괄호 대신 말로 풀고, 진행 규칙·횟수를 입 밖에 내지 않는다 (spec 2026-10-28 2절)
+    rules = prompts._rules("회사 질문")
+    assert (
+        "1. 한국어 존댓말을 씁니다. 한 번에 질문을 하나만 합니다. 질문은 두 문장 이내로 짧게 합니다. "
+        "괄호를 쓰지 않습니다. 예시가 필요하면 '파이썬이나 자바 같은'처럼 말로 풀어 씁니다."
+    ) in rules
+    assert (
+        "5. 질문 번호, 남은 질문 수, 꼬리질문 횟수, 다음 질문으로 넘어간다는 안내처럼 "
+        "진행 규칙이나 시스템에 관한 말은 하지 않습니다. 실제 면접관처럼 자연스럽게 다음 질문을 합니다."
+    ) in rules
+    assert "질문 번호나 남은 질문 수를 말하지 않습니다." not in rules
