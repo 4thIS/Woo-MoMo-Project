@@ -18,6 +18,7 @@ import {
   type ResumeSlot,
   type Session,
   type SignupConfig,
+  type SignupOptions,
   type CodeSent,
 } from './account'
 
@@ -52,6 +53,7 @@ const MESSAGES: Record<AccountErrorCode, string> = {
   mail_failed: '메일을 보내지 못했습니다 — 잠시 뒤 다시 시도하세요',
   mail_unavailable: '지금은 인증 메일을 보낼 수 없습니다',
   verify_disabled: '이메일 인증을 쓰지 않는 서버입니다',
+  terms_required: '이용약관에 동의해 주세요',
   network: '연결하지 못했습니다',
   unavailable: '아직 준비 중입니다',
   unknown: '요청을 처리하지 못했습니다',
@@ -66,6 +68,7 @@ function toError(body: unknown): AccountError {
     field?: unknown
     retryAfterSec?: unknown
     attemptsLeft?: unknown
+    rule?: unknown
   }
   const raw = typeof b.error === 'string' ? b.error : ''
   const code = (KNOWN.has(raw) ? raw : 'unknown') as AccountErrorCode
@@ -75,6 +78,7 @@ function toError(body: unknown): AccountError {
   if (typeof b.field === 'string') e.field = b.field
   if (typeof b.retryAfterSec === 'number') e.retryAfterSec = b.retryAfterSec
   if (typeof b.attemptsLeft === 'number') e.attemptsLeft = b.attemptsLeft
+  if (typeof b.rule === 'string') e.rule = b.rule
   return e
 }
 
@@ -116,10 +120,17 @@ export function makeHttpAccount(): AccountApi {
 
     sendSignupCode: (email) => call<CodeSent>('/auth/signup/code', 'POST', { email }),
 
-    // 동의는 가입 화면의 안내 문구를 읽고 누른 것으로 본다(spec 7.1). 서버는 true가 아니면 거절한다
-    // code는 **문자열**로 보낸다 — 숫자로 보내면 "012345"의 앞자리 0이 사라진다
-    signUp: (email, password, name, code = '') =>
-      call<Session>('/auth/signup', 'POST', { email, password, name, consent: true, code }),
+    // code는 **문자열**로 보낸다 — 숫자로 보내면 "012345"의 앞자리 0이 사라진다.
+    // 약관을 받지 않는 서버에서는 안내 문구를 읽고 누른 것으로 보아 consent를 true로 둔다(spec 7.1)
+    signUp: (email, password, name, opts: SignupOptions = {}) =>
+      call<Session>('/auth/signup', 'POST', {
+        email,
+        password,
+        name,
+        consent: opts.consent ?? true,
+        code: opts.code ?? '',
+        ...(opts.termsAgreed === undefined ? {} : { termsAgreed: opts.termsAgreed }),
+      }),
 
     signIn: (email, password) => call<Session>('/auth/login', 'POST', { email, password }),
 
