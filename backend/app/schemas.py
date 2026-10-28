@@ -174,6 +174,7 @@ class SignupBody(BaseModel):
     name: str = ""
     consent: bool | None = None
     code: str = ""
+    termsAgreed: bool = False
 
 
 class LoginBody(BaseModel):
@@ -597,3 +598,5 @@ class SignupCodeSent(BaseModel):
 
 class SignupConfig(BaseModel):
     emailVerify: bool
+    termsVersion: str
+    termsRequired: bool

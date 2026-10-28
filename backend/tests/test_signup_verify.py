@@ -182,12 +182,15 @@ def test_accounts_created_before_migration_008_still_log_in(make_client, on_sett
     on_settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     with db.connection(on_settings.db_path) as conn:
         assert db.migrate(conn, old_dir) == 7
-        users.create_user(
-            conn,
-            email="old@example.com",
-            password_hash=hash_password(PASSWORD),
-            name="옛 계정",
-            created_at="2026-10-01T00:00:00.000Z",
+        conn.execute(  # 009 이전 스키마라 약관 열이 없다 — create_user 대신 직접 삽입
+            "INSERT INTO users (id, email, password_hash, name, created_at) VALUES (?,?,?,?,?)",
+            (
+                "u_old",
+                "old@example.com",
+                hash_password(PASSWORD),
+                "옛 계정",
+                "2026-10-01T00:00:00.000Z",
+            ),
         )
     c = make_client(on_settings, mailer=fake_mailer)
     with open_db(on_settings) as conn:

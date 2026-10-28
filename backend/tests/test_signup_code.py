@@ -36,11 +36,19 @@ def _pin(mailer, index=-1):
 def test_disabled_returns_404_and_config_false(client):
     res = client.post(URL, json={"email": MAIL})
     assert res.status_code == 404 and res.json() == {"error": "verify_disabled"}
-    assert client.get("/api/auth/signup/config").json() == {"emailVerify": False}
+    assert client.get("/api/auth/signup/config").json() == {
+        "emailVerify": False,
+        "termsVersion": "2026-10-28",
+        "termsRequired": False,
+    }
 
 
 def test_config_true(vc):
-    assert vc.get("/api/auth/signup/config").json() == {"emailVerify": True}
+    assert vc.get("/api/auth/signup/config").json() == {
+        "emailVerify": True,
+        "termsVersion": "2026-10-28",
+        "termsRequired": False,
+    }
 
 
 def test_sends_mail_and_stores_hash_only(vc, fake_mailer, on_settings, clock):
