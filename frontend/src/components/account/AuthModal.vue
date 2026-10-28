@@ -9,6 +9,9 @@ import { useAccountStore } from '@/stores/account'
 import type { AccountError } from '@/services/account'
 import PixelModal from '@/components/ui/PixelModal.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
+import TermsModal from './TermsModal.vue'
+import { checkPassword, PASSWORD_MAX, PASSWORD_MIN } from '@/utils/password'
+import { PRIVACY_TERMS, SERVICE_TERMS, type TermsSection } from '@/content/terms'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -23,6 +26,30 @@ const pw = ref('')
 const pw2 = ref('')
 /** 보내기 전에 걸러낸 것. 서비스 오류와 섞지 않는다 */
 const localError = ref('')
+
+/* ── 약관 동의(2026-10-28, 서버가 켠 경우만) ────────────────────────── */
+const agreeService = ref(false)
+const agreePrivacy = ref(false)
+/** [보기]로 열어 둔 절. null이면 닫힘 */
+const viewing = ref<TermsSection | null>(null)
+
+const needTerms = computed(() => signup.value && account.termsRequired)
+const agreeAll = computed({
+  get: () => agreeService.value && agreePrivacy.value,
+  set: (on: boolean) => {
+    agreeService.value = on
+    agreePrivacy.value = on
+  },
+})
+
+/* ── 비밀번호 규칙(가입만) ──────────────────────────────────────────── */
+const pwCheck = computed(() => checkPassword(pw.value))
+/** 서버가 짚어 준 조건별 문구. rule이 없는 옛 서버는 서버 문구를 그대로 쓴다 */
+const PW_RULE_MESSAGE: Record<string, string> = {
+  length: `비밀번호는 ${PASSWORD_MIN}~${PASSWORD_MAX}자로 입력해 주세요`,
+  whitespace: '비밀번호에 공백을 넣을 수 없어요',
+  letter_digit: '영문과 숫자를 모두 넣어 주세요',
+}
 
 /* ── 가입 이메일 인증(2026-10-27, 서버가 켠 경우만) ──────────────────── */
 const code = ref('')
@@ -71,9 +98,12 @@ const error = computed(() => {
   // 남은 시도 수는 서버만 안다 — 문구에 붙여 "몇 번 더" 를 알려 준다
   if (e.code === 'code_invalid' && typeof e.attemptsLeft === 'number')
     return `${e.message} (${e.attemptsLeft}번 더 시도할 수 있어요)`
+  if (e.code === 'weak_password' && e.rule) return PW_RULE_MESSAGE[e.rule] ?? e.message
   return e.message
 })
 const busy = computed(() => account.loading)
+/** 약관을 받는 서버에서는 둘 다 체크해야 누를 수 있다 */
+const blocked = computed(() => busy.value || (needTerms.value && !agreeAll.value))
 
 function reset() {
   name.value = ''
@@ -83,6 +113,13 @@ function reset() {
   localError.value = ''
   account.error = null
   clearCode()
+  clearTerms()
+}
+
+function clearTerms() {
+  agreeService.value = false
+  agreePrivacy.value = false
+  viewing.value = null
 }
 
 function setMode(next: Mode) {
@@ -92,6 +129,7 @@ function setMode(next: Mode) {
   localError.value = ''
   account.error = null
   clearCode()
+  clearTerms()
 }
 
 watch(
@@ -157,11 +195,26 @@ async function submit() {
     localError.value = '비밀번호가 서로 다릅니다'
     return
   }
+  if (signup.value && !pwCheck.value.ok) {
+    const c = pwCheck.value
+    localError.value = !c.length
+      ? PW_RULE_MESSAGE.length
+      : !c.noSpace
+        ? PW_RULE_MESSAGE.whitespace
+        : PW_RULE_MESSAGE.letter_digit
+    return
+  }
   if (verifying.value && !code.value.trim()) {
     localError.value = '인증번호를 입력하세요'
     return
   }
-  if (signup.value) await account.signUp(email.value, pw.value, name.value, code.value.trim())
+  if (signup.value)
+    await account.signUp(email.value, pw.value, name.value, {
+      code: code.value.trim(),
+      // 약관을 받는 서버면 체크한 값 그대로, 아니면 안내 문구를 읽은 것으로 본다
+      consent: needTerms.value ? agreePrivacy.value : true,
+      ...(needTerms.value ? { termsAgreed: agreeService.value } : {}),
+    })
   else await account.signIn(email.value, pw.value)
   // 인증번호가 만료·폐기됐으면 다시 받아야 한다 — 남은 숫자를 지워 헷갈리지 않게
   if (lastError()?.code === 'code_expired') clearCode()
@@ -270,6 +323,18 @@ async function google() {
         />
       </label>
 
+      <ul v-if="signup" class="rules mono" data-test="pw-rules">
+        <li :class="{ on: pwCheck.length }" data-test="pw-rule-length">
+          {{ pwCheck.length ? '✓' : '·' }} {{ PASSWORD_MIN }}~{{ PASSWORD_MAX }}자
+        </li>
+        <li :class="{ on: pwCheck.letterDigit }" data-test="pw-rule-letter-digit">
+          {{ pwCheck.letterDigit ? '✓' : '·' }} 영문 + 숫자
+        </li>
+        <li :class="{ on: pwCheck.noSpace }" data-test="pw-rule-no-space">
+          {{ pwCheck.noSpace ? '✓' : '·' }} 공백 없음
+        </li>
+      </ul>
+
       <label v-if="signup" class="field">
         <span class="mono lab">비밀번호 확인</span>
         <input
@@ -283,13 +348,52 @@ async function google() {
 
       <p v-if="error" class="mono err" data-test="auth-error">{{ error }}</p>
 
-      <p v-if="signup" class="mono consent" data-test="auth-consent">
+      <!-- 약관을 받는 서버에서만. 둘 다 필수라 체크해야 가입 버튼이 열린다 -->
+      <div v-if="needTerms" class="terms">
+        <label class="agree all">
+          <input v-model="agreeAll" type="checkbox" data-test="terms-all" />
+          <span class="mono">전체 동의</span>
+        </label>
+
+        <label class="agree">
+          <input v-model="agreeService" type="checkbox" data-test="terms-service" />
+          <span class="mono">이용약관 동의 (필수)</span>
+          <button
+            type="button"
+            class="mono view"
+            data-test="terms-view-service"
+            @click.prevent="viewing = SERVICE_TERMS"
+          >
+            보기
+          </button>
+        </label>
+
+        <label class="agree">
+          <input v-model="agreePrivacy" type="checkbox" data-test="terms-privacy" />
+          <span class="mono">개인정보 수집·이용 동의 (필수)</span>
+          <button
+            type="button"
+            class="mono view"
+            data-test="terms-view-privacy"
+            @click.prevent="viewing = PRIVACY_TERMS"
+          >
+            보기
+          </button>
+        </label>
+
+        <p class="mono consent" data-test="auth-consent">
+          로그인하면 이력서·면접 대화·리포트가 서버에 저장됩니다. 로그인하지 않으면 이 브라우저를
+          떠나지 않습니다 (음성 인식 제외).
+        </p>
+      </div>
+
+      <p v-else-if="signup" class="mono consent" data-test="auth-consent">
         로그인하면 이력서·면접 대화·리포트가 서버에 저장됩니다. 로그인하지 않으면 이 브라우저를
         떠나지 않습니다 (음성 인식 제외).
       </p>
 
       <div class="acts">
-        <PixelButton :disabled="busy" data-test="auth-submit" @click="submit">
+        <PixelButton :disabled="blocked" data-test="auth-submit" @click="submit">
           {{ signup ? '가입하고 시작' : '로그인' }}
         </PixelButton>
         <PixelButton variant="secondary" :disabled="busy" data-test="auth-google" @click="google">
@@ -298,6 +402,8 @@ async function google() {
       </div>
     </form>
   </PixelModal>
+
+  <TermsModal :open="viewing !== null" :section="viewing" @close="viewing = null" />
 </template>
 
 <style scoped>
@@ -343,6 +449,49 @@ async function google() {
 .hint {
   font-size: var(--fs-meta);
   color: var(--text-3);
+}
+.rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+  margin: calc(var(--sp-2) * -1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.rules .on {
+  color: var(--ok, var(--accent));
+}
+.terms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  border: 2px solid var(--raise);
+  padding: var(--sp-4);
+}
+.agree {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.agree.all {
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--raise);
+  color: var(--text-1);
+}
+.view {
+  margin-left: auto;
+  padding: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .consent {
   margin: 0;

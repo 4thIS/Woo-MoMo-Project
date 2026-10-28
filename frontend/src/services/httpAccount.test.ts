@@ -220,7 +220,7 @@ describe('httpAccount — 가입 이메일 인증', () => {
 
   it('code를 문자열로 보낸다 — 숫자로 보내면 앞자리 0이 사라진다', async () => {
     answer({ status: 201, body: SESSION })
-    await api().signUp('a@b.com', 'pw123456', '이우진', '012345')
+    await api().signUp('a@b.com', 'pw123456', '이우진', { code: '012345' })
     const body = JSON.parse(calls[0].init.body as string)
     expect(body.code).toBe('012345')
     expect(typeof body.code).toBe('string')
@@ -244,7 +244,7 @@ describe('httpAccount — 가입 이메일 인증', () => {
   it('틀린 인증번호는 남은 시도 수와 칸 이름을 함께 준다', async () => {
     answer({ status: 422, body: { error: 'code_invalid', field: 'code', attemptsLeft: 3 } })
     const e = await api()
-      .signUp('a@b.com', 'pw123456', '이우진', '111111')
+      .signUp('a@b.com', 'pw123456', '이우진', { code: '111111' })
       .catch((x) => x)
     expect(e.code).toBe('code_invalid')
     expect(e.attemptsLeft).toBe(3)
@@ -280,5 +280,61 @@ describe('httpAccount — 가입 이메일 인증', () => {
       expect(e.message).not.toBe('')
       expect(e.message).not.toBe('요청을 처리하지 못했습니다')
     }
+  })
+})
+
+describe('httpAccount — 비밀번호 규칙·약관', () => {
+  it('config는 약관 설정도 함께 준다', async () => {
+    answer({ body: { emailVerify: true, termsRequired: true, termsVersion: '2026-10-28' } })
+    expect(await api().signupConfig()).toEqual({
+      emailVerify: true,
+      termsRequired: true,
+      termsVersion: '2026-10-28',
+    })
+  })
+
+  it('약관 칸이 없는 옛 서버도 그대로 읽는다', async () => {
+    answer({ body: { emailVerify: false } })
+    expect((await api().signupConfig()).termsRequired).toBeUndefined()
+  })
+
+  it('weak_password의 rule을 담아 온다 — 어느 조건이 틀렸는지 알려 준다', async () => {
+    answer({ status: 422, body: { error: 'weak_password', field: 'password', rule: 'whitespace' } })
+    const e = await api()
+      .signUp('a@b.com', 'pw 12345', '이우진')
+      .catch((x) => x)
+    expect(e.code).toBe('weak_password')
+    expect(e.rule).toBe('whitespace')
+  })
+
+  it('동의 두 가지를 그대로 보낸다 — 자동으로 true를 넣지 않는다', async () => {
+    answer({ status: 201, body: SESSION })
+    await api().signUp('a@b.com', 'pw123456', '이우진', {
+      code: '123456',
+      consent: true,
+      termsAgreed: true,
+    })
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.consent).toBe(true)
+    expect(body.termsAgreed).toBe(true)
+    expect(body.code).toBe('123456')
+  })
+
+  it('동의를 안 넘기면 보내지 않는다 — 약관을 쓰지 않는 서버와 같게', async () => {
+    answer({ status: 201, body: SESSION })
+    await api().signUp('a@b.com', 'pw123456', '이우진')
+    const body = JSON.parse(calls[0].init.body as string)
+    expect(body.consent).toBe(true)
+    expect(body.termsAgreed).toBeUndefined()
+  })
+
+  it('약관 미동의에도 문구가 붙는다', async () => {
+    answer({ status: 422, body: { error: 'terms_required', field: 'termsAgreed' } })
+    const e = await api()
+      .signUp('a@b.com', 'pw123456', '이우진')
+      .catch((x) => x)
+    expect(e.code).toBe('terms_required')
+    expect(e.field).toBe('termsAgreed')
+    expect(e.message).not.toBe('요청을 처리하지 못했습니다')
   })
 })

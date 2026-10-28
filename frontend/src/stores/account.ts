@@ -18,6 +18,7 @@ import {
   type ResumeSlot,
   type Session,
   type CodeSent,
+  type SignupOptions,
 } from '@/services/account'
 import { isFull } from '@/utils/archive'
 
@@ -39,6 +40,8 @@ export const useAccountStore = defineStore('account', {
     error: null as AccountError | null,
     /** 서버가 가입 이메일 인증을 쓰는가(2026-10-27). 물어보기 전에는 false */
     emailVerify: false,
+    /** 서버가 약관 동의를 받는가(2026-10-28). 물어보기 전에는 false */
+    termsRequired: false,
   }),
   getters: {
     signedIn: (s) => s.session !== null,
@@ -93,9 +96,12 @@ export const useAccountStore = defineStore('account', {
      *  옛 서버(엔드포인트 없음)에서도 가입이 막히지 않아야 한다 */
     async loadSignupConfig(): Promise<void> {
       try {
-        this.emailVerify = (await api.signupConfig()).emailVerify
+        const c = await api.signupConfig()
+        this.emailVerify = c.emailVerify
+        this.termsRequired = c.termsRequired === true
       } catch {
         this.emailVerify = false
+        this.termsRequired = false
       }
     },
 
@@ -104,8 +110,8 @@ export const useAccountStore = defineStore('account', {
       return await this.run(() => api.sendSignupCode(email))
     },
 
-    async signUp(email: string, password: string, name: string, code?: string) {
-      const s = await this.run(() => api.signUp(email, password, name, code))
+    async signUp(email: string, password: string, name: string, opts?: SignupOptions) {
+      const s = await this.run(() => api.signUp(email, password, name, opts))
       if (s) {
         this.session = s
         this.resumes = []
