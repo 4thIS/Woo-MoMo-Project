@@ -39,6 +39,18 @@ export interface Measurements {
   /** 말한 시간 5초 미만·음절 0. 이러면 나머지 값은 전부 null이다 */
   insufficient: boolean
 }
+/** 답변 하나의 여섯 축 프로필(2026-10-30). 순서가 곧 육각형 꼭짓점 순서다 */
+export interface ProfileAxis {
+  key: string
+  label: string
+  /** 1~5. 측정이 없으면 null */
+  level: number | null
+  /** 한 줄 설명. level이 null이면 함께 null */
+  comment: string | null
+}
+/** 축은 여섯 개로 고정 — 하나라도 모자라면 그래프가 거짓말을 한다 */
+export const PROFILE_AXES = 6
+
 export interface ReportV2Item {
   id: string
   parent: string | null
@@ -49,6 +61,8 @@ export interface ReportV2Item {
   feedback: string
   delivery: string | null
   measurements: Measurements | null
+  /** 여섯 축 프로필. 예전에 저장된 리포트에는 없다 — 그때는 measurements 표를 그린다 */
+  profile: ProfileAxis[] | null
 }
 export interface SummaryPoint {
   point: string
@@ -97,7 +111,28 @@ function item(raw: unknown): ReportV2Item | null {
     feedback: o.feedback,
     delivery: str(o.delivery) ? o.delivery : null,
     measurements: (obj(o.measurements) as Measurements | null) ?? null,
+    profile: profile(o.profile),
   }
+}
+
+/** 여섯 축이 온전할 때만 받는다. 반쪽 그래프는 틀린 그래프다 */
+function profile(raw: unknown): ProfileAxis[] | null {
+  if (!Array.isArray(raw) || raw.length !== PROFILE_AXES) return null
+  const axes: ProfileAxis[] = []
+  for (const a of raw) {
+    const o = obj(a)
+    if (!o || !str(o.key) || !str(o.label)) return null
+    const lv = o.level
+    // 단계는 1~5뿐. 벗어난 값이 오면 눈금 밖으로 삐져나간다
+    if (lv !== null && !(typeof lv === 'number' && lv >= 1 && lv <= 5)) return null
+    axes.push({
+      key: o.key,
+      label: o.label,
+      level: lv === null ? null : (lv as number),
+      comment: lv !== null && str(o.comment) ? o.comment : null,
+    })
+  }
+  return axes
 }
 
 /** 버전 2 리포트로 쓸 수 있으면 다듬어 돌려주고, 아니면 null(= 버전 1로 간다) */

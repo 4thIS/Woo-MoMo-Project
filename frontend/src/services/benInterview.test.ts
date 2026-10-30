@@ -251,6 +251,7 @@ describe('reportStream', () => {
           feedback: '피드백',
           delivery: null,
           measurements: null,
+          profile: null,
         },
       ],
       summary: { strengths: [], improvements: [], delivery: null, postingFit: null },

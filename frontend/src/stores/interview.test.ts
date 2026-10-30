@@ -1084,7 +1084,10 @@ describe('프리미엄 면접 녹음', () => {
   const replies = () => fakeSession(['q1', 'q2', '```json\n' + REPORT + '\n```'])
 
   function fakeRecorder(size = 10) {
-    const cut = vi.fn(async () => new Blob([new Uint8Array(size)], { type: 'audio/webm' }))
+    const cut = vi.fn(async () => ({
+      blob: new Blob([new Uint8Array(size)], { type: 'audio/webm' }),
+      durationSec: 12.5,
+    }))
     const stop = vi.fn(async () => null)
     return { cut, stop }
   }
@@ -1135,6 +1138,7 @@ describe('프리미엄 면접 녹음', () => {
           feedback: '피드백',
           delivery: null,
           measurements: null,
+          profile: null,
         },
       ],
       summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
@@ -1584,6 +1588,7 @@ describe('벤 면접 — 서버가 대화를 가진다', () => {
           feedback: '피드백',
           delivery: null,
           measurements: null,
+          profile: null,
         },
       ],
       summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
@@ -1632,7 +1637,10 @@ describe('녹음은 보관함에 올라가야 남는다', () => {
 
   function fakeRecorder() {
     return {
-      cut: vi.fn(async () => new Blob([new Uint8Array(32)], { type: 'audio/webm' })),
+      cut: vi.fn(async () => ({
+        blob: new Blob([new Uint8Array(32)], { type: 'audio/webm' }),
+        durationSec: 12.5,
+      })),
       stop: vi.fn(async () => null),
     }
   }
@@ -1742,7 +1750,10 @@ describe('벤 리포트에 전달력 측정을 싣는다 (#99)', () => {
 
   function fakeRecorder() {
     return {
-      cut: vi.fn(async () => new Blob([new Uint8Array(32)], { type: 'audio/webm' })),
+      cut: vi.fn(async () => ({
+        blob: new Blob([new Uint8Array(32)], { type: 'audio/webm' }),
+        durationSec: 12.5,
+      })),
       stop: vi.fn(async () => null),
     }
   }
