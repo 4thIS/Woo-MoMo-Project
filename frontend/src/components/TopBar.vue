@@ -53,17 +53,16 @@ onMounted(() => void account.load())
           <span class="led" aria-hidden="true" />
           모모 프리미엄
         </button>
-        <!-- 남은 티켓은 벤 면접을 시작할 수 있는지 그대로 말해 준다. 0장이면 흐리게 두되 숨기지 않는다 -->
-        <button
-          type="button"
-          class="mono link press tickets"
+        <!-- 남은 티켓은 벤 면접을 시작할 수 있는지 그대로 말해 준다. 0장이면 흐리게 두되 숨기지 않는다.
+             누르는 곳이 아니다 — 옆의 "모모 프리미엄"과 버튼 둘로 보여 텍스트로 둔다(이슈 137) -->
+        <span
+          class="mono tickets"
           :class="{ empty: account.tickets === 0 }"
-          :aria-label="`보유 티켓 ${account.tickets}장 — 요금제 보기`"
+          :aria-label="`보유 티켓 ${account.tickets}장`"
           data-test="top-tickets"
-          @click="modal.show('premium')"
         >
           <span aria-hidden="true">🎟</span> {{ account.tickets }}
-        </button>
+        </span>
         <button
           type="button"
           class="mono link press"
@@ -139,6 +138,10 @@ onMounted(() => void account.load())
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
+  /* 버튼이 아니다 — link·press를 떼면서 글자 모양만 맞춘다 */
+  font-size: var(--fs-label);
+  color: var(--text-2);
+  cursor: default;
 }
 .tickets.empty {
   opacity: 0.5;
