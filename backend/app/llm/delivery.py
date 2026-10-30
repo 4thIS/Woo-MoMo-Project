@@ -321,14 +321,15 @@ def profile_axes(
                 _response_level(m.first_word_sec),
                 f"첫마디까지 {sec:.1f}초 걸렸어요",
             )
-        if m.voice is not None:
-            c, cl = m.voice.confidence, m.voice.clarity
-            axes["confidence"] = _voice_axis(
-                _CONFIDENCE_LEVEL[c.level], _CONFIDENCE_WORD[c.level], c.reason, "자신감"
-            )
-            axes["clarity"] = _voice_axis(
-                _CLARITY_LEVEL[cl.level], _CLARITY_WORD[cl.level], cl.reason, "발음"
-            )
+            # 측정 부족이면 목소리 축도 비운다 — 표(judge)와 같은 판정
+            if m.voice is not None:
+                c, cl = m.voice.confidence, m.voice.clarity
+                axes["confidence"] = _voice_axis(
+                    _CONFIDENCE_LEVEL[c.level], _CONFIDENCE_WORD[c.level], c.reason, "자신감"
+                )
+                axes["clarity"] = _voice_axis(
+                    _CLARITY_LEVEL[cl.level], _CLARITY_WORD[cl.level], cl.reason, "발음"
+                )
     out: list[dict[str, Any]] = []
     for key, label in _AXES:
         v = axes[key]

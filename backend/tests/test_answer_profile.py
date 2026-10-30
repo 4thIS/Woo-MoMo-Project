@@ -128,13 +128,12 @@ def test_no_voice_nulls_voice_axes():
     assert axis(axes, "speed")["level"] is not None
 
 
-def test_insufficient_keeps_voice_only():
+def test_insufficient_nulls_all_measured_axes():
+    # 측정 부족이면 표(judge)처럼 목소리 축도 비운다 — 5초 미만 말로는 목소리 판정도 믿기 어렵다
     m = met(1, speech=3.0, voice=voice("mid", "ok"))
     axes = prof(m)
-    for k in ("speed", "fluency", "response"):
+    for k in ("speed", "fluency", "response", "confidence", "clarity"):
         assert axis(axes, k)["level"] is None and axis(axes, k)["comment"] is None
-    assert axis(axes, "confidence")["level"] == 3
-    assert axis(axes, "clarity")["level"] == 3
     for m in (met(1, speech=3.0), met(1, syl=0)):
         axes = prof(m)
         assert [a["level"] for a in axes[1:]] == [None] * 5
