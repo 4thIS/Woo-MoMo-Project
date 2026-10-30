@@ -13,6 +13,7 @@ const item = (p: Partial<ReportV2Item> = {}): ReportV2Item => ({
   feedback: '**수치**를 들어 말한 점이 좋습니다',
   delivery: null,
   measurements: null,
+  profile: null,
   ...p,
 })
 
@@ -224,5 +225,26 @@ describe('ReportV2Cards — 측정값', () => {
   it('목소리 결과가 없으면 그 줄을 비운다', () => {
     const w = mountIt(report({ items: [item({ measurements: measurements() })] }))
     expect(w.find('[data-test=voice]').exists()).toBe(false)
+  })
+})
+
+describe('ReportV2Cards — 답변별 프로필', () => {
+  const axes = (levels: (number | null)[]) =>
+    ['content', 'speed', 'fluency', 'response', 'confidence', 'clarity'].map((key, i) => ({
+      key,
+      label: key,
+      level: levels[i],
+      comment: levels[i] === null ? null : '설명',
+    }))
+
+  it('profile이 있으면 답변마다 육각형을 그린다', () => {
+    const w = mountIt(report({ items: [item({ profile: axes([4, 3, 3, 3, null, null]) })] }))
+    expect(w.find('[data-test=v2-profile]').exists()).toBe(true)
+    expect(w.find('[data-test=profile-hex]').exists()).toBe(true)
+  })
+
+  it('profile이 없는 옛 기록은 그리지 않는다 — 측정값 표가 그대로 남는다', () => {
+    const w = mountIt(report({ items: [item({ profile: null })] }))
+    expect(w.find('[data-test=v2-profile]').exists()).toBe(false)
   })
 })

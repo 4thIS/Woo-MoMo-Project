@@ -82,7 +82,7 @@ let benId: string | null = null
 let recorder: Recorder | null = null
 /** 답변별 녹음 조각. 기록을 만든 **뒤에** 올려야 하므로 그때까지 들고 있는다.
  *  Blob은 직렬화할 수 없어 Pinia state에 두지 않는다 */
-let clips: { turn: number; blob: Blob }[] = []
+let clips: { turn: number; blob: Blob; durationSec: number }[] = []
 /** 전달력 측정(벤 전용, #99). 답변마다 바로 걸어 두고 리포트 요청 직전에 거둔다 —
  *  마지막에 몰아 재면 리포트를 누른 뒤 멈춘 것처럼 보인다 */
 let measuring: Promise<DeliveryMetric | null>[] = []
@@ -593,8 +593,9 @@ export const useInterviewStore = defineStore('interview', {
 
     /** 방금 답변 구간을 끊어 보관한다. 상한을 넘으면 마이크를 놓고 알린다 */
     async keepClip() {
-      const blob = await recorder?.cut()
-      if (!blob) return
+      const clip = await recorder?.cut()
+      if (!clip) return
+      const { blob, durationSec } = clip
       recordedBytes += blob.size
       if (recordedBytes > RECORDING_MAX_BYTES) {
         this.recordingWarning = RECORDING_FULL
@@ -602,7 +603,7 @@ export const useInterviewStore = defineStore('interview', {
       }
       // 지원자 답변 순번 — 조각이 비어 건너뛰어도 순번이 어긋나지 않게 메시지에서 센다
       const turn = this.messages.filter((m) => m.role === 'user').length - 1
-      clips.push({ turn, blob })
+      clips.push({ turn, blob, durationSec })
       this.recordingCount = clips.length
       // 전달력은 벤만 받는다. 기다리지 않는다 — 여기서 await하면 면접관 응답이 그만큼 늦는다
       if (benId) {
@@ -646,7 +647,8 @@ export const useInterviewStore = defineStore('interview', {
       for (const c of clips) {
         // 스토어가 오류를 담아 null을 준다 — 하나가 실패해도 나머지는 올린다
         try {
-          if ((await account.uploadRecording(archiveId, c.turn, c.blob)) === null) failed++
+          if ((await account.uploadRecording(archiveId, c.turn, c.blob, c.durationSec)) === null)
+            failed++
         } catch {
           failed++
         }

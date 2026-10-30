@@ -84,3 +84,34 @@ describe('PixelAudio', () => {
     )
   })
 })
+
+describe('PixelAudio — 미리 받은 길이', () => {
+  const withDur = (sec: number | null) =>
+    mount(PixelAudio, { props: { src: '/clip.webm', duration: sec }, attachTo: document.body })
+
+  it('길이를 받으면 재생 전부터 보여 준다 — webm은 끝까지 읽어야 길이를 안다', () => {
+    expect(withDur(47).get('[data-test=audio-time]').text()).toBe('00:00 / 00:47')
+  })
+
+  it('길이를 모르면 --:-- 로 둔다 — 00:00은 길이가 0인 것처럼 보인다', () => {
+    expect(withDur(null).get('[data-test=audio-time]').text()).toBe('00:00 / --:--')
+  })
+
+  it('메타데이터가 진짜 길이를 알려 주면 그 값을 쓴다', async () => {
+    const w = withDur(47)
+    const el = w.get('audio').element as HTMLAudioElement
+    Object.defineProperty(el, 'duration', { value: 50, configurable: true })
+    el.dispatchEvent(new Event('loadedmetadata'))
+    await w.vm.$nextTick()
+    expect(w.get('[data-test=audio-time]').text()).toBe('00:00 / 00:50')
+  })
+
+  it('메타데이터가 Infinity면 받아 둔 길이를 지킨다', async () => {
+    const w = withDur(47)
+    const el = w.get('audio').element as HTMLAudioElement
+    Object.defineProperty(el, 'duration', { value: Infinity, configurable: true })
+    el.dispatchEvent(new Event('loadedmetadata'))
+    await w.vm.$nextTick()
+    expect(w.get('[data-test=audio-time]').text()).toBe('00:00 / 00:47')
+  })
+})

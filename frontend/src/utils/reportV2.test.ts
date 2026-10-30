@@ -11,6 +11,7 @@ const ITEM = {
   feedback: '수치를 들어 말한 점이 좋습니다',
   delivery: null,
   measurements: null,
+  profile: null,
 }
 const SUMMARY = { strengths: [], improvements: [], delivery: null, postingFit: null }
 const OK = { version: 2, items: [ITEM], summary: SUMMARY }
@@ -124,3 +125,69 @@ describe('reportV2ToText', () => {
     expect(t).toContain('Q1.')
   })
 })
+
+describe('답변별 육각형 프로필 (2026-10-30)', () => {
+  const axis = (key: string, level: number | null, comment: string | null = '코멘트') => ({
+    key,
+    label: key,
+    level,
+    comment: level === null ? null : comment,
+  })
+  const six = () =>
+    ['content', 'speed', 'fluency', 'response', 'confidence', 'clarity'].map((k) => axis(k, 3))
+
+  it('여섯 축을 그대로 읽는다', () => {
+    const r = asReportV2(withProfile(six()))
+    expect(r!.items[0].profile).toHaveLength(6)
+    expect(r!.items[0].profile![0]).toEqual({
+      key: 'content',
+      label: 'content',
+      level: 3,
+      comment: '코멘트',
+    })
+  })
+
+  it('측정이 없는 축은 level·comment가 null이다', () => {
+    const axes = six()
+    axes[4] = axis('confidence', null)
+    const r = asReportV2(withProfile(axes))
+    expect(r!.items[0].profile![4]).toMatchObject({ level: null, comment: null })
+  })
+
+  it('profile이 없는 옛 리포트는 null — 기존 측정값 표로 간다', () => {
+    const r = asReportV2(withProfile(undefined))
+    expect(r!.items[0].profile).toBeNull()
+  })
+
+  it('여섯 개가 아니면 통째로 버린다 — 반쪽 그래프는 틀린 그래프다', () => {
+    expect(asReportV2(withProfile(six().slice(0, 4)))!.items[0].profile).toBeNull()
+  })
+
+  it('단계가 1~5를 벗어나면 버린다', () => {
+    const axes = six()
+    axes[1] = axis('speed', 9)
+    expect(asReportV2(withProfile(axes))!.items[0].profile).toBeNull()
+  })
+})
+
+/** profile만 바꿔 끼운 최소 리포트 */
+function withProfile(profile: unknown) {
+  return {
+    version: 2,
+    items: [
+      {
+        id: 'Q1',
+        parent: null,
+        answer: 1,
+        kind: 'main',
+        question: 'q',
+        answerSummary: 'a',
+        feedback: 'f',
+        delivery: null,
+        measurements: null,
+        ...(profile === undefined ? {} : { profile }),
+      },
+    ],
+    summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
+  }
+}

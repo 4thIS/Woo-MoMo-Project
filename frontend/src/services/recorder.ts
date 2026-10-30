@@ -4,11 +4,19 @@
  * 녹음은 덤이지 조건이 아니다. 티켓은 이미 썼으니 녹음 때문에 면접을 막으면 안 된다.
  */
 
+/** 조각 하나. MediaRecorder가 만든 webm은 앞머리에 전체 길이가 없어
+ *  브라우저가 끝까지 읽기 전에는 길이를 모른다 — 녹음한 시간을 직접 재서 함께 보낸다 */
+export interface Clip {
+  blob: Blob
+  /** 이 조각을 녹음한 시간(초) */
+  durationSec: number
+}
+
 export interface Recorder {
   /** 지금까지 모은 소리를 끊어 돌려주고 **다음 조각을 바로 시작한다**. 멈춘 뒤면 null */
-  cut(): Promise<Blob | null>
+  cut(): Promise<Clip | null>
   /** 마이크를 놓는다. 남은 조각을 돌려준다 */
-  stop(): Promise<Blob | null>
+  stop(): Promise<Clip | null>
 }
 
 export async function startRecording(): Promise<Recorder | null> {
@@ -27,6 +35,8 @@ export async function startRecording(): Promise<Recorder | null> {
 function makeRecorder(stream: MediaStream): Recorder {
   let rec: MediaRecorder | null = null
   let live = true
+  /** 지금 조각이 시작된 시각 */
+  let startedAt = 0
 
   /** 조각 하나를 받아 둔다. 멈춤이 끝난 뒤에 resolve된다 */
   function segment(): Promise<Blob | null> {
@@ -46,6 +56,7 @@ function makeRecorder(stream: MediaStream): Recorder {
   }
 
   function begin() {
+    startedAt = Date.now()
     try {
       const r = new MediaRecorder(stream)
       r.start()
@@ -55,25 +66,30 @@ function makeRecorder(stream: MediaStream): Recorder {
     }
   }
 
+  /** 조각과 길이를 묶는다. 소리가 없으면 길이도 뜻이 없다 */
+  function pack(blob: Blob | null): Clip | null {
+    return blob ? { blob, durationSec: (Date.now() - startedAt) / 1000 } : null
+  }
+
   begin()
 
   return {
     async cut() {
       if (!live) return null
-      const blob = await segment()
+      const clip = pack(await segment())
       begin()
-      return blob
+      return clip
     },
     async stop() {
       if (!live) return null
       live = false
-      const blob = await segment()
+      const clip = pack(await segment())
       try {
         for (const t of stream.getTracks()) t.stop()
       } catch {
         /* 이미 놓인 트랙 */
       }
-      return blob
+      return clip
     },
   }
 }
