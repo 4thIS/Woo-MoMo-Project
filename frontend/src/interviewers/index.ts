@@ -142,7 +142,7 @@ export const INTERVIEWERS: readonly Interviewer[] = [
   make('f2', '쥴리', '압박 면접관(여)', '근거를 보여 주세요', 'sharp', 'company'),
   make('f3', '올리비아', '기본 면접관(여)', '차분하게 진행합니다', 'standard', 'admission'),
   // 벤만 둘 다 본다 — track이 null이라 고를 때 사용자가 정한다
-  make('m2', '벤', '압박 면접관(남)', '더 전문적인 질문', 'sharp', null, true),
+  make('m2', '벤', '프리미엄 면접관', '더 전문적인 질문', 'sharp', null, true),
 ]
 
 /** 회사 면접의 기본값. 올리비아는 대입 전용이라 기본이 될 수 없다 */
