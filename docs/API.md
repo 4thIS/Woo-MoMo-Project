@@ -392,7 +392,16 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
                  "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
                  "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
       "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
-    } }],
+    },
+    "profile": [               // 답변별 육각형 프로필(2026-10-30). 항상 6개, 순서 고정
+      { "key": "content", "label": "답변 내용", "level": 4, "comment": "..." },   // level 1~5(모델), comment 40자 이내(서버가 정리)
+      { "key": "speed", "label": "말 속도", "level": 5, "comment": "분당 300음절로 보통이에요" },
+      { "key": "fluency", "label": "쉼·유창성", "level": 4, "comment": "2초 넘는 쉼이 말한 1분당 1.5회예요" },
+      { "key": "response", "label": "순발력", "level": 5, "comment": "첫마디까지 1.2초 걸렸어요" },
+      { "key": "confidence", "label": "자신감", "level": 3, "comment": "..." },
+      { "key": "clarity", "label": "발음·명료도", "level": 5, "comment": "..." }
+    ] }],   // content 외 5축은 서버 규칙. 측정이 없으면 level·comment null, 측정 부족이면 speed·fluency·response null, 목소리 결과가 없으면 confidence·clarity null
+            // 예전에 저장된 리포트(report_v2_json·보관함 reportV2)에는 profile이 없다 -> 기존 측정값 표를 그린다
   "summary": {
     "strengths":    [{ "point": "...", "refs": ["Q1", "Q1-1"] }],   // 최대 3개, refs는 항목 id(답변 순)
     "improvements": [{ "point": "...", "refs": ["Q2"] }],

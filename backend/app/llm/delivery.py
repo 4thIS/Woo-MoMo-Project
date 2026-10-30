@@ -258,3 +258,79 @@ def judge(m: AnswerMetrics) -> dict[str, Any]:
         "voice": None if m.voice is None else _voice_dict(m.voice),
         "insufficient": False,
     }
+
+
+CONTENT_COMMENT_MAX = 40
+_SPEED_COMMENT = {"보통": "보통이에요", "빠름": "조금 빨라요", "느림": "조금 느려요"}
+_CONFIDENCE_LEVEL = {"high": 5, "mid": 3, "low": 2}
+_CONFIDENCE_WORD = {"high": "높게", "mid": "보통으로", "low": "낮게"}
+_CLARITY_LEVEL = {"good": 5, "ok": 3, "poor": 2}
+_CLARITY_WORD = {"good": "또렷하게", "ok": "보통으로", "poor": "흐리게"}
+_PAUSE_LEVEL = {"적음": 5, "보통": 4, "잦음": 2}
+_AXES = (
+    ("content", "답변 내용"),
+    ("speed", "말 속도"),
+    ("fluency", "쉼·유창성"),
+    ("response", "순발력"),
+    ("confidence", "자신감"),
+    ("clarity", "발음·명료도"),
+)
+
+
+def clean_comment(text: str, limit: int = CONTENT_COMMENT_MAX) -> str:
+    """모델이 쓴 코멘트 정리: 공백을 접고 `[]()`를 지우고 limit자로 자른다."""
+    return " ".join(text.translate(_STRUCTURAL).split())[:limit]
+
+
+def _response_level(sec: float) -> int:
+    if sec <= 1.5:
+        return 5
+    if sec <= 3.0:
+        return 4
+    return 2 if sec <= 6.0 else 1
+
+
+def _voice_axis(level: int, word: str, reason: str, noun: str) -> tuple[int, str]:
+    return level, _reason(reason) or f"{noun}이 {word} 들렸어요"
+
+
+def profile_axes(
+    m: AnswerMetrics | None, content_level: int, content_comment: str
+) -> list[dict[str, Any]]:
+    """답변 하나의 6축 프로필(spec 2026-10-30 3.1). 측정 축은 `judge`와 같은 판정 함수를 쓴다."""
+    axes: dict[str, tuple[int, str] | None] = dict.fromkeys(k for k, _ in _AXES)
+    axes["content"] = (content_level, clean_comment(content_comment))
+    if m is not None:
+        if _measurable(m):
+            spm = _per_minute(m)
+            speed = _speed(spm)
+            axes["speed"] = (
+                5 if speed == "보통" else 3,
+                f"분당 {spm}음절로 {_SPEED_COMMENT[speed]}",
+            )
+            rate = round(_pause_rate(m), 1)
+            level = _PAUSE_LEVEL[_pause(rate)]
+            comment = f"2초 넘는 쉼이 말한 1분당 {rate:.1f}회예요"
+            f = _filler(m)
+            if f is not None and f[0] == FILLER_LABELS["high"]:
+                level = max(1, level - 1)
+                comment += ", 군말이 잦은 편이에요"
+            axes["fluency"] = (level, comment)
+            sec = round(m.first_word_sec, 1)
+            axes["response"] = (
+                _response_level(m.first_word_sec),
+                f"첫마디까지 {sec:.1f}초 걸렸어요",
+            )
+        if m.voice is not None:
+            c, cl = m.voice.confidence, m.voice.clarity
+            axes["confidence"] = _voice_axis(
+                _CONFIDENCE_LEVEL[c.level], _CONFIDENCE_WORD[c.level], c.reason, "자신감"
+            )
+            axes["clarity"] = _voice_axis(
+                _CLARITY_LEVEL[cl.level], _CLARITY_WORD[cl.level], cl.reason, "발음"
+            )
+    out: list[dict[str, Any]] = []
+    for key, label in _AXES:
+        v = axes[key]
+        out.append({"key": key, "label": label, "level": v and v[0], "comment": v and v[1]})
+    return out

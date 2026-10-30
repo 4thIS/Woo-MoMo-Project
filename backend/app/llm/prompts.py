@@ -219,6 +219,8 @@ REPORT_INSTRUCTION_V2 = (
     "- 압박 면접관답게 칭찬은 생략하고, 근거·수치가 부족한 부분을 직설적으로 지적하세요.\n"
     "- summary.strengths와 summary.improvements는 각각 2~3개이며, answers에 근거가 된 답변 번호를 넣으세요. "
     "improvements에는 고칠 방법을 함께 쓰세요.\n"
+    "- contentLevel은 그 답변의 내용(구체성·근거·본인 기여)을 1~5로 매기고(5가 가장 좋음), "
+    "contentComment에는 그 이유를 40자 이내 한 문장으로 쓰세요.\n"
     "- delivery와 summary.delivery는 전달력 측정이 주어졌을 때만 쓰고, 아니면 null로 두세요. "
     "postingFit은 모집공고 요구사항이 주어졌을 때만 쓰고, 아니면 null로 두세요."
 )
