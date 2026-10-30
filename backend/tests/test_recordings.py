@@ -49,7 +49,7 @@ def test_upload_stores_file_and_shows_in_archive(client, settings):
     stored = settings.recordings_dir / uid / f"{rec['id']}.webm"
     assert stored.read_bytes() == b"webm-bytes"
     detail = client.get(f"/api/archive/{aid}").json()
-    assert detail["recordings"] == [{"turn": 1, "url": rec["url"]}]
+    assert detail["recordings"] == [{"turn": 1, "url": rec["url"], "durationSec": None}]
     assert detail["hasRecording"] is True
 
 
@@ -80,7 +80,7 @@ def test_archive_total_over_limit_is_413_and_same_turn_replaces(client, settings
     assert second.status_code == 201
     assert _files(settings) == [f"{second.json()['id']}.webm"]
     detail = client.get(f"/api/archive/{aid}").json()
-    assert detail["recordings"] == [{"turn": 1, "url": second.json()["url"]}]
+    assert detail["recordings"] == [{"turn": 1, "url": second.json()["url"], "durationSec": None}]
 
 
 def test_member_is_forbidden(client):
@@ -156,3 +156,48 @@ def test_archive_deleted_during_upload_is_404(client, settings, monkeypatch):
     assert res.status_code == 404
     assert res.json() == {"error": "not_found"}
     assert _files(settings) == []
+
+
+def _upload_dur(client, archive_id, turn, duration, data=b"x"):
+    form = {"archiveId": archive_id, "turn": str(turn)}
+    if duration is not None:
+        form["durationSec"] = duration
+    return client.post(URL, data=form, files={"clip": ("clip", data, "audio/webm")})
+
+
+def test_duration_is_stored_and_returned(client, settings):
+    _, aid = _premium_archive(client, settings)
+    assert _upload_dur(client, aid, 1, "12.5").status_code == 201
+    detail = client.get(f"/api/archive/{aid}").json()
+    assert detail["recordings"][0]["durationSec"] == 12.5
+
+
+def test_duration_is_replaced_on_reupload_even_back_to_null(client, settings):
+    _, aid = _premium_archive(client, settings)
+    _upload_dur(client, aid, 1, "12.5")
+    _upload_dur(client, aid, 1, "30")
+    assert client.get(f"/api/archive/{aid}").json()["recordings"][0]["durationSec"] == 30
+    _upload_dur(client, aid, 1, None)
+    rec = client.get(f"/api/archive/{aid}").json()["recordings"][0]
+    assert "durationSec" in rec and rec["durationSec"] is None
+
+
+def test_omitted_duration_is_null_in_json(client, settings):
+    _, aid = _premium_archive(client, settings)
+    assert _upload_dur(client, aid, 0, None).status_code == 201
+    rec = client.get(f"/api/archive/{aid}").json()["recordings"][0]
+    assert rec["durationSec"] is None
+
+
+def test_duration_600_is_ok(client, settings):
+    _, aid = _premium_archive(client, settings)
+    assert _upload_dur(client, aid, 0, "600").status_code == 201
+
+
+def test_invalid_duration_is_422_and_writes_nothing(client, settings):
+    _, aid = _premium_archive(client, settings)
+    for bad in ["0", "-1", "601", "abc", "nan", "inf"]:
+        res = _upload_dur(client, aid, 0, bad)
+        assert res.status_code == 422, bad
+        assert res.json() == {"error": "invalid", "field": "durationSec"}
+        assert _files(settings) == []

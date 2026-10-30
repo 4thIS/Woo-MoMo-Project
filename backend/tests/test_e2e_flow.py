@@ -75,7 +75,7 @@ def test_full_flow(client, fake_claude, settings):
     assert part.headers["content-type"].startswith("audio/webm")
     detail = client.get(f"/api/archive/{archive_id}").json()
     assert detail["hasRecording"] is True
-    assert detail["recordings"] == [{"turn": 0, "url": url}]
+    assert detail["recordings"] == [{"turn": 0, "url": url, "durationSec": None}]
     assert len(_recording_files(settings)) == 1
 
     # 기록 삭제 → 녹음 파일도 사라진다

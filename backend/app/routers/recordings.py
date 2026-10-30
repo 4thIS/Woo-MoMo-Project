@@ -44,6 +44,22 @@ def _receive(clip: UploadFile, target: Path, budget: int) -> int:
     return size
 
 
+MAX_DURATION_SEC = 600
+
+
+def _parse_duration(raw: str | None) -> float | None:
+    """선택 durationSec. 없거나 빈 값이면 None, 0 < x <= 600 밖이거나 숫자가 아니면 422."""
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ApiError(422, "invalid", field="durationSec") from None
+    if not 0 < value <= MAX_DURATION_SEC:  # NaN도 걸러진다
+        raise ApiError(422, "invalid", field="durationSec")
+    return value
+
+
 @router.post("/recordings", status_code=201, response_model=RecordingCreated)
 def upload_recording(
     archive_id: Annotated[str, Form(alias="archiveId")],
@@ -52,6 +68,7 @@ def upload_recording(
     user: PremiumUser,
     conn: Db,
     request: Request,
+    duration_sec: Annotated[str | None, Form(alias="durationSec")] = None,
 ) -> RecordingCreated:
     mime = (clip.content_type or "").split(";", 1)[0].strip().lower()
     ext = recordings.MIME_EXTENSIONS.get(mime)
@@ -59,6 +76,7 @@ def upload_recording(
         raise ApiError(415, "unsupported_media")
     if not recordings.is_own_premium_archive(conn, user_id=user.id, archive_id=archive_id):
         raise ApiError(404, "not_found")
+    duration = _parse_duration(duration_sec)
     limit = recordings.RECORDING_LIMIT_BYTES
     budget = limit - recordings.used_bytes(conn, archive_id=archive_id, excluding_turn=turn)
     storage = request.app.state.settings.storage_dir
@@ -78,6 +96,7 @@ def upload_recording(
         path=relative,
         mime=mime,
         size=size,
+        duration_sec=duration,
     )
     try:
         old = recordings.replace_recording(
