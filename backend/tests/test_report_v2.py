@@ -40,6 +40,8 @@ def item(answer, kind="main", **kw):
         "answerSummary": f"s{answer}",
         "feedback": f"f{answer}",
         "delivery": f"d{answer}",
+        "contentLevel": 3,
+        "contentComment": f"c{answer}",
     }
     d.update(kw)
     return d
@@ -138,7 +140,7 @@ def test_numbering_and_refs():
     assert [i["parent"] for i in out["items"]] == [None, "Q1", "Q1", None, "Q2"]
     assert list(out["items"][0]) == [
         "id", "parent", "answer", "kind", "question", "answerSummary",
-        "feedback", "delivery", "measurements",
+        "feedback", "delivery", "measurements", "profile",
     ]  # fmt: skip
     # answers [2,1,2] -> dedup, sorted -> Q1-1... answer 1=Q1, 2=Q1-1
     assert out["summary"]["strengths"] == [{"point": "a", "refs": ["Q1", "Q1-1"]}]
