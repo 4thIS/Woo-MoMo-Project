@@ -41,7 +41,7 @@
 | `clarity` | 발음·명료도 | 서버(목소리) | good 5 · ok 3 · poor 2 | 위와 같음(`발음이 {또렷하게/보통으로/흐리게} 들렸어요`) |
 
 - 측정이 없는 답변(브라우저 측정 없음): content 외 5축 `level`·`comment` 모두 `null`.
-- 측정 부족(`insufficient`): speed·fluency·response `null`, 목소리 축은 목소리 결과가 있으면 채운다.
+- 측정 부족(`insufficient`): content 외 5축 모두 `null`(표의 `measurements`와 같은 판정 — 5초 미만 말로는 목소리 판정도 믿기 어렵다).
 - 목소리 분석이 없거나(동의 안 함·실패) 한글 없는 받아쓰기로 합치지 않았으면 confidence·clarity `null`.
 - 축 순서는 항상 위 표 순서, 6개 고정.
 
