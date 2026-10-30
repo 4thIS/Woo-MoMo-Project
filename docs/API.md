@@ -165,7 +165,7 @@
   "messages": [{ "role": "model", "text": "...", "at": 1760000000000 }],  // role: "user" | "model", at은 선택
   "report": [{ "question": "...", "answerSummary": "...", "feedback": "...", "delivery": "..." }],  // delivery는 선택(최대 2,000자, 없으면 칸 없음)
   "reportRaw": "...",
-  "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ..." }]   // turn 오름차순
+  "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ...", "durationSec": 41.3 }]   // turn 오름차순. durationSec은 초(길이를 보내지 않은 녹음은 null)
 }
 ```
 
@@ -432,7 +432,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 
 #### POST /api/recordings
 
-`multipart/form-data` — `archiveId`, `turn`(0 이상 정수, 몇 번째 답변인지), `clip`(오디오).
+`multipart/form-data` — `archiveId`, `turn`(0 이상 정수, 몇 번째 답변인지), `clip`(오디오), 선택 `durationSec`(초, 숫자, `0 < x <= 600`). 길이를 보내면 보관함 상세의 `recordings[].durationSec`으로 돌려준다(재생 전 길이 표시). 같은 `turn`을 다시 올리면 길이도 새 값으로 바뀐다(생략하면 null).
 
 ```jsonc
 // 201 { "id": "rec_01J9ZQ...", "url": "/api/recordings/rec_01J9ZQ..." }
@@ -441,6 +441,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 // 413 { "error": "too_large" }          // 기록 하나의 녹음 합계 30MB 초과(같은 turn의 옛 파일은 빼고 센다)
 // 415 { "error": "unsupported_media" }  // clip이 audio/webm·audio/ogg가 아님(;codecs=... 허용)
 // 422 { "error": "invalid", "field": "clip" }  // clip이 0바이트
+// 422 { "error": "invalid", "field": "durationSec" }  // 숫자가 아니거나 0 이하·600 초과(파일은 저장하지 않는다)
 ```
 
 업로드 도중 그 기록이 삭제되면 `404 not_found`(받은 파일은 지운다).

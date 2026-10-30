@@ -89,7 +89,10 @@ def get_archive(archive_id: str, user: LoggedInUser, conn: Db) -> ArchiveDetail:
         report=json.loads(record.report_json),
         reportRaw=record.report_raw,
         reportV2=json.loads(record.report_v2_json) if record.report_v2_json else None,
-        recordings=[RecordingRef(turn=t, url=recording_url(i)) for t, i in record.recordings],
+        recordings=[
+            RecordingRef(turn=t, url=recording_url(i), durationSec=d)
+            for t, i, d in record.recordings
+        ],
     )
 
 

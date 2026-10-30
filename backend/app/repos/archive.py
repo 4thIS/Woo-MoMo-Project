@@ -55,7 +55,7 @@ class ArchiveRecord:
     report_json: str
     report_raw: str
     report_v2_json: str | None
-    recordings: list[tuple[int, str]]
+    recordings: list[tuple[int, str, float | None]]
 
 
 @dataclass(frozen=True)
@@ -185,7 +185,8 @@ def get_archive(conn: sqlite3.Connection, *, user_id: str, archive_id: str) -> A
     if row is None:
         return None
     recs = conn.execute(
-        "SELECT turn, id FROM recordings WHERE archive_id = ? ORDER BY turn", (archive_id,)
+        "SELECT turn, id, duration_sec FROM recordings WHERE archive_id = ? ORDER BY turn",
+        (archive_id,),
     )
     return ArchiveRecord(
         summary=_summary(row),
@@ -193,7 +194,7 @@ def get_archive(conn: sqlite3.Connection, *, user_id: str, archive_id: str) -> A
         report_json=row["report_json"],
         report_raw=row["report_raw"],
         report_v2_json=row["report_v2_json"],
-        recordings=[(r["turn"], r["id"]) for r in recs],
+        recordings=[(r["turn"], r["id"], r["duration_sec"]) for r in recs],
     )
 
 

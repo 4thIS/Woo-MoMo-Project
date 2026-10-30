@@ -272,6 +272,14 @@ class ReportBody(BaseModel):
 class RecordingRef(BaseModel):
     turn: int
     url: str
+    durationSec: float | None = None
+
+    @model_serializer(mode="wrap")
+    def _keep_duration(self, handler: SerializerFunctionWrapHandler):
+        # exclude_none에도 durationSec 키를 남긴다(없으면 null)
+        out = handler(self)
+        out.setdefault("durationSec", None)
+        return out
 
 
 class ArchiveEntry(BaseModel):
