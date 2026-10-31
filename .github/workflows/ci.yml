@@ -120,24 +120,43 @@ jobs:
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     needs: [frontend, backend, deploy-config]
     runs-on: ubuntu-latest
-    # 같은 브랜치에 연달아 머지되면 앞선 빌드를 취소한다 — 옛 이미지가 늦게 올라와 새 이미지를 덮지 않게
+    # 같은 브랜치의 이미지 올리기는 한 번에 하나씩 차례로 한다(진행 중인 것을 취소하지 않는다).
+    # 취소 방식은 늦게 시작한 옛 커밋이 새 커밋의 빌드를 취소해 옛 이미지가 남는 일이 있었다(2026-10-30).
+    # 대신 아래 첫 단계가 "이 커밋이 아직 브랜치 끝인가"를 보고, 아니면 건너뛴다 — 새 커밋의 실행이 올린다.
     concurrency:
       group: publish-${{ github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
     env:
       TAG: ${{ github.ref == 'refs/heads/main' && 'latest' || 'dev' }}
     steps:
+      - name: is this commit still the branch head?
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 조회에 실패하면(빈 값) 지금처럼 올린다 — 확인을 못 해서 배포가 멈추는 쪽이 더 나쁘다
+          head="$(gh api "repos/${{ github.repository }}/commits/${{ github.ref_name }}" --jq .sha || true)"
+          if [ -z "$head" ] || [ "$head" = "${{ github.sha }}" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "브랜치 끝이 ${head}로 바뀌었다 — 이 커밋(${{ github.sha }})의 이미지는 올리지 않는다"
+          fi
       - uses: actions/checkout@v4
+        if: steps.head.outputs.latest == 'true'
       - uses: docker/setup-buildx-action@v3
+        if: steps.head.outputs.latest == 'true'
       - uses: docker/login-action@v3
+        if: steps.head.outputs.latest == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # 캐시: 바뀐 층만 다시 빌드한다(GitHub Actions 캐시, 이미지·태그별 scope)
       - name: build & push web (nginx + frontend build)
+        if: steps.head.outputs.latest == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -148,6 +167,7 @@ jobs:
           cache-from: type=gha,scope=web-${{ env.TAG }}
           cache-to: type=gha,scope=web-${{ env.TAG }},mode=max
       - name: build & push api (FastAPI)
+        if: steps.head.outputs.latest == 'true'
         uses: docker/build-push-action@v6
         with:
           context: backend

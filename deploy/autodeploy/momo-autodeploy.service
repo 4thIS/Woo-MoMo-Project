@@ -1,0 +1,8 @@
+# momo(운영, main) 자동 재배포 — 설치: deploy/README.md "자동 재배포" 절
+[Unit]
+Description=Woo-MoMo momo (production) auto deploy (git pull + docker compose pull/up)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /srv/apps/Woo-MoMo-Project/deploy/autodeploy/autodeploy.sh /srv/apps/Woo-MoMo-Project
