@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 자동 재배포 — 파이의 사용자 타이머(momo-dev-autodeploy.timer)가 2분마다 실행한다.
+# 자동 재배포 — 서버의 사용자 타이머가 실행한다: demomo(momo-dev-autodeploy.timer, 2분), momo(momo-autodeploy.timer, 5분).
 # 1) 클론이 따라가는 브랜치에 새 커밋이 있으면 fast-forward로 받는다(compose·nginx 설정 반영)
 # 2) CI가 GHCR에 올린 이미지를 pull한다
 # 3) 둘 중 하나라도 바뀌었으면 `up -d` — 바뀐 컨테이너만 다시 뜬다. 빌드는 하지 않는다
-# 사용: autodeploy.sh <클론 폴더>   (deploy/.env에 IMAGE_TAG가 있어야 한다)
+# 사용: autodeploy.sh <클론 폴더>   (demomo는 deploy/.env의 IMAGE_TAG=dev, momo는 없으면 latest)
 set -euo pipefail
 
 main() {
