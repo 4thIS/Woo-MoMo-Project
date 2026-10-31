@@ -195,8 +195,9 @@ export const useAccountStore = defineStore('account', {
       archiveId: string,
       turn: number,
       clip: Blob,
+      durationSec?: number,
     ): Promise<RecordingRef | null> {
-      return await this.run(() => api.uploadRecording(archiveId, turn, clip))
+      return await this.run(() => api.uploadRecording(archiveId, turn, clip, durationSec))
     },
 
     async purchasePremium() {

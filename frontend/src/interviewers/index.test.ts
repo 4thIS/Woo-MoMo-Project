@@ -55,7 +55,7 @@ describe('interviewers', () => {
       '기본 면접관(남)',
       '압박 면접관(여)',
       '기본 면접관(여)',
-      '압박 면접관(남)',
+      '프리미엄 면접관',
     ])
     expect(new Set(INTERVIEWERS.map((i) => i.id)).size).toBe(4)
   })

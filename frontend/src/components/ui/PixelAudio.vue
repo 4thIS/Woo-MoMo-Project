@@ -12,16 +12,25 @@ let current: HTMLAudioElement | null = null
  *
  * **한 번에 하나만 운다** — 보관함에 클립이 여럿이라, 다른 것을 누르면 앞의 것을 멈춘다.
  */
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { formatClock } from '@/utils/timing'
 
-const props = defineProps<{ src: string; label?: string }>()
+const props = defineProps<{
+  src: string
+  label?: string
+  /** 서버가 보관한 녹음 길이(초). webm은 끝까지 읽기 전엔 길이를 몰라
+   *  이 값이 있으면 재생 전부터 보여 준다. 옛 녹음은 null */
+  duration?: number | null
+}>()
 
 const el = ref<HTMLAudioElement | null>(null)
 const bar = ref<HTMLElement | null>(null)
 const playing = ref(false)
 const at = ref(0)
-const total = ref(0)
+/** 서버가 준 길이로 시작하고, 메타데이터가 진짜 값을 주면 그걸로 바꾼다 */
+const total = ref(props.duration ?? 0)
+/** 길이를 알아내려고 한 번 긁어 봤는가 — 되풀이하지 않는다 */
+let probed = false
 /** 드래그 중인가 — 끌고 있는 동안에는 timeupdate가 위치를 되돌리지 못하게 */
 let dragging = false
 
@@ -41,8 +50,31 @@ function toggle() {
 }
 
 function onMeta() {
-  const d = el.value?.duration
-  total.value = Number.isFinite(d) ? (d as number) : 0
+  const a = el.value
+  if (!a) return
+  const d = a.duration
+  if (Number.isFinite(d) && d > 0) {
+    total.value = d
+    return
+  }
+  // webm은 Infinity·NaN으로 오는 일이 흔하다. 받아 둔 길이도 없으면
+  // 아주 뒤로 한 번 보내 실제 끝을 알아낸 뒤 처음으로 되돌린다
+  if (total.value > 0 || probed) return
+  probed = true
+  const onChange = () => {
+    if (Number.isFinite(a.duration) && a.duration > 0) {
+      total.value = a.duration
+      a.removeEventListener('durationchange', onChange)
+      a.currentTime = 0
+      at.value = 0
+    }
+  }
+  a.addEventListener('durationchange', onChange)
+  try {
+    a.currentTime = 1e101
+  } catch {
+    a.removeEventListener('durationchange', onChange)
+  }
 }
 function onTime() {
   if (!dragging) at.value = el.value?.currentTime ?? 0
@@ -95,6 +127,13 @@ function onKey(e: KeyboardEvent) {
   }
 }
 
+watch(
+  () => props.duration,
+  (d) => {
+    if (typeof d === 'number' && d > 0) total.value = d
+  },
+)
+
 onBeforeUnmount(() => {
   if (current === el.value) current = null
 })
@@ -140,7 +179,7 @@ onBeforeUnmount(() => {
       <span class="fill" :style="{ width: `${pct()}%` }" />
     </div>
     <span class="mono time" data-test="audio-time">
-      {{ formatClock(at * 1000) }} / {{ formatClock(total * 1000) }}
+      {{ formatClock(at * 1000) }} / {{ total > 0 ? formatClock(total * 1000) : '--:--' }}
     </span>
   </div>
 </template>

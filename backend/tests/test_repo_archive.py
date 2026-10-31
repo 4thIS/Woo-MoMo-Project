@@ -123,7 +123,7 @@ def test_get_and_delete_are_scoped(conn):
     assert record is not None
     assert record.summary.has_recording is True
     assert record.messages_json == '[{"x":1}]'
-    assert record.recordings[0] == (1, r1)
+    assert record.recordings[0] == (1, r1, None)
     assert archive.get_archive(conn, user_id=other, archive_id=aid) is None
     assert archive.delete_archive(conn, user_id=other, archive_id=aid) is None
     removed = archive.delete_archive(conn, user_id=uid, archive_id=aid)

@@ -80,3 +80,21 @@ def test_transaction_does_not_mask_errors_when_sqlite_already_rolled_back(tmp_pa
                 conn.execute("ROLLBACK")
                 raise RuntimeError("boom")
         assert not conn.in_transaction
+
+
+def test_migration_010_keeps_existing_recordings_with_null_duration(tmp_path):
+    older = tmp_path / "older"
+    older.mkdir()
+    for f in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
+        if not f.name.startswith("010"):
+            (older / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+    with db.connection(tmp_path / "t.sqlite3") as conn:
+        db.migrate(conn, older)
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute(
+            "INSERT INTO recordings (id, archive_id, user_id, turn, path, mime, bytes, created_at)"
+            " VALUES ('rec_1', 'a', 'u', 0, 'p', 'audio/webm', 1, 't')"
+        )
+        db.migrate(conn)
+        row = conn.execute("SELECT id, duration_sec FROM recordings").fetchone()
+        assert (row["id"], row["duration_sec"]) == ("rec_1", None)

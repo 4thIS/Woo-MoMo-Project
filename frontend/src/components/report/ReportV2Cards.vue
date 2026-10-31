@@ -5,6 +5,7 @@
  * 클라이언트가 이스케이프한다). 강조는 `splitEmphasis`가 조각으로 갈라 준 것만 굵게 한다.
  */
 import { computed } from 'vue'
+import ProfileHex from './ProfileHex.vue'
 import { splitEmphasis } from '@/utils/reportParser'
 import { itemsInOrder, type Measurements, type ReportV2 } from '@/utils/reportV2'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
@@ -105,6 +106,10 @@ const sec = (v: number | null) => (v === null ? '—' : `${v}초`)
           <span :class="{ strong: p.strong }">{{ p.text }}</span>
         </template>
       </dd>
+      <template v-if="it.profile">
+        <dt class="mono">프로필</dt>
+        <dd data-test="v2-profile"><ProfileHex :profile="it.profile" /></dd>
+      </template>
       <template v-if="it.delivery">
         <dt class="mono">전달력</dt>
         <dd data-test="v2-delivery">{{ it.delivery }}</dd>

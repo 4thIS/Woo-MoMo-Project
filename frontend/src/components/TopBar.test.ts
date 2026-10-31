@@ -216,13 +216,15 @@ describe('TopBar — 보유 티켓', () => {
     expect(w.get('[data-test=top-tickets]').classes()).toContain('empty')
   })
 
-  it('누르면 요금제 모달이 열린다', async () => {
+  it('누르는 곳이 아니다 — 요금제는 "모모 프리미엄"으로만 연다', async () => {
     withTickets(0)
     const w = bar()
     await settle()
-    await w.get('[data-test=top-tickets]').trigger('click')
+    const el = w.get('[data-test=top-tickets]')
+    expect(el.element.tagName).toBe('SPAN')
+    await el.trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-test=plan-card]')).not.toBeNull()
+    expect(document.querySelector('[data-test=plan-card]')).toBeNull()
   })
 
   it('세션의 티켓이 바뀌면 따라 바뀐다', async () => {

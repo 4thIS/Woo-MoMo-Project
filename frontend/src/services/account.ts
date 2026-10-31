@@ -168,8 +168,9 @@ export interface ArchiveDetail extends ArchiveEntry {
   reportRaw: string
   /** 벤 리포트 버전 2(2026-10-23). 받은 그대로 보관하고 그대로 돌려받는다. 없으면 null */
   reportV2?: ReportV2 | null
-  /** 프리미엄 면접만 */
-  recordings: { turn: number; url: string }[]
+  /** 프리미엄 면접만. durationSec은 재생 전에 길이를 보여 주려고 서버가 돌려준다
+   *  (webm 앞머리에 길이가 없다). 길이를 보내지 않은 옛 녹음은 null */
+  recordings: { turn: number; url: string; durationSec?: number | null }[]
 }
 
 export type ArchiveDraft = Omit<ArchiveDetail, 'id'> & {
@@ -204,7 +205,12 @@ export interface AccountApi {
   deleteArchive(id: string): Promise<void>
 
   /** 프리미엄 기록에 답변 녹음을 올린다. 같은 turn을 다시 올리면 교체된다 */
-  uploadRecording(archiveId: string, turn: number, clip: Blob): Promise<RecordingRef>
+  uploadRecording(
+    archiveId: string,
+    turn: number,
+    clip: Blob,
+    durationSec?: number,
+  ): Promise<RecordingRef>
 
   /** 목업 결제. 서버에서는 관리자만 — 일반 계정은 `purchase_disabled` */
   purchasePremium(): Promise<Session>

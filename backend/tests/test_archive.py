@@ -151,7 +151,9 @@ def test_delete_removes_recording_files(client, settings):
         rec_id = insert_recording(conn, archive_id=aid, user_id=me["userId"], turn=1, path=rel)
     assert client.get(URL).json()[0]["hasRecording"] is True
     detail = client.get(f"{URL}/{aid}").json()
-    assert detail["recordings"] == [{"turn": 1, "url": f"/api/recordings/{rec_id}"}]
+    assert detail["recordings"] == [
+        {"turn": 1, "url": f"/api/recordings/{rec_id}", "durationSec": None}
+    ]
     assert client.delete(f"{URL}/{aid}").status_code == 204
     assert not file.exists()
     assert client.get(f"{URL}/{aid}").status_code == 404

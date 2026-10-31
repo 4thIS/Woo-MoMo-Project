@@ -165,7 +165,7 @@
   "messages": [{ "role": "model", "text": "...", "at": 1760000000000 }],  // role: "user" | "model", at은 선택
   "report": [{ "question": "...", "answerSummary": "...", "feedback": "...", "delivery": "..." }],  // delivery는 선택(최대 2,000자, 없으면 칸 없음)
   "reportRaw": "...",
-  "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ..." }]   // turn 오름차순
+  "recordings": [{ "turn": 3, "url": "/api/recordings/rec_01J9ZQ...", "durationSec": 41.3 }]   // turn 오름차순. durationSec은 초(길이를 보내지 않은 녹음은 null)
 }
 ```
 
@@ -392,7 +392,16 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
                  "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
                  "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
       "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
-    } }],
+    },
+    "profile": [               // 답변별 육각형 프로필(2026-10-30). 항상 6개, 순서 고정
+      { "key": "content", "label": "답변 내용", "level": 4, "comment": "..." },   // level 1~5(모델), comment 40자 이내(서버가 정리)
+      { "key": "speed", "label": "말 속도", "level": 5, "comment": "분당 300음절로 보통이에요" },
+      { "key": "fluency", "label": "쉼·유창성", "level": 4, "comment": "2초 넘는 쉼이 말한 1분당 1.5회예요" },
+      { "key": "response", "label": "순발력", "level": 5, "comment": "첫마디까지 1.2초 걸렸어요" },
+      { "key": "confidence", "label": "자신감", "level": 3, "comment": "..." },
+      { "key": "clarity", "label": "발음·명료도", "level": 5, "comment": "..." }
+    ] }],   // content 외 5축은 서버 규칙. 측정이 없으면 level·comment null, 측정 부족이면 speed·fluency·response null, 목소리 결과가 없으면 confidence·clarity null
+            // 예전에 저장된 리포트(report_v2_json·보관함 reportV2)에는 profile이 없다 -> 기존 측정값 표를 그린다
   "summary": {
     "strengths":    [{ "point": "...", "refs": ["Q1", "Q1-1"] }],   // 최대 3개, refs는 항목 id(답변 순)
     "improvements": [{ "point": "...", "refs": ["Q2"] }],
@@ -432,7 +441,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 
 #### POST /api/recordings
 
-`multipart/form-data` — `archiveId`, `turn`(0 이상 정수, 몇 번째 답변인지), `clip`(오디오).
+`multipart/form-data` — `archiveId`, `turn`(0 이상 정수, 몇 번째 답변인지), `clip`(오디오), 선택 `durationSec`(초, 숫자, `0 < x <= 600`). 길이를 보내면 보관함 상세의 `recordings[].durationSec`으로 돌려준다(재생 전 길이 표시). 같은 `turn`을 다시 올리면 길이도 새 값으로 바뀐다(생략하면 null).
 
 ```jsonc
 // 201 { "id": "rec_01J9ZQ...", "url": "/api/recordings/rec_01J9ZQ..." }
@@ -441,6 +450,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 // 413 { "error": "too_large" }          // 기록 하나의 녹음 합계 30MB 초과(같은 turn의 옛 파일은 빼고 센다)
 // 415 { "error": "unsupported_media" }  // clip이 audio/webm·audio/ogg가 아님(;codecs=... 허용)
 // 422 { "error": "invalid", "field": "clip" }  // clip이 0바이트
+// 422 { "error": "invalid", "field": "durationSec" }  // 숫자가 아니거나 0 이하·600 초과(파일은 저장하지 않는다)
 ```
 
 업로드 도중 그 기록이 삭제되면 `404 not_found`(받은 파일은 지운다).

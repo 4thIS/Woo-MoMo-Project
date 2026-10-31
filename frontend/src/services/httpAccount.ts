@@ -170,11 +170,14 @@ export function makeHttpAccount(): AccountApi {
 
     deleteArchive: (id) => call<void>(`/archive/${id}`, 'DELETE'),
 
-    async uploadRecording(archiveId, turn, clip) {
+    async uploadRecording(archiveId, turn, clip, durationSec) {
       const form = new FormData()
       form.append('archiveId', archiveId)
       form.append('turn', String(turn))
       form.append('clip', clip)
+      // 서버가 받는 범위를 넘으면 통째로 422가 된다 — 넘치면 아예 빼고 보낸다
+      if (typeof durationSec === 'number' && durationSec > 0 && durationSec <= 600)
+        form.append('durationSec', String(durationSec))
       let res: Response
       try {
         // Content-Type을 직접 붙이지 않는다 — 브라우저가 경계(boundary)를 넣어야 한다

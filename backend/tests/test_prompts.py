@@ -255,7 +255,7 @@ def test_v2_instruction_text_and_kickoff():
     assert f"'{prompts.KICKOFF}' 이후 지원자가 한 답변의 순서입니다(1부터)." in ins
     assert '새 질문이면 "main"' in ins
     assert ins.endswith("아니면 null로 두세요.")
-    assert ins.count("\n") == 6
+    assert ins.count("\n") == 7  # 2026-10-30: contentLevel 줄 추가
 
 
 def test_v2_messages_four_combinations():

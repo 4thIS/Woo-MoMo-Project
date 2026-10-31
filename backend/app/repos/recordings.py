@@ -18,6 +18,7 @@ class Recording:
     path: str
     mime: str
     size: int
+    duration_sec: float | None = None
 
 
 class TooLarge(Exception):
@@ -54,9 +55,19 @@ def replace_recording(
             "DELETE FROM recordings WHERE archive_id = ? AND turn = ?", (r.archive_id, r.turn)
         )
         conn.execute(
-            "INSERT INTO recordings (id, archive_id, user_id, turn, path, mime, bytes, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (r.id, r.archive_id, r.user_id, r.turn, r.path, r.mime, r.size, created_at),
+            "INSERT INTO recordings (id, archive_id, user_id, turn, path, mime, bytes, created_at,"
+            " duration_sec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                r.id,
+                r.archive_id,
+                r.user_id,
+                r.turn,
+                r.path,
+                r.mime,
+                r.size,
+                created_at,
+                r.duration_sec,
+            ),
         )
     return old["path"] if old is not None else None
 
@@ -75,4 +86,5 @@ def get_recording(conn: sqlite3.Connection, *, user_id: str, recording_id: str) 
         path=row["path"],
         mime=row["mime"],
         size=row["bytes"],
+        duration_sec=row["duration_sec"],
     )

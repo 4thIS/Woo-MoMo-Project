@@ -7,7 +7,7 @@
 import json
 from typing import Any
 
-from app.llm.delivery import AnswerMetrics, _measurable, judge
+from app.llm.delivery import AnswerMetrics, _measurable, judge, profile_axes
 from app.llm.prompts import Message
 
 MAX_POINTS = 3
@@ -41,6 +41,8 @@ REPORT_V2_SCHEMA: dict[str, Any] = _obj(
                     "answerSummary": _STR,
                     "feedback": _STR,
                     "delivery": _NULLABLE_STR,
+                    "contentLevel": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
+                    "contentComment": _STR,
                 }
             ),
         },
@@ -99,6 +101,9 @@ def _item_ok(it: Any) -> bool:
         and all(isinstance(it.get(k), str) for k in ("question", "answerSummary", "feedback"))
         and "delivery" in it
         and _opt_str(it["delivery"])
+        and _is_int(it.get("contentLevel"))
+        and 1 <= it["contentLevel"] <= 5
+        and isinstance(it.get("contentComment"), str)
     )
 
 
@@ -197,6 +202,7 @@ def build(
                 if has_delivery and m is not None and _measurable(m)
                 else None,
                 "measurements": None if m is None else judge(m),
+                "profile": profile_axes(m, it["contentLevel"], it["contentComment"]),
             }
         )
     s = obj["summary"]

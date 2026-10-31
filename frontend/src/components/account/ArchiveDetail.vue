@@ -98,6 +98,7 @@ function answerIndex(i: number): number {
               class="clip"
               data-test="archive-clip"
               :src="clipOf(answerIndex(i))!.url"
+              :duration="clipOf(answerIndex(i))!.durationSec ?? null"
               :label="`답변 ${answerIndex(i) + 1} 녹음`"
             />
           </li>

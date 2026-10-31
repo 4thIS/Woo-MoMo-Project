@@ -67,8 +67,8 @@ describe('Recorder', () => {
   it('cut은 모은 소리를 돌려주고 다음 조각을 바로 시작한다', async () => {
     fakeStack()
     const rec = await startRecording()
-    const blob = await rec!.cut()
-    expect(blob?.size).toBeGreaterThan(0)
+    const clip = await rec!.cut()
+    expect(clip?.blob.size).toBeGreaterThan(0)
     expect(FakeRecorder.instances).toHaveLength(2)
     expect(FakeRecorder.instances[1].state).toBe('recording')
   })
@@ -92,5 +92,39 @@ describe('Recorder', () => {
     const rec = await startRecording()
     await rec!.stop()
     await expect(rec!.stop()).resolves.not.toThrow()
+  })
+})
+
+describe('조각 길이', () => {
+  /** webm 앞머리에는 전체 길이가 없다 — 녹음한 시간을 직접 재서 함께 보낸다 */
+  const atTime = (ms: number) => vi.spyOn(Date, 'now').mockReturnValue(ms)
+
+  it('끊을 때 녹음한 시간을 함께 준다', async () => {
+    fakeStack()
+    atTime(1_000_000)
+    const rec = await startRecording()
+    atTime(1_041_300)
+    const clip = await rec!.cut()
+    expect(clip!.durationSec).toBeCloseTo(41.3, 1)
+  })
+
+  it('다음 조각은 0부터 다시 잰다', async () => {
+    fakeStack()
+    atTime(0)
+    const rec = await startRecording()
+    atTime(10_000)
+    await rec!.cut()
+    atTime(15_000)
+    const second = await rec!.cut()
+    expect(second!.durationSec).toBeCloseTo(5, 1)
+  })
+
+  it('마이크를 놓을 때도 길이를 준다', async () => {
+    fakeStack()
+    atTime(0)
+    const rec = await startRecording()
+    atTime(3_000)
+    const last = await rec!.stop()
+    expect(last!.durationSec).toBeCloseTo(3, 1)
   })
 })
