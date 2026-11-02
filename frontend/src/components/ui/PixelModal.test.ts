@@ -1,6 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import PixelModal from './PixelModal.vue'
+
+// 열린 모달은 **모듈 스코프 목록**에 자기를 올려 둔다(겹쳐 열릴 때 맨 위를 가리기 위해).
+// 테스트가 끝날 때 거두지 않으면 그 목록이 다음 테스트로 새어 간다
+enableAutoUnmount(afterEach)
 
 const open = (props = {}) =>
   mount(PixelModal, {
@@ -117,6 +121,41 @@ describe('PixelModal', () => {
   it('기본은 판이 있다', () => {
     open()
     expect(document.querySelector('[data-test=modal]')!.classList).not.toContain('bare')
+  })
+
+  /* 겹쳐 열릴 때 — 가입 폼 위에 약관을 띄우는 자리가 있다.
+     Esc 한 번에 둘 다 닫히면 적던 입력이 통째로 사라진다 */
+  it('모달이 겹쳐 열리면 Esc는 위의 하나만 닫는다', async () => {
+    const under = open({ title: '회원가입' })
+    const over = open({ title: '이용약관' })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await over.vm.$nextTick()
+    expect(over.emitted('close')).toHaveLength(1)
+    expect(under.emitted('close')).toBeUndefined()
+  })
+
+  it('위를 닫은 뒤의 Esc는 아래를 닫는다', async () => {
+    const under = open({ title: '회원가입' })
+    const over = open({ title: '이용약관' })
+    await over.setProps({ open: false })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await under.vm.$nextTick()
+    expect(under.emitted('close')).toHaveLength(1)
+  })
+
+  it('위가 닫혀도 아래가 남아 있으면 뒤 페이지는 계속 잠겨 있다', async () => {
+    open({ title: '회원가입' })
+    const over = open({ title: '이용약관' })
+    await over.setProps({ open: false })
+    expect(document.body.style.overflow).toBe('hidden')
+  })
+
+  it('마지막 하나까지 닫히면 뒤 페이지가 풀린다', async () => {
+    const under = open({ title: '회원가입' })
+    const over = open({ title: '이용약관' })
+    await over.setProps({ open: false })
+    await under.setProps({ open: false })
+    expect(document.body.style.overflow).toBe('')
   })
 
   it('role과 aria가 붙는다', () => {
