@@ -1,7 +1,17 @@
+<script lang="ts">
+/** 지금 열려 있는 모달들. 맨 뒤가 가장 위다.
+ *
+ * `<script setup>`은 인스턴스마다 새로 실행되므로, 모달끼리 나눠 보려면 여기(모듈 스코프)에 둬야 한다.
+ * 가입 폼 위에 약관을 띄우는 자리가 있어 **겹쳐 열리는 일이 실제로 있다** — 그때
+ * Esc 한 번에 둘 다 닫히면 적던 입력이 통째로 사라진다.
+ */
+const open_: symbol[] = []
+</script>
+
 <script setup lang="ts">
 /** 모달 공통 껍데기 (spec 7.0).
  *
- * 한 번에 하나만 열린다는 규칙은 여는 쪽(TopBar)이 지킨다 — 여기서는 하나를 잘 그리는 것만 한다.
+ * 겹쳐 열릴 수 있다. Esc는 맨 위 하나만 닫고, 뒤 페이지 잠금은 마지막 하나가 닫힐 때 푼다.
  * 내용이 길면 모달이 아니라 **안쪽이** 스크롤한다.
  */
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
@@ -24,6 +34,8 @@ const props = withDefaults(
 const emit = defineEmits<{ close: [] }>()
 
 const box = ref<HTMLElement | null>(null)
+/** 이 모달의 표. 열린 목록에서 자기를 가려내는 데만 쓴다 */
+const me = Symbol('modal')
 /** 닫는 중 — Esc 연타·덮개 더블클릭으로 close가 두 번 나가지 않게 막는다 */
 let closing = false
 
@@ -34,12 +46,16 @@ function close() {
 }
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') close()
+  // 맨 위에 있는 모달만 받는다 — 아래 창까지 함께 닫히면 거기 적던 것이 사라진다
+  if (e.key === 'Escape' && open_[open_.length - 1] === me) close()
 }
 
 function detach() {
+  const i = open_.indexOf(me)
+  if (i >= 0) open_.splice(i, 1)
   document.removeEventListener('keydown', onKey)
-  document.body.style.overflow = ''
+  // 아래에 아직 열린 모달이 남아 있으면 잠금은 그대로 둔다
+  if (!open_.length) document.body.style.overflow = ''
 }
 
 watch(
@@ -47,6 +63,7 @@ watch(
   async (on) => {
     closing = false
     if (!on) return detach()
+    open_.push(me)
     document.addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
     await nextTick()

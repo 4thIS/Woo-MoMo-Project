@@ -108,6 +108,8 @@ onMounted(() => void account.load())
   left: 0;
   right: 0;
   z-index: 40;
+  /* 아래 화면이 "이만큼은 비켜 간다"고 믿는 높이다 — 토큰과 실제를 어긋나게 두지 않는다 */
+  min-height: var(--topbar-h);
   display: flex;
   align-items: center;
   justify-content: flex-end;

@@ -142,12 +142,44 @@ describe('MeModal — 이력서 슬롯', () => {
     expect(text('slot-full-note')).toContain('하나를 지워야')
   })
 
-  it('지우면 자리가 난다', async () => {
+  /* 지운 이력서는 되돌릴 수 없다 — "열기" 바로 옆이라 더욱 한 번 더 묻는다 */
+  it('삭제를 눌러도 바로 지워지지 않고 한 번 더 묻는다', async () => {
     await useAccountStore().saveResume({ kind: 'admission', title: 'x', text: 'x'.repeat(80) })
     modal()
     await settle()
     await click('slot-delete')
+    expect(all('slot-row')).toHaveLength(1)
+    expect(document.querySelector('[data-test=slot-delete-confirm]')).not.toBeNull()
+  })
+
+  it('묻는 자리에서 취소하면 이력서가 남는다', async () => {
+    await useAccountStore().saveResume({ kind: 'admission', title: 'x', text: 'x'.repeat(80) })
+    modal()
+    await settle()
+    await click('slot-delete')
+    await click('slot-delete-cancel')
+    expect(all('slot-row')).toHaveLength(1)
+    expect(document.querySelector('[data-test=slot-delete-confirm]')).toBeNull()
+  })
+
+  it('확인하고 지우면 자리가 난다', async () => {
+    await useAccountStore().saveResume({ kind: 'admission', title: 'x', text: 'x'.repeat(80) })
+    modal()
+    await settle()
+    await click('slot-delete')
+    await click('slot-delete-confirm')
     expect(all('slot-row')).toHaveLength(0)
+  })
+
+  it('한 줄에서 묻는 동안 다른 줄은 그대로다', async () => {
+    const a = useAccountStore()
+    await a.saveResume({ kind: 'admission', title: '첫째', text: 'x'.repeat(80) })
+    await a.saveResume({ kind: 'admission', title: '둘째', text: 'x'.repeat(80) })
+    modal()
+    await settle()
+    all('slot-delete')[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await settle()
+    expect(all('slot-delete-confirm')).toHaveLength(1)
   })
 
   it('탭을 바꾸면 그 종류만 보인다', async () => {

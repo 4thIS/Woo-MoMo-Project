@@ -254,11 +254,15 @@ docker buildx build --platform linux/amd64 -f deploy/api.Dockerfile -t ghcr.io/4
 docker buildx build --platform linux/amd64 -f deploy/web.Dockerfile -t ghcr.io/4this/woo-momo-web:latest .
 ```
 
-## 자동 재배포 (demomo, 2026-10-14~)
+## 자동 재배포 (demomo 2026-10-14~, momo 2026-10-31~)
 
 dev에 머지되면 CI가 `ghcr.io/4this/woo-momo-{web,api}:dev`를 올리고, 파이의 사용자 타이머가 2분마다 `deploy/autodeploy/autodeploy.sh`를 돌린다.
 스크립트는 ① dev 새 커밋을 fast-forward로 받고 ② 이미지를 pull해서 ③ 둘 중 하나라도 바뀌면 `docker compose up -d --no-build`(바뀐 컨테이너만 재시작) 후 태그 빠진 옛 이미지를 지운다. 파이로 들어오는 경로(웹훅·SSH 키)는 만들지 않는다.
-운영(momo)에는 설치하지 않는다 — 운영 반영은 지시가 있을 때 수동으로 한다.
+운영(momo)도 같은 스크립트를 쓴다(2026-10-31~). main에 머지되면 CI가 `:latest`를 올리고, 운영 클론의 타이머(`momo-autodeploy.timer`)가 **5분마다** 같은 방식으로 반영한다.
+
+**배포 순서(팀 규칙):** 작업 PR은 항상 `dev`로 머지 → demomo에 자동 반영 → 작업자가 demomo에서 눈으로 확인 → 정상이면 작업자가 `dev → main` PR을 올려 **merge commit**(`gh pr merge <번호> --merge`)으로 머지 → momo에 자동 반영. main에 직접 push하거나 dev를 거치지 않은 PR을 main에 머지하지 않는다.
+
+CI의 이미지 올리기는 같은 브랜치에서 한 번에 하나씩 차례로 돌고, 시작할 때 그 커밋이 아직 브랜치 끝이 아니면 건너뛴다(옛 커밋 이미지가 새 이미지를 덮지 않게).
 
 ### 최초 설치 (한 번)
 ```
@@ -275,6 +279,11 @@ mkdir -p ~/.config/systemd/user
 cp autodeploy/momo-dev-autodeploy.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now momo-dev-autodeploy.timer
+
+# 4) 운영(momo) 타이머 — 운영 클론은 main을 따라가고, .env에 IMAGE_TAG가 없어 :latest를 쓴다
+cp /srv/apps/Woo-MoMo-Project/deploy/autodeploy/momo-autodeploy.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now momo-autodeploy.timer
 ```
 
 ### 확인·운영
@@ -283,6 +292,8 @@ systemctl --user list-timers momo-dev-autodeploy.timer     # 다음 실행 시�
 journalctl --user -u momo-dev-autodeploy -n 50              # 최근 실행 로그(바뀐 게 없으면 조용하다)
 systemctl --user start momo-dev-autodeploy                  # 지금 바로 한 번
 systemctl --user disable --now momo-dev-autodeploy.timer    # 끄기
+# 운영은 같은 명령에서 이름만 momo-autodeploy로 바꾼다
+journalctl --user -u momo-autodeploy -n 50
 ```
 - CI 빌드가 끝나기 전에 커밋을 먼저 받으면, 이미지는 다음 확인 때 바뀐다(머지 후 보통 5분 안쪽 반영).
 - 유닛 파일을 고쳤으면 다시 `cp` 후 `daemon-reload`.

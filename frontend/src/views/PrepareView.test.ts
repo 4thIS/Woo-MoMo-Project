@@ -44,6 +44,8 @@ import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { useInterviewStore } from '@/stores/interview'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useHintsStore } from '@/stores/hints'
+import { useAccountStore, setAccountApi } from '@/stores/account'
+import { makeMockAccount } from '@/services/accountMock'
 import PrepareView from './PrepareView.vue'
 
 const mountView = () =>
@@ -831,5 +833,120 @@ describe('PrepareView — 목소리를 기다리지 않고 시작 (멘토링 보
     await filledForm(w)
     expect(w.find('[data-test=voice-pending]').exists()).toBe(false)
     expect(w.find('[data-test=voice-failed]').exists()).toBe(false)
+  })
+})
+
+/* 저장해 둔 이력서 불러오기 — 로그인 혜택으로 내건 "이력서 미리 작성"이
+   준비 화면에서 쓰이는 자리다 */
+describe('PrepareView — 저장한 이력서', () => {
+  async function signedInWith(...slots: { kind: 'company' | 'admission'; title: string }[]) {
+    setAccountApi(makeMockAccount({ delayMs: 0 }))
+    const a = useAccountStore()
+    await a.signUp('a@b.com', 'pw123456', '이우진')
+    for (const s of slots) await a.saveResume({ ...s, text: `${s.title} 내용 `.repeat(20) })
+    return a
+  }
+
+  it('로그인했고 저장한 이력서가 있으면 고를 수 있다', async () => {
+    await signedInWith(
+      { kind: 'company', title: '프론트엔드 지원용' },
+      { kind: 'company', title: '백엔드 지원용' },
+    )
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.findAll('[data-test=saved-resume]')).toHaveLength(2)
+  })
+
+  it('고르면 그 내용이 이번 면접의 이력서가 된다', async () => {
+    await signedInWith({ kind: 'company', title: '프론트엔드 지원용' })
+    const w = mountView()
+    await fillProfile(w)
+    await w.find('[data-test=saved-resume]').trigger('click')
+    await flushPromises()
+    const s = useInterviewStore()
+    expect(s.resumeName).toBe('프론트엔드 지원용')
+    expect(s.resumeText).toContain('프론트엔드 지원용 내용')
+  })
+
+  it('비로그인에게는 보이지 않는다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=saved-resume]').exists()).toBe(false)
+  })
+
+  it('이번 면접의 갈래에 맞는 것만 보여 준다 — 회사 면접에 자기소개서를 내밀지 않는다', async () => {
+    await signedInWith(
+      { kind: 'company', title: '회사용 이력서' },
+      { kind: 'admission', title: '대입 자기소개서' },
+    )
+    const w = mountView()
+    await fillProfile(w)
+    const names = w.findAll('[data-test=saved-resume]').map((b) => b.text())
+    expect(names).toEqual(['회사용 이력서'])
+  })
+
+  it('저장한 것이 없으면 줄 자체를 그리지 않는다', async () => {
+    await signedInWith()
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=saved-resumes]').exists()).toBe(false)
+  })
+})
+
+describe('PrepareView — 벤 회사 면접의 추가 칸 (이슈 143)', () => {
+  /** ① 단계에 머물러 있나 — 회사명·공고 칸은 거기에만 있다 */
+  const onStepOne = (w: ReturnType<typeof mountView>) => w.find('[data-test=company-name]').exists()
+
+  it('직무를 적고 칸을 벗어나도 ①에 머문다 — 아래 회사명·공고를 볼 틈이 있어야 한다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(onStepOne(w)).toBe(true)
+    expect(w.find('[data-test=posting-url]').exists()).toBe(true)
+  })
+
+  it('Enter로도 넘어가지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('keydown.enter')
+    await flushPromises()
+    expect(onStepOne(w)).toBe(true)
+  })
+
+  it('공고 칸에서 벗어나면 그때 넘어간다 — 마지막 칸이다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await flushPromises()
+    await w.find('[data-test=posting-url]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+  })
+
+  it('다른 면접관은 지금처럼 바로 넘어간다', async () => {
+    useInterviewerStore().select('m1')
+    const interview = useInterviewStore()
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
   })
 })

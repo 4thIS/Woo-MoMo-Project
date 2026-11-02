@@ -304,7 +304,6 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
 .ai-voice {
   margin: 0;
   white-space: nowrap;
-  margin: 0;
   font-size: var(--fs-meta);
   color: var(--text-3);
   z-index: 2;
@@ -345,6 +344,23 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   height: 12px;
   background: var(--bg);
   transform: translateX(-50%) rotate(45deg);
+}
+/* 좁은 화면 — 가운데에 고지를 둘 자리가 없어 시계와 맞붙어 잘렸다. 빼지 않고 아랫줄
+   전체를 준다(기계 생성 음성 고지는 상시 표시가 사용 조건이다, #34). 머리말이 한 줄
+   늘어난 만큼 말풍선도 내려온다 — 위의 `.bubble`보다 **뒤에** 와야 덮어쓴다 */
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: var(--sp-1) var(--sp-3);
+  }
+  .ai-voice {
+    white-space: normal;
+    order: 3;
+    flex-basis: 100%;
+  }
+  .bubble {
+    margin-top: 140px;
+  }
 }
 .board {
   display: flex;

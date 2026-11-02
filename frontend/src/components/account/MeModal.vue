@@ -22,6 +22,15 @@ const kind = ref<ResumeKind>('admission')
 const editing = ref<ResumeSlot | 'new' | null>(null)
 
 const slots = computed(() => account.slotsOf(kind.value))
+/** 지울지 묻고 있는 슬롯 id. 지운 이력서는 되돌릴 수 없다 */
+const asking = ref<string | null>(null)
+// 탭을 바꾸면 묻던 것은 풀린다 — 보이지 않는 줄을 지우게 두지 않는다
+watch(kind, () => (asking.value = null))
+
+async function removeSlot(id: string) {
+  asking.value = null
+  await account.deleteResume(id)
+}
 const full = computed(() => slots.value.length >= RESUME_SLOTS)
 const tierLabel = computed(() => (account.isPremium ? '★ 모모 프리미엄' : '로그인'))
 
@@ -152,16 +161,29 @@ watch(
           <span class="nm">{{ s.title }}</span>
           <span class="right">
             <span class="mono meta">{{ s.updatedAt.slice(0, 10) }}</span>
-            <PixelButton variant="secondary" data-test="slot-open" @click="editing = s">
-              열기
-            </PixelButton>
-            <PixelButton
-              variant="secondary"
-              data-test="slot-delete"
-              @click="account.deleteResume(s.id)"
-            >
-              삭제
-            </PixelButton>
+            <template v-if="asking === s.id">
+              <!-- 묻는 동안은 "열기"도 감춘다 — 지울지 정하는 줄에 다른 길이 섞이면 헷갈린다 -->
+              <span class="mono ask" data-test="slot-delete-ask">지울까요? 되돌릴 수 없습니다</span>
+              <!-- 강조는 안전한 쪽에 준다 — 되돌릴 수 없는 쪽이 가장 눈에 띄면 안 된다 -->
+              <PixelButton data-test="slot-delete-cancel" @click="asking = null">
+                그대로 두기
+              </PixelButton>
+              <PixelButton
+                variant="secondary"
+                data-test="slot-delete-confirm"
+                @click="removeSlot(s.id)"
+              >
+                삭제
+              </PixelButton>
+            </template>
+            <template v-else>
+              <PixelButton variant="secondary" data-test="slot-open" @click="editing = s">
+                열기
+              </PixelButton>
+              <PixelButton variant="secondary" data-test="slot-delete" @click="asking = s.id">
+                삭제
+              </PixelButton>
+            </template>
           </span>
         </div>
 
@@ -286,6 +308,11 @@ watch(
 }
 .nm {
   font-size: var(--fs-body-sm);
+}
+/* 묻는 동안만 나오는 한 줄 */
+.ask {
+  font-size: var(--fs-meta);
+  color: var(--danger);
 }
 .right {
   display: flex;

@@ -77,8 +77,8 @@ Woo-MoMo-Project/
 3. **`dev`에서** `feature/` 브랜치 생성 → plan대로 구현
 4. 매 작업 TDD (실패 테스트 먼저)
 5. 변경 제안 전 검증 + 리뷰 요청
-6. 리뷰 → Squash merge
-7. `dev` 머지 → `demomo.ssenu.cloud`에서 확인 → 묶어서 `main`으로 → CI가 amd64 이미지 빌드·GHCR 푸시 → 배포 서버가 `docker compose pull && up -d`(demomo는 자동 재배포 타이머)
+6. 리뷰 → Squash merge (작업 PR → `dev`)
+7. `dev` 머지 → demomo 자동 재배포(2분) → **작업자가 `demomo.ssenu.cloud`에서 눈으로 확인** → 정상이면 **작업자가 `dev → main` PR**을 올려 **merge commit**(`gh pr merge <번호> --merge`, squash 금지)으로 머지 → momo 자동 재배포(5분). 첫 머지는 항상 `dev`로 한다(`deploy/README.md` "자동 재배포")
 
 ### 버그 수정
 
