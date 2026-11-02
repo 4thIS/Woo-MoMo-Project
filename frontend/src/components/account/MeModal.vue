@@ -164,14 +164,15 @@ watch(
             <template v-if="asking === s.id">
               <!-- 묻는 동안은 "열기"도 감춘다 — 지울지 정하는 줄에 다른 길이 섞이면 헷갈린다 -->
               <span class="mono ask" data-test="slot-delete-ask">지울까요? 되돌릴 수 없습니다</span>
-              <PixelButton
-                variant="secondary"
-                data-test="slot-delete-cancel"
-                @click="asking = null"
-              >
+              <!-- 강조는 안전한 쪽에 준다 — 되돌릴 수 없는 쪽이 가장 눈에 띄면 안 된다 -->
+              <PixelButton data-test="slot-delete-cancel" @click="asking = null">
                 그대로 두기
               </PixelButton>
-              <PixelButton data-test="slot-delete-confirm" @click="removeSlot(s.id)">
+              <PixelButton
+                variant="secondary"
+                data-test="slot-delete-confirm"
+                @click="removeSlot(s.id)"
+              >
                 삭제
               </PixelButton>
             </template>

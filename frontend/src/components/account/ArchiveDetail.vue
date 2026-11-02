@@ -96,10 +96,11 @@ function answerIndex(i: number): number {
         <span class="mono ask" data-test="archive-delete-ask"
           >이 기록을 지울까요? 되돌릴 수 없습니다</span
         >
-        <PixelButton variant="secondary" data-test="archive-delete-cancel" @click="asking = false"
+        <!-- 강조는 안전한 쪽에 준다 — 되돌릴 수 없는 쪽이 가장 눈에 띄면 안 된다 -->
+        <PixelButton data-test="archive-delete-cancel" @click="asking = false"
           >그대로 두기</PixelButton
         >
-        <PixelButton data-test="archive-delete-confirm" @click="$emit('remove')"
+        <PixelButton variant="secondary" data-test="archive-delete-confirm" @click="$emit('remove')"
           >지우기</PixelButton
         >
       </template>
