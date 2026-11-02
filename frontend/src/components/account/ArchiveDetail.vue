@@ -93,7 +93,9 @@ function answerIndex(i: number): number {
         >지우기</PixelButton
       >
       <template v-else>
-        <span class="mono ask" data-test="archive-delete-ask">이 기록을 지울까요? 되돌릴 수 없습니다</span>
+        <span class="mono ask" data-test="archive-delete-ask"
+          >이 기록을 지울까요? 되돌릴 수 없습니다</span
+        >
         <PixelButton variant="secondary" data-test="archive-delete-cancel" @click="asking = false"
           >그대로 두기</PixelButton
         >

@@ -49,8 +49,9 @@ const infoDone = computed(() => {
 const hints = useHintsStore()
 const account = useAccountStore()
 /* 내정보에 미리 써 둔 이력서·자기소개서. 이번 면접의 갈래에 맞는 것만 — 회사 면접에
-   자기소개서를 내밀지 않는다. 비로그인은 애초에 슬롯이 없어 빈 목록이다 */
-const savedResumes = computed(() => account.slotsOf(interview.track))
+   자기소개서를 내밀지 않는다. 비로그인은 애초에 슬롯이 없어 빈 목록이다.
+   벤처럼 둘 다 보는 면접관에서 갈래를 아직 안 고르면(track null) 어느 쪽인지 알 수 없어 내밀지 않는다 */
+const savedResumes = computed(() => (interview.track ? account.slotsOf(interview.track) : []))
 /** 저장해 둔 것을 이번 면접의 이력서로 삼는다. 슬롯은 건드리지 않는다 —
  *  면접 중에 고친 내용이 저장본까지 바꾸면 놀란다 */
 function useSaved(id: string) {
