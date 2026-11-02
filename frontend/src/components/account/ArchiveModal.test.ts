@@ -212,12 +212,47 @@ describe('ArchiveModal — 상세', () => {
     expect(rows()).toHaveLength(1)
   })
 
-  it('상세에서 지우면 목록으로 돌아가고 줄이 사라진다', async () => {
+  /* 지우기는 되돌릴 수 없고 기록은 다시 만들 수 없다 — 한 번 더 묻는다 */
+  it('지우기를 눌러도 바로 지워지지 않고 한 번 더 묻는다', async () => {
     await openDetail()
     q('[data-test="archive-delete"]')!.click()
     await settle()
+    expect(q('[data-test="archive-delete-confirm"]')).not.toBeNull()
+    expect(q('[data-test="archive-detail"]')).not.toBeNull()
+    expect(rows()).toHaveLength(0) // 상세를 보는 중이라 목록은 그려지지 않는다
+  })
+
+  it('묻는 자리에서 취소하면 기록이 남는다', async () => {
+    await openDetail()
+    q('[data-test="archive-delete"]')!.click()
+    await settle()
+    q('[data-test="archive-delete-cancel"]')!.click()
+    await settle()
+    expect(q('[data-test="archive-delete-confirm"]')).toBeNull()
+    q('[data-test="archive-back"]')!.click()
+    await settle()
+    expect(rows()).toHaveLength(1)
+  })
+
+  it('확인하고 지우면 목록으로 돌아가고 줄이 사라진다', async () => {
+    await openDetail()
+    q('[data-test="archive-delete"]')!.click()
+    await settle()
+    q('[data-test="archive-delete-confirm"]')!.click()
+    await settle()
     expect(q('[data-test="archive-detail"]')).toBeNull()
     expect(rows()).toHaveLength(0)
+  })
+
+  it('목록에 갔다 다시 열면 묻던 것이 풀려 있다', async () => {
+    await openDetail()
+    q('[data-test="archive-delete"]')!.click()
+    await settle()
+    q('[data-test="archive-back"]')!.click()
+    await settle()
+    q('[data-test="archive-row"]')!.click()
+    await settle()
+    expect(q('[data-test="archive-delete-confirm"]')).toBeNull()
   })
 
   it('닫았다 열면 목록부터 시작한다', async () => {

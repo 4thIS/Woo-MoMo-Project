@@ -8,6 +8,7 @@ import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModalStore } from '@/stores/modal'
 import { useHintsStore } from '@/stores/hints'
+import { useAccountStore } from '@/stores/account'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
@@ -46,6 +47,17 @@ const infoDone = computed(() => {
     : interview.profileDone
 })
 const hints = useHintsStore()
+const account = useAccountStore()
+/* 내정보에 미리 써 둔 이력서·자기소개서. 이번 면접의 갈래에 맞는 것만 — 회사 면접에
+   자기소개서를 내밀지 않는다. 비로그인은 애초에 슬롯이 없어 빈 목록이다.
+   벤처럼 둘 다 보는 면접관에서 갈래를 아직 안 고르면(track null) 어느 쪽인지 알 수 없어 내밀지 않는다 */
+const savedResumes = computed(() => (interview.track ? account.slotsOf(interview.track) : []))
+/** 저장해 둔 것을 이번 면접의 이력서로 삼는다. 슬롯은 건드리지 않는다 —
+ *  면접 중에 고친 내용이 저장본까지 바꾸면 놀란다 */
+function useSaved(id: string) {
+  const slot = savedResumes.value.find((s) => s.id === id)
+  if (slot) interview.setResume(slot.title, slot.text)
+}
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 const pickerBox = ref<HTMLElement | null>(null)
@@ -504,6 +516,19 @@ async function clearAndRetry() {
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
+              <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 줄 자체를 보이지 않는다 -->
+              <div v-if="savedResumes.length" class="saved" data-test="saved-resumes">
+                <span class="mono lbl">저장한 {{ longDocLabel }}</span>
+                <PixelButton
+                  v-for="s in savedResumes"
+                  :key="s.id"
+                  variant="secondary"
+                  data-test="saved-resume"
+                  @click="useSaved(s.id)"
+                >
+                  {{ s.title }}
+                </PixelButton>
+              </div>
               <label
                 class="file-row press"
                 :class="{ dragging }"
@@ -718,25 +743,40 @@ async function clearAndRetry() {
   }
 }
 .prepare {
-  scroll-padding-top: 72px; /* 고정 상단바 아래에 섹션이 맞춰진다 */
+  /* 이 화면의 머리글(72px) + 그 위를 덮는 전역 상단바만큼 아래에 섹션이 맞춰진다 */
+  scroll-padding-top: calc(72px + var(--topbar-h));
 }
 .prepare .snap {
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - 72px - var(--topbar-h));
 }
+/* 전역 상단바(로그인·보관함·내정보)는 fixed로 화면 오른쪽 위를 덮는다.
+   머리글을 그 아래에서 시작하게 해야 "…떠나지 않습니다"와 상단바 글자가 포개지지 않는다.
+   가로로 피하는 방법은 화면이 좁아질수록 무너진다 — 세로로 비킨다 (점검 2026-11-02) */
 .topbar {
   position: sticky;
-  top: 0;
+  top: var(--topbar-h);
   z-index: 1;
   background: var(--bg);
   height: 72px;
   max-width: var(--content-w);
-  margin: 0 auto;
+  margin: var(--topbar-h) auto 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: var(--fs-label);
   color: var(--text-2);
   padding: 0 var(--sp-4);
+}
+/* 좁으면 둘을 나란히 둘 자리가 없다 — 가로로 밀어 넣으면 어절 중간에서 끊긴다 */
+@media (max-width: 720px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--sp-1);
+    height: auto;
+    min-height: 72px;
+  }
 }
 .dim {
   color: var(--text-3);
@@ -799,6 +839,17 @@ async function clearAndRetry() {
   height: auto;
   padding: var(--sp-3) var(--sp-4);
   resize: vertical;
+}
+/* 저장해 둔 것 고르기 — PDF 올리기 위에 둔다. 가진 사람에게는 이쪽이 빠른 길이다 */
+.saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.saved .lbl {
+  font-size: var(--fs-label);
+  color: var(--text-2);
 }
 .file-row {
   display: flex;
