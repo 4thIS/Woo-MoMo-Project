@@ -141,6 +141,12 @@ const navigatedBack = ref(false)
 function tryAdvance() {
   if (step.value === 1 && infoDone.value && !navigatedBack.value) step.value = 2
 }
+/** 직무 칸에서 넘어갈지. 벤 + 회사 트랙은 **아래에 회사명·공고 칸이 더 있어서**
+ *  여기서 넘기면 사용자가 그 칸을 보지 못한다(이슈 143). 그때는 공고 칸이 마지막이다 */
+function advanceFromJob() {
+  if (benCompany.value) return
+  tryAdvance()
+}
 function goBack() {
   step.value = 1
   navigatedBack.value = true
@@ -442,12 +448,14 @@ async function clearAndRetry() {
                     maxlength="40"
                     placeholder="예: 백엔드 개발자"
                     @input="interview.setJob(($event.target as HTMLInputElement).value)"
-                    @keydown.enter="tryAdvance"
-                    @blur="tryAdvance"
+                    @keydown.enter="advanceFromJob"
+                    @blur="advanceFromJob"
                   />
                   <span class="mono hint"
                     >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산
-                    관리 — 입력을 마치면 이력서 단계로 넘어갑니다</span
+                    관리<template v-if="!benCompany">
+                      — 입력을 마치면 이력서 단계로 넘어갑니다</template
+                    ></span
                   >
                 </div>
                 <!-- 회사명은 벤만 쓴다(서버가 웹을 뒤져 브리핑을 만든다). 선택 입력이라
@@ -482,6 +490,8 @@ async function clearAndRetry() {
                     maxlength="500"
                     placeholder="예: https://careers.example.com/jobs/1234"
                     @input="interview.setPostingUrl(($event.target as HTMLInputElement).value)"
+                    @keydown.enter="tryAdvance"
+                    @blur="tryAdvance"
                   />
                   <span v-if="postingProblem" class="mono warn" data-test="posting-error">{{
                     postingProblem

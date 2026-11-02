@@ -833,3 +833,61 @@ describe('PrepareView — 목소리를 기다리지 않고 시작 (멘토링 보
     expect(w.find('[data-test=voice-failed]').exists()).toBe(false)
   })
 })
+
+describe('PrepareView — 벤 회사 면접의 추가 칸 (이슈 143)', () => {
+  /** ① 단계에 머물러 있나 — 회사명·공고 칸은 거기에만 있다 */
+  const onStepOne = (w: ReturnType<typeof mountView>) => w.find('[data-test=company-name]').exists()
+
+  it('직무를 적고 칸을 벗어나도 ①에 머문다 — 아래 회사명·공고를 볼 틈이 있어야 한다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(onStepOne(w)).toBe(true)
+    expect(w.find('[data-test=posting-url]').exists()).toBe(true)
+  })
+
+  it('Enter로도 넘어가지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('keydown.enter')
+    await flushPromises()
+    expect(onStepOne(w)).toBe(true)
+  })
+
+  it('공고 칸에서 벗어나면 그때 넘어간다 — 마지막 칸이다', async () => {
+    useInterviewerStore().select('m2')
+    const interview = useInterviewStore()
+    interview.setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await flushPromises()
+    await w.find('[data-test=posting-url]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+  })
+
+  it('다른 면접관은 지금처럼 바로 넘어간다', async () => {
+    useInterviewerStore().select('m1')
+    const interview = useInterviewStore()
+    const w = mountView()
+    await flushPromises()
+    interview.setField('it')
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
+    await w.find('[data-test=job]').trigger('blur')
+    await flushPromises()
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+  })
+})
