@@ -206,6 +206,23 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   position: relative;
   min-height: 0;
 }
+/* 좁은 화면 — 좌우 판은 각각 최소 300px이라 660px 아래에서는 서로 포개진다.
+   그러면 로그도 입력칸도 못 쓴다. 면접을 볼 수 있는 쪽을 남긴다:
+   입력판을 전폭으로 깔고 대화 기록은 접는다. 지금 질문은 말풍선으로 크게
+   보이고 지난 대화는 리포트에서 다시 볼 수 있다.
+   벤(프리미엄)은 서버가 추론해 WebGPU를 보지 않으므로 휴대폰으로도
+   여기까지 들어온다 — 못 들어오는 화면이 아니다 (점검 2026-11-02) */
+@media (max-width: 720px) {
+  .dock.left {
+    display: none;
+  }
+  .dock.right {
+    left: var(--sp-3);
+    right: var(--sp-3);
+    width: auto;
+    max-height: 50vh;
+  }
+}
 .confirm {
   position: absolute;
   inset: 0;
