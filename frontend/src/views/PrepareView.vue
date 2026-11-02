@@ -8,6 +8,7 @@ import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModalStore } from '@/stores/modal'
 import { useHintsStore } from '@/stores/hints'
+import { useAccountStore } from '@/stores/account'
 import { DEFAULT_INTERVIEWER, interviewerById } from '@/interviewers'
 import InterviewerPicker from '@/components/InterviewerPicker.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
@@ -46,6 +47,16 @@ const infoDone = computed(() => {
     : interview.profileDone
 })
 const hints = useHintsStore()
+const account = useAccountStore()
+/* 내정보에 미리 써 둔 이력서·자기소개서. 이번 면접의 갈래에 맞는 것만 — 회사 면접에
+   자기소개서를 내밀지 않는다. 비로그인은 애초에 슬롯이 없어 빈 목록이다 */
+const savedResumes = computed(() => account.slotsOf(interview.track))
+/** 저장해 둔 것을 이번 면접의 이력서로 삼는다. 슬롯은 건드리지 않는다 —
+ *  면접 중에 고친 내용이 저장본까지 바꾸면 놀란다 */
+function useSaved(id: string) {
+  const slot = savedResumes.value.find((s) => s.id === id)
+  if (slot) interview.setResume(slot.title, slot.text)
+}
 /* 면접관 바꾸기(spec 3.4): 같은 고르기 패널을 연다. 바꾸면 목소리 파일(약 290KB)만 받아 교체한다 */
 const pickerOpen = ref(false)
 const pickerBox = ref<HTMLElement | null>(null)
@@ -494,6 +505,19 @@ async function clearAndRetry() {
             </div>
 
             <div v-else key="resume" class="step" data-test="step-resume">
+              <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 줄 자체를 보이지 않는다 -->
+              <div v-if="savedResumes.length" class="saved" data-test="saved-resumes">
+                <span class="mono lbl">저장한 {{ longDocLabel }}</span>
+                <PixelButton
+                  v-for="s in savedResumes"
+                  :key="s.id"
+                  variant="secondary"
+                  data-test="saved-resume"
+                  @click="useSaved(s.id)"
+                >
+                  {{ s.title }}
+                </PixelButton>
+              </div>
               <label
                 class="file-row press"
                 :class="{ dragging }"
@@ -804,6 +828,17 @@ async function clearAndRetry() {
   height: auto;
   padding: var(--sp-3) var(--sp-4);
   resize: vertical;
+}
+/* 저장해 둔 것 고르기 — PDF 올리기 위에 둔다. 가진 사람에게는 이쪽이 빠른 길이다 */
+.saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.saved .lbl {
+  font-size: var(--fs-label);
+  color: var(--text-2);
 }
 .file-row {
   display: flex;
