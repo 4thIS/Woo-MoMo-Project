@@ -4,7 +4,7 @@
  * 왼쪽은 대화 전문, 오른쪽은 리포트. 리포트는 `ReportCards`를 그대로 쓴다 —
  * 두 벌을 만들면 리포트 화면과 어긋난다. **점수는 없다.**
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ArchiveDetail } from '@/services/account'
 import { interviewerById, DEFAULT_INTERVIEWER } from '@/interviewers'
 import { FIELD_LABELS, type Field } from '@/stores/interview'
@@ -21,6 +21,10 @@ defineEmits<{ back: []; remove: [] }>()
 
 /** 서버가 받은 그대로 돌려주므로 여기서 다시 모양을 본다 — 옛 기록에는 아예 없다 */
 const reportV2 = computed(() => asReportV2(props.entry.reportV2))
+
+/** 지울지 묻는 중. 기록은 되돌릴 수도, 다시 만들 수도 없어 한 번 더 묻는다.
+ *  상세는 목록을 거쳐야 바뀌므로(그때 이 컴포넌트가 사라진다) 따로 되돌릴 일은 없다 */
+const asking = ref(false)
 
 const iv = computed(
   () => interviewerById(props.entry.interviewerId) ?? interviewerById(DEFAULT_INTERVIEWER)!,
@@ -80,9 +84,23 @@ function answerIndex(i: number): number {
       <PixelButton variant="secondary" data-test="archive-print" @click="printReport"
         >PDF로 저장</PixelButton
       >
-      <PixelButton variant="secondary" data-test="archive-delete" @click="$emit('remove')"
+      <!-- 지우기는 묻고 나서 — "PDF로 저장" 바로 옆이라 손이 미끄러지기 쉽다 -->
+      <PixelButton
+        v-if="!asking"
+        variant="secondary"
+        data-test="archive-delete"
+        @click="asking = true"
         >지우기</PixelButton
       >
+      <template v-else>
+        <span class="mono ask" data-test="archive-delete-ask">이 기록을 지울까요? 되돌릴 수 없습니다</span>
+        <PixelButton variant="secondary" data-test="archive-delete-cancel" @click="asking = false"
+          >그대로 두기</PixelButton
+        >
+        <PixelButton data-test="archive-delete-confirm" @click="$emit('remove')"
+          >지우기</PixelButton
+        >
+      </template>
     </header>
 
     <div class="cols">
@@ -131,6 +149,11 @@ function answerIndex(i: number): number {
   flex: 1;
   font-size: var(--fs-meta);
   color: var(--text-3);
+}
+/* 묻는 동안만 나오는 한 줄. 되돌릴 수 없다는 말이 버튼보다 먼저 읽혀야 한다 */
+.head .ask {
+  font-size: var(--fs-meta);
+  color: var(--danger);
 }
 .link {
   font-size: var(--fs-label);
