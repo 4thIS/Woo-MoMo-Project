@@ -708,25 +708,40 @@ async function clearAndRetry() {
   }
 }
 .prepare {
-  scroll-padding-top: 72px; /* 고정 상단바 아래에 섹션이 맞춰진다 */
+  /* 이 화면의 머리글(72px) + 그 위를 덮는 전역 상단바만큼 아래에 섹션이 맞춰진다 */
+  scroll-padding-top: calc(72px + var(--topbar-h));
 }
 .prepare .snap {
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - 72px - var(--topbar-h));
 }
+/* 전역 상단바(로그인·보관함·내정보)는 fixed로 화면 오른쪽 위를 덮는다.
+   머리글을 그 아래에서 시작하게 해야 "…떠나지 않습니다"와 상단바 글자가 포개지지 않는다.
+   가로로 피하는 방법은 화면이 좁아질수록 무너진다 — 세로로 비킨다 (점검 2026-11-02) */
 .topbar {
   position: sticky;
-  top: 0;
+  top: var(--topbar-h);
   z-index: 1;
   background: var(--bg);
   height: 72px;
   max-width: var(--content-w);
-  margin: 0 auto;
+  margin: var(--topbar-h) auto 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: var(--fs-label);
   color: var(--text-2);
   padding: 0 var(--sp-4);
+}
+/* 좁으면 둘을 나란히 둘 자리가 없다 — 가로로 밀어 넣으면 어절 중간에서 끊긴다 */
+@media (max-width: 720px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--sp-1);
+    height: auto;
+    min-height: 72px;
+  }
 }
 .dim {
   color: var(--text-3);
