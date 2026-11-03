@@ -21,6 +21,10 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 REQUEST_TIMEOUT = 60.0
 # 분당 한도 응답에 대기 시간이 없을 때 쉬는 시간
 DEFAULT_COOLDOWN = 60.0
+# retryDelay가 0초·아주 짧게 와도 같은 키를 곧바로 다시 두드리지 않게
+MIN_COOLDOWN = 1.0
+# 분석 하나당 429를 받는 횟수 상한(키 수 x 이 값) — 요청이 길어 쉬는 키가 그새 풀려도 끝이 있게
+MAX_429_PER_KEY = 2
 # 쓸 키가 없을 때 이만큼 안에 풀리는 키가 있으면 기다렸다가 한 번 더 보낸다
 MAX_WAIT = 30.0
 # 하루 한도는 태평양 시간 자정에 풀린다. 서머타임과 상관없이 UTC-8로 계산한다(늦게 푸는 쪽이 안전)
@@ -54,7 +58,7 @@ def _retry_delay(details: list[dict[str, Any]]) -> float:
     for d in details:
         m = _DELAY.match(str(d.get("retryDelay", "")))
         if m:
-            return float(m.group(1))
+            return max(MIN_COOLDOWN, float(m.group(1)))
     return DEFAULT_COOLDOWN
 
 
@@ -148,6 +152,7 @@ class GeminiClient:
 
     def analyze(self, wav: bytes) -> VoiceOutcome:
         waited = False
+        limited = 0
         saw_minute = saw_daily = False
         while True:
             i = self._pick()
@@ -166,6 +171,7 @@ class GeminiClient:
                 return parse_response(r, idx)
             details = _error_details(r)
             if r.status_code == 429:
+                limited += 1
                 now = self._clock()
                 if _is_daily(details):
                     self._rest(i, "daily", _next_pacific_midnight(now))
@@ -173,6 +179,8 @@ class GeminiClient:
                 else:
                     self._rest(i, "cooling", now + _retry_delay(details))
                     saw_minute = True
+                if limited >= MAX_429_PER_KEY * len(self._keys):
+                    break
                 continue
             if r.status_code in (401, 403) or (r.status_code == 400 and _is_bad_key(details)):
                 self._rest(i, "dead", 0.0)

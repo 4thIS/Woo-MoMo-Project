@@ -259,3 +259,32 @@ def test_refresh_credits_noop_and_status_hides_keys() -> None:
     c.refresh_credits()
     assert "AIza-secret" not in repr(c.status())
     assert c.status() == [{"index": 1, "state": "ok"}]
+
+
+def test_zero_retry_delay_does_not_loop() -> None:
+    # retryDelay "0s"여도 최소 1초 쉬고, 분석 하나당 429는 키 수 x 2번까지만 받는다
+    calls: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(key(req))
+        return quota(delay="0s")
+
+    c, _, slept = make(["k1"], handler)
+    assert c.analyze(b"x").outcome == "error"
+    assert calls == ["k1", "k1"] and slept == [1.0]
+
+
+def test_429_cap_when_requests_are_slow() -> None:
+    # 요청이 길어 그새 다른 키의 쉬는 시간이 끝나도 끝없이 돌지 않는다
+    calls: list[str] = []
+    holder: dict[str, dict[str, float]] = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(key(req))
+        holder["clock"]["t"] += 5  # 요청 한 번에 5초
+        return quota(delay="1s")
+
+    c, clock, _ = make(["k1", "k2", "k3"], handler)
+    holder["clock"] = clock
+    assert c.analyze(b"x").outcome == "error"
+    assert len(calls) == 6
