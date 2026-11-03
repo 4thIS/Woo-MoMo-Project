@@ -218,7 +218,7 @@
 
 #### GET /api/auth/signup/config
 
-`200 { "emailVerify": true | false, "termsVersion": "2026-10-28", "termsRequired": true | false }`. 프론트가 가입 화면의 PIN 칸·약관 동의 칸 표시를 정한다. `termsVersion`은 현재 약관 버전(`docs/terms/`의 파일 날짜)이다.
+`200 { "emailVerify": true | false, "termsVersion": "2026-11-03", "termsRequired": true | false }`. 프론트가 가입 화면의 PIN 칸·약관 동의 칸 표시를 정한다. `termsVersion`은 현재 약관 버전(`docs/terms/`의 파일 날짜)이다.
 
 #### GET /api/auth/email-taken?email=a@b.com
 
@@ -313,7 +313,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 - `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 벤이 **회사명·직무만으로** 웹을 검색해 최신 정보 브리핑을 만들고 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
 - `company.postingUrl`(선택, 2026-10-23): 모집공고 링크. 공백 제거 후 1~500자, ASCII 문자만(한글 경로는 퍼센트 인코딩된 주소), `http`/`https` 스킴과 호스트가 있는 절대 URL이어야 하고 비면 없는 것으로 친다(위반은 `422 invalid`, `field: "postingUrl"`). 회사명 **또는** 공고 링크가 있으면 첫 턴에 조사를 시작한다(둘 다 없으면 지금처럼 조사 없음). 조사에 보내는 것은 회사명·직무·공고 URL뿐이며 이력서·대화는 보내지 않는다. `track: "admission"`이면 무시하고 저장하지 않는다.
 
-- `voiceAnalysisConsent`(선택, 2026-10-23, additive): 답변 녹음을 학교 AI 게이트웨이(BAZE, Gemini)로 보내 목소리를 분석하는 데 동의했는지. 기본 `false`이며 `false`이거나 서버에 BAZE 키가 없으면 동작은 이전과 같다. 응답 `voiceAnalysis`는 `"off"`(동의 안 함) / `"on"`(동의 + 분석 가능) / `"unavailable"`(동의했지만 키가 없거나 모두 쓸 수 없음 - 프론트는 업로드하지 않는다). 동의 여부는 면접에 저장된다.
+- `voiceAnalysisConsent`(선택, 2026-10-23, additive): 답변 녹음을 외부 AI(Google Gemini — 서버 설정 `VOICE_PROVIDER`에 따라 직접 또는 학교 BAZE 게이트웨이 경유, 2026-11-03)로 보내 목소리를 분석하는 데 동의했는지. 기본 `false`이며 `false`이거나 서버에 고른 쪽의 키가 없으면 동작은 이전과 같다. 응답 `voiceAnalysis`는 `"off"`(동의 안 함) / `"on"`(동의 + 분석 가능) / `"unavailable"`(동의했지만 키가 없거나 모두 쓸 수 없음 - 프론트는 업로드하지 않는다). 동의 여부는 면접에 저장된다.
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 
@@ -430,8 +430,8 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
 // 413 { "error": "too_large" } · 415 { "error": "unsupported_media" }   // WAV 아님
 // 422 { "error": "invalid", "field": "answer" }
 // 429 rate_limited                             // 사용자당 분당 20회(벤 분당 6회와 별개). 요청 수 제한은 검증보다 먼저 세므로 4xx를 받아도 한 번으로 친다
-// 429 { "error": "voice_limit" }              // 면접당 분석 상한 16회(답변 최대 8 x 2). BAZE를 부르지 않고 파일도 남기지 않는다
-// 503 { "error": "voice_unavailable" }         // BAZE 키 없음·모두 사용 불가
+// 429 { "error": "voice_limit" }              // 면접당 분석 상한 16회(답변 최대 8 x 2). 외부 AI를 부르지 않고 파일도 남기지 않는다
+// 503 { "error": "voice_unavailable" }         // 고른 쪽(VOICE_PROVIDER) 키 없음·모두 사용 불가
 ```
 서버는 녹음을 임시 파일로만 두고 분석이 끝나면(성공·실패 모두) 지운다. 받아쓰기 본문은 저장하지 않고 한글 음절 수와 등급·근거만 `voice_analysis`에 둔다. 서버가 재시작되면 아직 `queued`였던 분석은 `failed`(`restart`)로 닫힌다.
 

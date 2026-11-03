@@ -84,3 +84,26 @@ def test_repr_hides_secrets():
     text = repr(s)
     for secret in ("sk-baze-1", "sk-baze-2", "sk-ant-secret", "hunter2-pass"):
         assert secret not in text
+
+
+def test_voice_provider_and_gemini_settings():
+    d = Settings.from_env({})
+    assert d.voice_provider == "gemini"
+    assert d.gemini_api_keys == () and d.gemini_voice_model == "gemini-3.8-flash"
+    assert d.voice_usage_model == "gemini:gemini-3.8-flash"
+    s = Settings.from_env(
+        {"VOICE_PROVIDER": " BAZE ", "GEMINI_API_KEYS": " g1, ,g2", "GEMINI_VOICE_MODEL": "gm"}
+    )
+    assert s.voice_provider == "baze"
+    assert s.gemini_api_keys == ("g1", "g2") and s.gemini_voice_model == "gm"
+    assert s.voice_usage_model == "gemini-3.8-flash"  # BAZE는 지금처럼 모델 이름만
+    assert Settings.from_env({"VOICE_PROVIDER": ""}).voice_provider == "gemini"
+
+
+def test_voice_provider_invalid_fails():
+    with pytest.raises(ValueError):
+        Settings.from_env({"VOICE_PROVIDER": "openai"})
+
+
+def test_repr_hides_gemini_keys():
+    assert "AIza-secret" not in repr(Settings.from_env({"GEMINI_API_KEYS": "AIza-secret"}))

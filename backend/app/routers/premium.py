@@ -20,7 +20,6 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts, report_v2
-from app.llm.baze import StoredVoice, VoiceAnalyzer
 from app.llm.claude import (
     MODEL,
     REPORT_MAX_TOKENS,
@@ -30,6 +29,7 @@ from app.llm.claude import (
     Usage,
     UsageSink,
 )
+from app.llm.voice_common import StoredVoice, VoiceAnalyzer
 from app.presenters import to_session
 from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
@@ -752,7 +752,7 @@ def upload_voice(
             baze,
             settings.db_path,
             clock,
-            settings.baze_voice_model,
+            settings.voice_usage_model,
             user.id,
             interview.id,
             answer,

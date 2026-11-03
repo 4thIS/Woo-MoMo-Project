@@ -17,8 +17,10 @@ from app.data import (
     load_question_sets,
 )
 from app.errors import install_error_handlers
-from app.llm.baze import BazeClient, VoiceAnalyzer
+from app.llm.baze import BazeClient
 from app.llm.claude import AnthropicClaude, ClaudeClient
+from app.llm.gemini import GeminiClient
+from app.llm.voice_common import VoiceAnalyzer
 from app.mail import HttpMailer, Mailer
 from app.middleware import OriginGuard
 from app.routers import (
@@ -65,8 +67,15 @@ def create_app(
 ) -> FastAPI:
     base = data_dir or DATA_DIR
     cfg = settings or Settings.from_env()
-    # 주입한 대역은 잔액 확인 스레드를 돌리지 않는다. 키가 있을 때만 실물을 만든다
-    own_baze: BazeClient | None = BazeClient(cfg) if baze is None and cfg.baze_api_keys else None
+    # 주입한 대역은 잔액 확인 스레드를 돌리지 않는다. VOICE_PROVIDER가 고른 쪽의 키가 있을 때만
+    # 실물을 만든다(한 번에 한 곳, 자동 전환 없음 — spec 2026-11-03)
+    own_baze: BazeClient | None = None
+    own_gemini: GeminiClient | None = None
+    if baze is None:
+        if cfg.voice_provider == "baze" and cfg.baze_api_keys:
+            own_baze = BazeClient(cfg)
+        elif cfg.voice_provider == "gemini" and cfg.gemini_api_keys:
+            own_gemini = GeminiClient(cfg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -91,7 +100,7 @@ def create_app(
     app.state.clock = clock
     app.state.limiter = RateLimiter(clock)
     app.state.claude = claude if claude is not None else _default_claude(cfg)
-    app.state.baze = baze if baze is not None else own_baze
+    app.state.baze = baze if baze is not None else (own_baze or own_gemini)
     # 주입한 발송기가 우선. 없으면 키가 있을 때만 실물, 둘 다 없으면 None(PIN 요청은 503)
     if mailer is None and cfg.mail_api_key:
         mailer = HttpMailer(cfg.mail_api_url, cfg.mail_api_key)

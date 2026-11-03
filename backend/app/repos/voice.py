@@ -5,7 +5,7 @@ import sqlite3
 from pydantic import ValidationError
 
 from app.ids import new_id
-from app.llm.baze import StoredVoice
+from app.llm.voice_common import StoredVoice
 
 
 def queue(conn: sqlite3.Connection, *, interview_id: str, answer: int, now: str) -> None:
