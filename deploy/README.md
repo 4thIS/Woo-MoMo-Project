@@ -373,9 +373,27 @@ curl -sI https://demomo.ssenu.cloud/admin
 - `/api/premium/purchase`(목업 결제)는 Access 경로 밖이다. 서버가 관리자인지 검사해 막는다(관리자 전용).
 - Access 로그인을 통과한 뒤에도 관리자 API는 서버가 관리자 여부를 다시 검사한다. 관리자가 아닌 계정은 Access를 통과해도 403이 난다.
 
-## 목소리 분석 (BAZE, 2026-10-23~)
+## 목소리 분석 (BAZE 2026-10-23~, Gemini 직접 2026-11-03~)
 
-벤 면접에서 사용자가 목소리 분석에 동의한 경우에만, 답변 녹음을 학교 BAZE 게이트웨이(Google Gemini)로 보내 받아쓰기·말하기 지표를 얻는다. 동의하지 않은 면접과 비로그인 사용자는 이 경로를 타지 않는다.
+벤 면접에서 사용자가 목소리 분석에 동의한 경우에만, 답변 녹음을 Google Gemini로 보내 받아쓰기·말하기 지표를 얻는다. 동의하지 않은 면접과 비로그인 사용자는 이 경로를 타지 않는다.
+
+보내는 길은 두 가지이고 `VOICE_PROVIDER`로 **한 곳만** 고른다(실패해도 다른 쪽으로 넘어가지 않는다, spec `docs/specs/backend/2026-11-03-voice-gemini-direct-design.md`).
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `VOICE_PROVIDER` | compose `baze` (코드 기본 `gemini`) | `gemini`(Gemini API 직접) 또는 `baze`(학교 게이트웨이). 다른 값이면 API가 뜨지 않는다. |
+| `GEMINI_API_KEYS` | (없음) | Gemini 키를 쉼표로 구분해 넣는다. 무료 등급 한도는 **구글 프로젝트 단위**이므로 서로 다른 프로젝트의 키여야 한도가 늘어난다. |
+| `GEMINI_VOICE_MODEL` | `gemini-3.8-flash` | Gemini 직접 호출 때 쓰는 모델 이름. |
+
+**Gemini로 켜는 순서:** 프론트 약관·동의 문구(“구글이 서비스 개선에 쓸 수 있음”)가 그 환경에 나간 뒤에 켠다. 아래 BAZE 키 넣는 방법과 같이 `read -rsp`로 `GEMINI_API_KEYS`를 넣고, `.env`에 `VOICE_PROVIDER=gemini`를 둔 뒤 `docker compose up -d --no-build`. 되돌릴 때는 `VOICE_PROVIDER=baze`로 바꾸고 같은 명령.
+
+**Gemini 한도(무료 등급, 대략 키당 분당 10회·하루 250회):**
+- 429 분당 한도: 그 키를 응답의 `retryDelay`(없으면 60초)만큼 쉬게 하고 다음 키로 보낸다. 쓸 키가 없고 30초 안에 풀리는 키가 있으면 기다렸다가 한 번 더 보낸다.
+- 429 하루 한도: 그 키를 다음 날 태평양 시간 자정(UTC−8 고정으로 계산)까지 건너뛴다.
+- 401·403·`API_KEY_INVALID`: 그 키는 서버를 재시작할 때까지 건너뛴다.
+- 사용량은 `baze_usage` 표에 `model`이 `gemini:<모델>`인 줄로 남는다.
+
+아래는 BAZE(`VOICE_PROVIDER=baze`)일 때의 설정이다.
 
 ### `.env` 항목 (커밋 금지)
 
