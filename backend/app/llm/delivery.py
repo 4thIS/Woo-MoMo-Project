@@ -17,7 +17,7 @@
 from dataclasses import dataclass, replace
 from typing import Any
 
-from app.llm.baze import StoredVoice
+from app.llm.voice_common import StoredVoice
 
 MIN_SPEECH_SEC = 5.0
 SLOW_BELOW = 250

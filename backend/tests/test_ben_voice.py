@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -119,7 +120,7 @@ def test_upload_success_runs_analysis_and_cleans_up(
     assert len(usage) == 1
     assert usage[0]["key_index"] == 1
     assert usage[0]["outcome"] == "ok"
-    assert usage[0]["model"] == settings.baze_voice_model
+    assert usage[0]["model"] == settings.voice_usage_model == "gemini:gemini-3.8-flash"
     assert usage[0]["interview_id"] == interview_id
     assert _wait_tmp_empty(settings) == []
 
@@ -371,3 +372,18 @@ def test_startup_marks_leftover_queued_failed(
     with open_db(settings) as conn:
         row = conn.execute("SELECT status, error_code FROM voice_analysis").fetchone()
     assert (row["status"], row["error_code"]) == ("failed", "restart")
+
+
+def test_create_app_builds_selected_provider(tmp_path: Path) -> None:
+    from app.llm.baze import BazeClient
+    from app.llm.gemini import GeminiClient
+    from app.main import create_app
+
+    def analyzer(**kw: Any) -> object:
+        return create_app(settings=Settings(storage_dir=tmp_path, **kw)).state.baze
+
+    assert isinstance(analyzer(gemini_api_keys=("g",)), GeminiClient)
+    # 고른 쪽에 키가 없으면 다른 쪽 키가 있어도 분석기는 없다(자동 전환 없음)
+    assert analyzer(baze_api_keys=("b",)) is None
+    assert isinstance(analyzer(voice_provider="baze", baze_api_keys=("b",)), BazeClient)
+    assert analyzer(voice_provider="baze", gemini_api_keys=("g",)) is None
