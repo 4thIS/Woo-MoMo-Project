@@ -38,7 +38,7 @@ def test_disabled_returns_404_and_config_false(client):
     assert res.status_code == 404 and res.json() == {"error": "verify_disabled"}
     assert client.get("/api/auth/signup/config").json() == {
         "emailVerify": False,
-        "termsVersion": "2026-10-28",
+        "termsVersion": "2026-11-03",
         "termsRequired": False,
     }
 
@@ -46,7 +46,7 @@ def test_disabled_returns_404_and_config_false(client):
 def test_config_true(vc):
     assert vc.get("/api/auth/signup/config").json() == {
         "emailVerify": True,
-        "termsVersion": "2026-10-28",
+        "termsVersion": "2026-11-03",
         "termsRequired": False,
     }
 
