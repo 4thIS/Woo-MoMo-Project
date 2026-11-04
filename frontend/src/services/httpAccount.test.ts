@@ -285,11 +285,11 @@ describe('httpAccount — 가입 이메일 인증', () => {
 
 describe('httpAccount — 비밀번호 규칙·약관', () => {
   it('config는 약관 설정도 함께 준다', async () => {
-    answer({ body: { emailVerify: true, termsRequired: true, termsVersion: '2026-10-28' } })
+    answer({ body: { emailVerify: true, termsRequired: true, termsVersion: '2026-11-03' } })
     expect(await api().signupConfig()).toEqual({
       emailVerify: true,
       termsRequired: true,
-      termsVersion: '2026-10-28',
+      termsVersion: '2026-11-03',
     })
   })
 
