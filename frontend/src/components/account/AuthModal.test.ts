@@ -415,7 +415,7 @@ function termsApi(over: Partial<Record<string, unknown>> = {}) {
     signupConfig: async () => ({
       emailVerify: false,
       termsRequired: true,
-      termsVersion: '2026-10-28',
+      termsVersion: '2026-11-03',
     }),
     ...over,
   }

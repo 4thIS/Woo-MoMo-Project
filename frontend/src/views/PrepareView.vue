@@ -633,7 +633,10 @@ async function clearAndRetry() {
           </template>
         </p>
         <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
-             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다 -->
+             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다.
+             경유지(직접 호출인지 학교 게이트웨이인지)는 서버 설정으로 바뀌므로 적지 않는다.
+             대신 무료 등급을 쓰는 동안 구글이 이 녹음을 보게 될 수 있다는 것은 밝힌다
+             (2026-11-03 개정, `docs/specs/backend/2026-11-03-voice-gemini-direct-design.md`) -->
         <label v-if="iv.current?.premium" class="mono voice-consent" data-test="voice-consent-row">
           <input
             type="checkbox"
@@ -642,8 +645,8 @@ async function clearAndRetry() {
             @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
           />
           <span>
-            답변 녹음을 목소리 분석을 위해 외부 AI(학교 BAZE 게이트웨이 경유 Google Gemini)로
-            보냅니다. 분석 후 서버에서 지웁니다.
+            답변 녹음을 목소리 분석을 위해 외부 AI(Google Gemini)로 보냅니다. Google이 서비스 개선에
+            쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
           </span>
         </label>
         <div class="start-row">
