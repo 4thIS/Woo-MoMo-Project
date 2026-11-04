@@ -14,6 +14,10 @@ DEFAULT_CORS_ORIGINS = (
 DEFAULT_BEN_DAILY_LIMIT = 30
 DEFAULT_BAZE_VOICE_MODEL = "gemini-3.8-flash"
 DEFAULT_BAZE_MIN_REMAINING = 50.0
+# 목소리 분석을 어디로 보낼지 (spec 2026-11-03). 한 번에 한 곳만 쓴다
+VOICE_PROVIDERS = ("gemini", "baze")
+DEFAULT_VOICE_PROVIDER = "gemini"
+DEFAULT_GEMINI_VOICE_MODEL = "gemini-3.8-flash"
 DEFAULT_MAIL_API_URL = "https://send.ssenu.cloud/v1/send"
 # DATA_DIR = 사용자 데이터(DB·녹음). 정적 계약 데이터(MOMO_DATA_DIR)와 다르다.
 DEFAULT_STORAGE_DIR = Path(__file__).resolve().parents[1] / "var"
@@ -47,6 +51,15 @@ def _parse_emails(value: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(e for e in emails if e))
 
 
+def _parse_provider(value: str | None) -> str:
+    if value is None or not value.strip():
+        return DEFAULT_VOICE_PROVIDER
+    provider = value.strip().lower()
+    if provider not in VOICE_PROVIDERS:
+        raise ValueError(f"VOICE_PROVIDER must be one of {VOICE_PROVIDERS}")
+    return provider
+
+
 def _parse_keys(value: str | None) -> tuple[str, ...]:
     if value is None:
         return ()
@@ -66,6 +79,9 @@ class Settings:
     baze_api_keys: tuple[str, ...] = field(default=(), repr=False)
     baze_voice_model: str = DEFAULT_BAZE_VOICE_MODEL
     baze_min_remaining: float = DEFAULT_BAZE_MIN_REMAINING
+    voice_provider: str = DEFAULT_VOICE_PROVIDER
+    gemini_api_keys: tuple[str, ...] = field(default=(), repr=False)
+    gemini_voice_model: str = DEFAULT_GEMINI_VOICE_MODEL
     ben_report_v2: bool = False
     signup_email_verify: bool = False
     signup_terms_required: bool = False
@@ -75,6 +91,13 @@ class Settings:
     @property
     def db_path(self) -> Path:
         return self.storage_dir / "momo.sqlite3"
+
+    @property
+    def voice_usage_model(self) -> str:
+        """baze_usage.model에 남길 값 — BAZE는 지금처럼 모델 이름, Gemini 직접은 gemini: 접두어."""
+        if self.voice_provider == "baze":
+            return self.baze_voice_model
+        return f"gemini:{self.gemini_voice_model}"
 
     @property
     def voice_tmp_dir(self) -> Path:
@@ -105,6 +128,9 @@ class Settings:
             baze_min_remaining=float(min_remaining)
             if min_remaining
             else DEFAULT_BAZE_MIN_REMAINING,
+            voice_provider=_parse_provider(e.get("VOICE_PROVIDER")),
+            gemini_api_keys=_parse_keys(e.get("GEMINI_API_KEYS")),
+            gemini_voice_model=_stripped(e.get("GEMINI_VOICE_MODEL")) or DEFAULT_GEMINI_VOICE_MODEL,
             ben_report_v2=_parse_bool(e.get("BEN_REPORT_V2"), default=False),
             signup_email_verify=_parse_bool(e.get("SIGNUP_EMAIL_VERIFY"), default=False),
             signup_terms_required=_parse_bool(e.get("SIGNUP_TERMS_REQUIRED"), default=False),

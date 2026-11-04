@@ -633,6 +633,28 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(t).toContain('지웁니다')
   })
 
+  /* 무료 등급 Gemini 키를 쓰는 동안은 구글이 이 녹음을 서비스 개선에 쓰거나 사람이 볼 수 있다.
+     동의를 받는 자리에서 그 말을 빼면 동의가 아니다 (루트 CLAUDE.md 8번, 2026-11-03 개정) */
+  it('무료 등급이라 구글이 보게 될 수 있다는 것까지 적는다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    const t = w.find('[data-test=voice-consent-row]').text()
+    expect(t).toContain('서비스 개선')
+    expect(t).toContain('사람이 검토')
+  })
+
+  // 경유지(BAZE)는 서버 설정으로 바뀐다 — 사용자에게는 녹음이 닿는 곳만 말한다
+  it('바뀔 수 있는 경유지를 동의 문구에 적지 않는다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company')
+    const w = mountView()
+    await flushPromises()
+    const t = w.find('[data-test=voice-consent-row]').text()
+    expect(t).not.toContain('BAZE')
+  })
+
   it('동의를 켜면 스토어에 남는다', async () => {
     useInterviewerStore().select('m2')
     const interview = useInterviewStore()

@@ -109,7 +109,7 @@ def test_terms_on_accepts_and_stores(terms_on, settings, clock):
         row = conn.execute(
             "SELECT terms_version, terms_agreed_at FROM users WHERE email = 'a@b.com'"
         ).fetchone()
-    assert row[0] == "2026-10-28"
+    assert row[0] == "2026-11-03"
     assert row[1] == iso(clock())
 
 
@@ -119,7 +119,7 @@ def test_terms_stored_even_when_not_required(client, settings, clock):
         row = conn.execute(
             "SELECT terms_version, terms_agreed_at FROM users WHERE email = 'a@b.com'"
         ).fetchone()
-    assert (row[0], row[1]) == ("2026-10-28", iso(clock()))
+    assert (row[0], row[1]) == ("2026-11-03", iso(clock()))
 
 
 def test_terms_check_order(terms_on):
@@ -146,7 +146,7 @@ def test_session_response_unchanged(client):
 
 
 def test_config_fields(client, terms_on):
-    base = {"emailVerify": False, "termsVersion": "2026-10-28"}
+    base = {"emailVerify": False, "termsVersion": "2026-11-03"}
     assert client.get(CONFIG).json() == {**base, "termsRequired": False}
     assert terms_on.get(CONFIG).json() == {**base, "termsRequired": True}
 
