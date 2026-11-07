@@ -602,36 +602,41 @@ async function clearAndRetry() {
         <div v-if="pickerOpen && !busy" ref="pickerBox">
           <InterviewerPicker @need-premium="modal.show('premium')" />
         </div>
-        <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
+        <!-- 벤에게만 해당하는 것들을 한 상자로 묶는다 — 고지와 동의가 안내문 더미에
+             흩어져 있으면 무엇이 벤 때문인지 보이지 않는다 (2026-11-07) -->
+        <div v-if="iv.current?.premium" class="ben-box" data-test="ben-box">
+          <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
              웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
-        <p v-if="iv.current?.premium" class="mono notice" data-test="ben-notice">
-          벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
-          <template v-if="interview.track === 'company'">
-            회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
-            <template v-if="interview.profile.postingUrl.trim()">
-              모집공고 링크를 열어 요구사항을 참고합니다.
+          <p class="mono notice" data-test="ben-notice">
+            벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
+            <template v-if="interview.track === 'company'">
+              회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
+              <template v-if="interview.profile.postingUrl.trim()">
+                모집공고 링크를 열어 요구사항을 참고합니다.
+              </template>
             </template>
-          </template>
-        </p>
-        <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
+          </p>
+          <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
              2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다.
              경유지(직접 호출인지 학교 게이트웨이인지)는 서버 설정으로 바뀌므로 적지 않는다.
              대신 무료 등급을 쓰는 동안 구글이 이 녹음을 보게 될 수 있다는 것은 밝힌다
              (2026-11-03 개정, `docs/specs/backend/2026-11-03-voice-gemini-direct-design.md`) -->
-        <label v-if="iv.current?.premium" class="mono voice-consent" data-test="voice-consent-row">
-          <input
-            type="checkbox"
-            data-test="voice-consent"
-            :checked="interview.voiceConsent"
-            @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
-          />
-          <span>
-            답변 녹음을 목소리 분석을 위해 외부 AI(Google Gemini)로 보냅니다. Google이 서비스 개선에
-            쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
-          </span>
-        </label>
-        <div class="start-row">
-          <ul class="mono checklist">
+          <label class="mono voice-consent" data-test="voice-consent-row">
+            <input
+              type="checkbox"
+              data-test="voice-consent"
+              :checked="interview.voiceConsent"
+              @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
+            />
+            <span>
+              답변 녹음을 목소리 분석을 위해 외부 AI(Google Gemini)로 보냅니다. Google이 서비스
+              개선에 쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
+            </span>
+          </label>
+        </div>
+
+        <div class="start-row" data-test="go-box">
+          <ul class="mono checklist" data-test="checklist">
             <li>
               <i :class="{ ok: infoDone, wait: !infoDone }" />
               {{ interview.track === 'admission' ? '이름 · 학교 · 학과 입력' : '분야 · 직무 입력' }}
@@ -685,15 +690,17 @@ async function clearAndRetry() {
             <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
               startLabel
             }}</PixelButton>
-            <PixelButton
+            <!-- 곁가지다. 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다 (2026-11-07) -->
+            <button
               v-if="voicelessOffer"
+              type="button"
+              class="mono link press"
               data-test="start-voiceless"
-              variant="secondary"
               :disabled="busy"
               @click="startVoiceless"
             >
               목소리 없이 시작
-            </PixelButton>
+            </button>
             <button
               v-if="blockedByError"
               type="button"
@@ -906,6 +913,26 @@ async function clearAndRetry() {
 .voice-consent input {
   margin-top: 0.25em;
   flex: none;
+}
+/* 벤에게만 해당하는 것들 — 고지와 동의를 한 상자로 묶어 무엇이 벤 때문인지 보이게 한다 */
+.ben-box {
+  border: 2px solid var(--accent);
+  background: var(--raise);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.ben-box .notice,
+.ben-box .voice-consent {
+  margin: 0;
+}
+/* 체크리스트는 시작 버튼과 한 묶음 — 왜 못 누르는지가 버튼 옆에 있어야 한다 */
+.checklist {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
 }
 .start-row {
   display: flex;

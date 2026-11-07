@@ -473,6 +473,43 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
   })
 })
 
+describe('PrepareView — 시작 영역', () => {
+  it('벤 고지와 목소리 동의를 한 상자로 묶고, 벤일 때만 띄운다', async () => {
+    const free = mountView()
+    await fillProfile(free)
+    expect(free.find('[data-test=ben-box]').exists()).toBe(false)
+
+    useInterviewerStore().select('m2')
+    const ben = mountView()
+    await fillProfile(ben)
+    const box = ben.get('[data-test=ben-box]')
+    expect(box.find('[data-test=ben-notice]').exists()).toBe(true)
+    expect(box.find('[data-test=voice-consent-row]').exists()).toBe(true)
+  })
+
+  it('"목소리 없이 시작"은 버튼이 아니라 곁가지 링크다 — 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'error', ttsError: 'boom' })
+    const w = mountView()
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+    const alt = w.get('[data-test=start-voiceless]')
+    expect(alt.element.tagName).toBe('BUTTON')
+    expect(alt.classes()).toContain('link')
+  })
+
+  it('체크리스트는 시작 버튼과 한 묶음이다 — 왜 못 누르는지가 버튼 옆에 있어야 한다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    const go = w.get('[data-test=go-box]')
+    expect(go.find('[data-test=checklist]').exists()).toBe(true)
+    expect(go.find('[data-test=start]').exists()).toBe(true)
+  })
+})
+
 describe('PrepareView — 면접관', () => {
   it('시작 영역에 면접관 칩, "바꾸기"로 고르기 패널을 연다', async () => {
     useInterviewerStore().select('m2')
