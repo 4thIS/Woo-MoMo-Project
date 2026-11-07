@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
 import { reportHeader, reportToText } from '@/utils/reportParser'
 import { itemsInOrder, reportV2ToText } from '@/utils/reportV2'
 import { formatDuration, totalDuration, turnDurations } from '@/utils/timing'
 import { answersForReport, matchQuestions } from '@/utils/reportAnswers'
+import { useReadingToc } from '@/composables/useReadingToc'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
 import ReportCards from '@/components/report/ReportCards.vue'
@@ -73,31 +74,9 @@ const tocItems = computed<TocItem[]>(() => {
   return rows
 })
 
-/* 지금 보는 문항과 읽은 데까지 — IntersectionObserver로 정한다.
-   scrollTop을 읽지 않는다(1번 철거에서 못 박은 원칙). 한 번 읽으면 지우지 않는다 */
-const current = ref<string>()
-const read = ref(new Set<string>())
+/* 지금 보는 문항과 읽은 데까지. 보관함 상세와 같은 것을 쓴다 */
 const body = ref<HTMLElement | null>(null)
-let io: IntersectionObserver | null = null
-function watchCards() {
-  io?.disconnect()
-  if (typeof IntersectionObserver !== 'function' || !body.value) return
-  io = new IntersectionObserver(
-    (es) => {
-      for (const e of es)
-        if (e.isIntersecting) {
-          const id = (e.target as HTMLElement).id
-          current.value = id
-          read.value = new Set(read.value).add(id)
-        }
-    },
-    { rootMargin: `-${20}% 0px -60% 0px` },
-  )
-  for (const el of body.value.querySelectorAll('[id]')) io.observe(el)
-}
-onMounted(watchCards)
-watch(tocItems, () => nextTick(watchCards))
-onBeforeUnmount(() => io?.disconnect())
+const { current, read } = useReadingToc(body, tocItems)
 
 const copied = ref(false)
 async function copy() {
