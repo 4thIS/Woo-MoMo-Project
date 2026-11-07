@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
-import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
+import {
+  FIELD_LABELS,
+  RESUME_MIN,
+  benSettingsPayload,
+  useInterviewStore,
+  type Field,
+} from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
 import { useInterviewerStore } from '@/stores/interviewer'
@@ -19,6 +25,8 @@ import { formatEta } from '@/utils/progressStages'
 import { normalizePostingUrl } from '@/utils/postingUrl'
 import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
+import BenSettings from '@/components/BenSettings.vue'
+import { DEFAULT_BEN } from '@/content/benAxes'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
 
 const model = useModelStore()
@@ -59,6 +67,13 @@ const pickerOpen = ref(false)
 const pickerBox = ref<HTMLElement | null>(null)
 /* 회사 브리핑은 벤(프리미엄)만 한다 — 무료 면접관은 서버를 거치지 않고, 대입은 쓰지 않는다 */
 const benCompany = computed(() => Boolean(iv.current?.premium) && interview.track === 'company')
+/* 벤 성향(2026-11-07). 기본은 접혀 있다 — 다섯 줄을 늘 펼쳐 두면 준비 화면이 설정 화면이 된다 */
+const benOpen = ref(false)
+/** 회사 이야기 줄을 그릴지. 서버가 무시하는 면접(입학 트랙·회사 이름 없음)에서는 빼 둔다 */
+const benShowCompany = computed(
+  () => benCompany.value && interview.profile.companyName.trim().length > 0,
+)
+const benTouched = computed(() => benSettingsPayload(interview.benSettings) !== undefined)
 /** 공고 링크 안내 — 적는 동안은 형식 검사가, 보낸 뒤에는 서버가 짚어 준 것이 뜬다 */
 const postingProblem = computed(() => {
   const r = normalizePostingUrl(interview.profile.postingUrl)
@@ -461,6 +476,16 @@ async function clearAndRetry() {
           >
             {{ pickerOpen ? '닫기' : '바꾸기' }}
           </button>
+          <button
+            v-if="iv.current?.premium"
+            type="button"
+            class="mono link press ben-toggle"
+            :class="{ on: benOpen }"
+            data-test="ben-toggle"
+            @click="benOpen = !benOpen"
+          >
+            성향 {{ benOpen ? '▴' : '▾' }}
+          </button>
           <!-- 힌트를 꺼 둔 사람이 다시 켜는 유일한 길 -->
           <button
             v-if="!hints.enabled"
@@ -506,6 +531,24 @@ async function clearAndRetry() {
               개선에 쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
             </span>
           </label>
+        </div>
+
+        <!-- 벤 성향. 면접관에 딸린 설정이라 면접관 줄 바로 아래에 둔다 (2026-11-07) -->
+        <div v-if="iv.current?.premium && benOpen" class="ben-panel" data-test="ben-panel">
+          <div class="ben-head">
+            <span class="mono ttl">벤의 성향</span>
+            <span class="mono lock">시작하면 잠깁니다</span>
+            <button
+              v-if="benTouched"
+              type="button"
+              class="mono link press"
+              data-test="ben-reset"
+              @click="interview.benSettings = { ...DEFAULT_BEN }"
+            >
+              전부 기본값으로
+            </button>
+          </div>
+          <BenSettings v-model="interview.benSettings" :show-company="benShowCompany" />
         </div>
 
         <PixelWindow title="어디에 지원하시나요?">
@@ -766,6 +809,33 @@ async function clearAndRetry() {
   flex: 1 1 0;
   min-width: 0;
 }
+/* 벤 성향 패널 — 면접관 줄 아래, 입력 창 위 */
+.ben-panel {
+  border: 2px solid var(--line);
+  background: var(--win);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.ben-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.ben-head .ttl {
+  font-size: var(--fs-label);
+  color: var(--accent);
+}
+.ben-head .lock {
+  flex: 1 1 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.ben-toggle.on {
+  color: var(--accent);
+}
 .form-head {
   display: flex;
   align-items: center;
@@ -992,17 +1062,12 @@ async function clearAndRetry() {
 .ben-box .voice-consent {
   margin: 0;
 }
-/* 체크리스트는 시작 버튼과 한 묶음 — 왜 못 누르는지가 버튼 옆에 있어야 한다 */
-.checklist {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-5);
-}
+/* 체크리스트는 시작 버튼 **바로 위**에 붙는다 — 왜 못 누르는지가 버튼 옆에 있어야 한다.
+   376px 상황판에서는 가로로 눕히면 어절 중간에서 끊긴다 (2026-11-07) */
 .start-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-8);
+  flex-direction: column;
+  gap: var(--sp-4);
 }
 .checklist {
   list-style: none;
@@ -1031,8 +1096,16 @@ async function clearAndRetry() {
 .start-btns {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: var(--sp-2);
+}
+/* 좁은 기둥에서는 버튼이 가로를 다 쓴다 — 글자가 길어 뭉치지 않게 */
+.start-btns :deep(button) {
+  width: 100%;
+}
+.start-btns .link {
+  align-self: center;
+  width: auto;
 }
 
 .voice-pending {

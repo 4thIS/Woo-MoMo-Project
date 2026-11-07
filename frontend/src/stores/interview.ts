@@ -16,6 +16,7 @@ import { useInterviewerStore } from './interviewer'
 import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { normalizePostingUrl } from '@/utils/postingUrl'
+import { BEN_AXES, DEFAULT_BEN, type BenAxisValues } from '@/content/benAxes'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
 import { canStartWith, trackOf } from '@/utils/track'
@@ -116,9 +117,20 @@ async function measureClip(
   return { answer, ...stats, syllables: countSyllables(text), fillerLevel: fillerLevelOf(text) }
 }
 
+/** 기본과 다른 칸만 API 이름으로 담는다. 전부 기본이면 `undefined` —
+ *  **보내지 않아야** 지금 벤과 프롬프트가 글자까지 같다(`docs/API.md`, 2026-11-07).
+ *  `undefined`를 돌려주면 `JSON.stringify`가 키를 통째로 빼 준다 */
+export function benSettingsPayload(v: BenAxisValues): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const a of BEN_AXES) if (v[a.key] !== a.base) out[a.key] = a.api[v[a.key]]
+  return Object.keys(out).length ? out : undefined
+}
+
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
     phase: 'landing' as Phase,
+    /** 벤 성향 눈금(2026-11-07). 손대지 않으면 요청에 싣지 않는다 */
+    benSettings: { ...DEFAULT_BEN } as BenAxisValues,
     /** 트랙이 보는 칸만 쓴다. 유니온으로 가르면 화면 분기만 늘어난다 —
      *  어느 칸을 볼지는 canStartWith가 트랙별로 안다 */
     profile: {
@@ -659,8 +671,11 @@ export const useInterviewStore = defineStore('interview', {
     /** 서버에 넘길 면접 조건. 트랙이 보는 묶음 하나만 담는다 */
     benRequest(): StartRequest {
       const p = this.profile
+      const settings = benSettingsPayload(this.benSettings)
+      const ben = settings ? { benSettings: settings } : {}
       if (this.track === 'admission')
         return {
+          ...ben,
           ...(this.voiceConsent ? { voiceAnalysisConsent: true as const } : {}),
           track: 'admission',
           resumeText: this.resumeText,
@@ -677,6 +692,7 @@ export const useInterviewStore = defineStore('interview', {
       const posting = normalizePostingUrl(p.postingUrl)
       const postingUrl = posting.ok ? posting.url : null
       return {
+        ...ben,
         ...consent,
         track: 'company',
         resumeText: this.resumeText,

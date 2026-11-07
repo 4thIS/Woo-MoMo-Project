@@ -40,7 +40,9 @@ import {
   SYNTH_TIMEOUT_MS,
   TTS_WARNING,
   useInterviewStore,
+  benSettingsPayload,
 } from './interview'
+import { DEFAULT_BEN } from '@/content/benAxes'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
 import { useAccountStore, setAccountApi } from './account'
@@ -1878,5 +1880,50 @@ describe('벤 리포트에 전달력 측정을 싣는다 (#99)', () => {
     await s2.finish()
     expect(sentDelivery()).toHaveLength(1)
     expect(sentDelivery()?.[0].answer).toBe(1)
+  })
+})
+
+describe('benSettingsPayload — 바꾼 칸만 보낸다', () => {
+  it('전부 기본이면 아무것도 보내지 않는다 — 지금 벤과 프롬프트가 글자까지 같아야 한다', () => {
+    expect(benSettingsPayload(DEFAULT_BEN)).toBeUndefined()
+  })
+
+  it('바꾼 칸만 담는다', () => {
+    expect(benSettingsPayload({ ...DEFAULT_BEN, warmth: 2 })).toEqual({ warmth: 'high' })
+    expect(benSettingsPayload({ ...DEFAULT_BEN, difficulty: 0, followUp: 2 })).toEqual({
+      followUp: 'high',
+      difficulty: 'basic',
+    })
+  })
+
+  it('눈금 위치를 API 이름으로 옮긴다 — 축마다 이름이 다르다', () => {
+    expect(benSettingsPayload({ ...DEFAULT_BEN, questionMix: 0 })).toEqual({
+      questionMix: 'technical',
+    })
+    expect(benSettingsPayload({ ...DEFAULT_BEN, companyWeight: 2 })).toEqual({
+      companyWeight: 'high',
+    })
+  })
+})
+
+describe('benRequest — 성향 싣기', () => {
+  /** 트랙은 고른 면접관이 정한다 — 스토어에 직접 넣을 수 없다 */
+  const company = () => {
+    useInterviewerStore().select('m2')
+    const s = useInterviewStore()
+    s.setTrack('company') // 벤은 두 갈래를 다 본다 — 골라야 track이 정해진다
+    s.profile.field = 'it'
+    s.profile.job = '백엔드'
+    return s
+  }
+
+  it('손대지 않으면 benSettings 키 자체가 없다', () => {
+    expect('benSettings' in company().benRequest()).toBe(false)
+  })
+
+  it('한 칸이라도 옮기면 그 칸만 실려 나간다', () => {
+    const s = company()
+    s.benSettings = { ...DEFAULT_BEN, warmth: 2 }
+    expect(s.benRequest()).toMatchObject({ benSettings: { warmth: 'high' } })
   })
 })

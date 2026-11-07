@@ -531,6 +531,36 @@ describe('PrepareView — 시작 영역', () => {
   })
 })
 
+describe('PrepareView — 벤 성향', () => {
+  it('무료 면접관에는 성향 버튼이 없다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=ben-toggle]').exists()).toBe(false)
+  })
+
+  it('벤이면 성향 버튼이 있고 기본은 접혀 있다 — 준비 화면이 설정 화면이 되면 안 된다', async () => {
+    useInterviewerStore().select('m2')
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=ben-toggle]').exists()).toBe(true)
+    expect(w.find('[data-test=ben-axis]').exists()).toBe(false)
+    await w.get('[data-test=ben-toggle]').trigger('click')
+    expect(w.findAll('[data-test=ben-axis]').length).toBeGreaterThan(0)
+  })
+
+  it('회사 이름이 없으면 회사 이야기 줄을 그리지 않는다 — 서버가 무시하는 칸이다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company') // 벤은 두 갈래를 다 본다 — 골라야 track이 정해진다
+    const w = mountView()
+    await fillProfile(w)
+    await w.get('[data-test=ben-toggle]').trigger('click')
+    expect(w.findAll('[data-test=ben-axis]')).toHaveLength(4)
+    useInterviewStore().setCompanyName('토스')
+    await w.vm.$nextTick()
+    expect(w.findAll('[data-test=ben-axis]')).toHaveLength(5)
+  })
+})
+
 describe('PrepareView — 면접관', () => {
   it('시작 영역에 면접관 칩, "바꾸기"로 고르기 패널을 연다', async () => {
     useInterviewerStore().select('m2')
