@@ -188,10 +188,11 @@ const described = computed(() => props.profile.map((a) => `${a.label} ${say(a.le
   }
 }
 
-/* 인쇄하면 색이 빠질 수 있다 — 단계 말이 글로 남아 읽힌다 */
+/* 종이에서는 선만 남긴다 — 회색으로 떨어진 칠이 축 이름을 삼킨다.
+   단계 말은 옆의 표에 글로 남아 읽힌다 */
 @media print {
   .shape {
-    fill-opacity: 0.15;
+    fill: none;
   }
 }
 </style>

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ReportRail from './ReportRail.vue'
@@ -71,5 +73,16 @@ describe('ReportRail', () => {
     })
     expect(w.get('[data-test=x-head]').text()).toBe('보관함 면접')
     expect(w.get('[data-test=x-act]').text()).toBe('지우기')
+  })
+})
+
+describe('ReportRail — 인쇄', () => {
+  const src = readFileSync(join(__dirname, 'ReportRail.vue'), 'utf8')
+  const print = src.match(/@media print \{[\s\S]*?\n\}/)?.[0] ?? ''
+
+  it('종이에는 목차도 액션도 없다 — 고정 기둥이 설 자리가 없다', () => {
+    expect(print).toMatch(/\.toc/)
+    expect(print).toMatch(/\.actions/)
+    expect(print).toMatch(/display:\s*none/)
   })
 })

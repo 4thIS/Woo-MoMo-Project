@@ -71,3 +71,12 @@ describe('base.css — 스크롤', () => {
     expect(block('::-webkit-scrollbar-thumb')).not.toMatch(/border-radius/)
   })
 })
+
+describe('base.css — 인쇄 (2026-11-07)', () => {
+  const print = base.match(/@media print \{[\s\S]*?\n\}/)?.[0] ?? ''
+
+  it('접힌 것은 전부 펴서 인쇄한다 — 종이에는 펴기 버튼이 없다', () => {
+    expect(print).toMatch(/details > summary[\s\S]*display:\s*none/)
+    expect(print).toMatch(/details > \*:not\(summary\)[\s\S]*display:\s*revert/)
+  })
+})

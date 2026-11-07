@@ -86,7 +86,8 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
         </span>
       </div>
       <ul class="list">
-        <li v-for="it in items" :key="it.id">
+        <!-- key가 id가 아니라 자리인 이유: 무료 리포트의 꼬리줄은 제 카드와 id를 나눠 쓴다 -->
+        <li v-for="(it, i) in items" :key="i">
           <a
             class="row"
             :class="{ follow: it.follow, read: read.has(it.id), on: current === it.id }"
@@ -95,7 +96,8 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
             data-test="toc-item"
           >
             <span class="mark" aria-hidden="true" />
-            <span class="mono id">{{ it.id.toUpperCase() }}</span>
+            <!-- 꼬리줄은 제 카드와 같은 id라 번호를 숨긴다 — 두 번 적으면 같은 문항처럼 읽힌다 -->
+            <span v-if="!it.follow" class="mono id">{{ it.id.toUpperCase() }}</span>
             <span class="q">{{ it.question }}</span>
             <span v-if="it.ms !== null" class="mono t" :class="{ over: overBy(it.ms) > 0 }">{{
               formatDuration(it.ms)
@@ -266,6 +268,23 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
   padding: var(--sp-3);
   display: flex;
   gap: var(--sp-2);
+}
+/* 종이에는 고정 기둥이 설 자리가 없다 — 머리글과 총평만 남기고 한 줄기로 편다.
+   목차는 종이에서 쓸모가 없고(앵커를 누를 수 없다) 액션은 더 그렇다 */
+@media print {
+  .rail {
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+  .toc,
+  .actions {
+    display: none;
+  }
+  .head,
+  .sum {
+    box-shadow: none;
+  }
 }
 /* 좁으면 기둥이 안 선다 — 위로 눕고 목차는 제 높이만큼만 */
 @media (max-width: 1024px) {

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ProfileHex from './ProfileHex.vue'
@@ -65,5 +67,13 @@ describe('ProfileHex — 축 목록', () => {
     const rows = hex([4, 3, 3, 3, null, 3]).findAll('[data-test=hex-row]')
     expect(rows[0].text()).toContain('답변 내용 설명')
     expect(rows[4].text()).not.toContain('설명')
+  })
+})
+
+describe('ProfileHex — 인쇄', () => {
+  const src = readFileSync(join(__dirname, 'ProfileHex.vue'), 'utf8')
+
+  it('종이에서는 선만 남긴다 — 회색 칠이 축 이름을 삼킨다', () => {
+    expect(src).toMatch(/@media print \{[\s\S]*?fill:\s*none/)
   })
 })

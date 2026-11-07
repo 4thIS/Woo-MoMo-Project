@@ -28,25 +28,37 @@ export function similarity(a: string, b: string): number {
   return (2 * n) / (A.size + B.size)
 }
 
-export function answersForReport(report: { question: string }[], messages: Turn[]): string[][] {
-  const qIdx = messages.flatMap((m, i) => (m.role === 'model' ? [i] : []))
-  // 카드 i가 대응하는 면접관 턴(qIdx의 위치). 카드 순서 = 질문 순서이므로 앞으로만 나아간다
+/**
+ * 카드 질문을 후보 질문 목록(면접관 턴 순서)에 짝짓는다. 카드 i → 후보 인덱스, 못 찾으면 -1.
+ * 카드 순서 = 질문 순서이므로 커서는 앞으로만 나아간다. 리포트 카드와 대화 턴을 맞출 때
+ * 답변(여기)과 시간(목차)이 같은 짝을 보도록 한 곳에 둔다.
+ */
+export function matchQuestions(report: { question: string }[], candidates: string[]): number[] {
   const starts: number[] = []
   let cursor = 0
   for (const it of report) {
     let best = -1
     let bestScore = 0
-    for (let k = cursor; k < qIdx.length; k++) {
-      const s = similarity(it.question, messages[qIdx[k]].text)
+    for (let k = cursor; k < candidates.length; k++) {
+      const s = similarity(it.question, candidates[k])
       if (s > bestScore) {
         bestScore = s
         best = k
       }
     }
-    if (best < 0 || bestScore < MATCH_MIN) best = cursor < qIdx.length ? cursor : -1
+    if (best < 0 || bestScore < MATCH_MIN) best = cursor < candidates.length ? cursor : -1
     starts.push(best)
     if (best >= 0) cursor = best + 1
   }
+  return starts
+}
+
+export function answersForReport(report: { question: string }[], messages: Turn[]): string[][] {
+  const qIdx = messages.flatMap((m, i) => (m.role === 'model' ? [i] : []))
+  const starts = matchQuestions(
+    report,
+    qIdx.map((i) => messages[i].text),
+  )
   return report.map((_, i) => {
     const s = starts[i]
     if (s < 0) return []

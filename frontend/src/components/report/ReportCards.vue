@@ -31,7 +31,7 @@ function firstEmphasis(raw: string) {
 </script>
 
 <template>
-  <PixelWindow v-for="(it, i) in report" :key="i" data-test="card">
+  <PixelWindow v-for="(it, i) in report" :id="`q${i + 1}`" :key="i" data-test="card">
     <div class="head" data-test="card-head">
       <span class="mono no">Q{{ i + 1 }}</span>
       <span class="display q">{{ it.question }}</span>
