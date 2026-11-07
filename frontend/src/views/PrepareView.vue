@@ -899,10 +899,13 @@ async function clearAndRetry() {
   gap: var(--sp-3);
   margin-bottom: var(--sp-3);
 }
+/* 읽는 글이다 — 산세로, 줄간도 읽기 쪽으로 (2026-11-07) */
 .notice {
   margin: 0 0 var(--sp-2);
   color: var(--dim);
+  font-family: var(--font-read);
   font-size: var(--fs-label);
+  line-height: var(--lh-read);
 }
 .voice-consent {
   display: flex;
@@ -910,8 +913,9 @@ async function clearAndRetry() {
   gap: var(--sp-2);
   margin: 0 0 var(--sp-4);
   color: var(--text-2);
+  font-family: var(--font-read);
   font-size: var(--fs-label);
-  line-height: 1.7;
+  line-height: var(--lh-read);
   cursor: pointer;
 }
 .voice-consent input {

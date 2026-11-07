@@ -15,6 +15,7 @@ import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
 import ArchiveModal from '@/components/account/ArchiveModal.vue'
+import TicketIcon from '@/components/ui/icons/TicketIcon.vue'
 
 const account = useAccountStore()
 const interview = useInterviewStore()
@@ -34,13 +35,6 @@ onMounted(() => void account.load())
   <header v-if="shown" class="topbar" data-test="topbar">
     <div class="side">
       <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>
-      <a
-        v-else-if="account.session?.isAdmin"
-        href="/admin"
-        class="mono link press"
-        data-test="top-admin"
-        >관리자</a
-      >
       <template v-if="account.signedIn">
         <!-- 램프가 지금 프리미엄인지 한눈에 알려 준다. 요금 카드의 램프와 같은 어법 -->
         <button
@@ -61,7 +55,7 @@ onMounted(() => void account.load())
           :aria-label="`보유 티켓 ${account.tickets}장`"
           data-test="top-tickets"
         >
-          <span aria-hidden="true">🎟</span> {{ account.tickets }}
+          <TicketIcon /> {{ account.tickets }}
         </span>
         <button
           type="button"
