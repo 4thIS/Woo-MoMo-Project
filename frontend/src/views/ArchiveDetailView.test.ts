@@ -137,3 +137,22 @@ describe('ArchiveDetailView — 레일을 그대로 쓴다 (2026-11-07)', () => 
     expect(view().get('[data-test=tab-report]').classes()).not.toContain('press')
   })
 })
+
+describe('ArchiveDetailView — 녹음은 그 문항 카드 바닥에 (2026-11-07)', () => {
+  it('reportV2가 없는 기록도 녹음이 제 카드에 붙는다 — 한 카드에 몰리지 않는다', () => {
+    const w = view({ recordings: [{ turn: 1, url: 'u1', durationSec: 5 }] } as never)
+    const cards = w.findAll('[data-test=card]')
+    expect(cards[0].find('[data-test=archive-clip]').exists()).toBe(false)
+    expect(cards[1].find('[data-test=archive-clip]').exists()).toBe(true)
+  })
+
+  it('녹음이 없는 기록에는 재생바를 그리지 않는다 — 빈 플레이어는 고장처럼 보인다', () => {
+    expect(view().find('[data-test=archive-clip]').exists()).toBe(false)
+  })
+
+  it('대화 전문 탭에는 재생바를 흩어 두지 않는다 — 카드 바닥 한 곳이다', async () => {
+    const w = view({ recordings: [{ turn: 1, url: 'u1', durationSec: 5 }] } as never)
+    await w.get('[data-test=tab-transcript]').trigger('click')
+    expect(w.find('[data-test=archive-clip]').exists()).toBe(false)
+  })
+})

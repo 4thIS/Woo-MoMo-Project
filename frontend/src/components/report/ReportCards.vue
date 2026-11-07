@@ -63,6 +63,9 @@ function firstEmphasis(raw: string) {
       <span class="mono lbl">전달력</span>
       <p class="read dim" data-test="delivery">{{ it.delivery }}</p>
     </div>
+
+    <!-- 카드 바닥. 보관함이 그 문항의 녹음 재생바를 여기 붙인다 — 대화 옆에 흩어 두지 않는다 -->
+    <slot name="foot" :i="i" />
   </PixelWindow>
 </template>
 

@@ -90,3 +90,13 @@ describe('ReportCards — 전달력 (#99)', () => {
     expect(w().find('[data-test=delivery]').exists()).toBe(false)
   })
 })
+
+describe('ReportCards — 카드 바닥 (2026-11-07)', () => {
+  it('끼울 자리를 연다 — 보관함이 그 문항의 녹음 재생바를 여기 붙인다', () => {
+    const c = mount(ReportCards, {
+      props: { report, answers },
+      slots: { foot: '<b data-test="x-foot">끼운 것</b>' },
+    })
+    expect(c.findAll('[data-test=x-foot]')).toHaveLength(2)
+  })
+})

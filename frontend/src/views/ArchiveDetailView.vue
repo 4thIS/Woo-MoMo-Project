@@ -12,9 +12,11 @@ import ReportCards from '@/components/report/ReportCards.vue'
 import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
+import PixelAudio from '@/components/ui/PixelAudio.vue'
 import { answersForReport } from '@/utils/reportAnswers'
 import { asReportV2, itemsInOrder } from '@/utils/reportV2'
 import { useReadingToc } from '@/composables/useReadingToc'
+import { clipsByCard } from '@/utils/archiveClips'
 import { interviewerById, DEFAULT_INTERVIEWER } from '@/interviewers'
 import { formatDuration } from '@/utils/timing'
 
@@ -74,6 +76,17 @@ const tocItems = computed<TocItem[]>(() => {
 })
 
 const { current, read } = useReadingToc(body, tocItems)
+
+/** 카드마다 그 문항에 속한 녹음들. v2 리포트는 제 문항 목록으로 짝짓는다 */
+const clips = computed(() =>
+  clipsByCard(
+    reportV2.value
+      ? itemsInOrder(reportV2.value.items).map((it) => ({ question: it.question }))
+      : props.entry.report,
+    props.entry.messages,
+    props.entry.recordings,
+  ),
+)
 
 /** 이 메시지가 몇 번째 면접관 턴인가 — 대화 전문에서도 목차의 앵커가 살아 있게 한다 */
 function anchorOf(i: number): string | undefined {
@@ -166,8 +179,32 @@ function printReport() {
 
       <div ref="body" class="body">
         <template v-if="tab === 'report'">
-          <ReportV2Cards v-if="reportV2" :report="reportV2" />
-          <ReportCards v-else-if="entry.report.length" :report="entry.report" :answers="answers" />
+          <ReportV2Cards v-if="reportV2" :report="reportV2">
+            <template #foot="{ i }">
+              <PixelAudio
+                v-for="c in clips[i]"
+                :key="c.url"
+                class="clip"
+                data-test="archive-clip"
+                :src="c.url"
+                :duration="c.durationSec ?? null"
+                :label="`답변 ${c.turn + 1} 녹음`"
+              />
+            </template>
+          </ReportV2Cards>
+          <ReportCards v-else-if="entry.report.length" :report="entry.report" :answers="answers">
+            <template #foot="{ i }">
+              <PixelAudio
+                v-for="c in clips[i]"
+                :key="c.url"
+                class="clip"
+                data-test="archive-clip"
+                :src="c.url"
+                :duration="c.durationSec ?? null"
+                :label="`답변 ${c.turn + 1} 녹음`"
+              />
+            </template>
+          </ReportCards>
           <PixelWindow v-else title="리포트">
             <p class="mono none">리포트가 남지 않았습니다.</p>
           </PixelWindow>
@@ -281,6 +318,10 @@ function printReport() {
 .none {
   color: var(--text-3);
 }
+.clip {
+  width: 100%;
+  margin-top: var(--sp-4);
+}
 @media (max-width: 1024px) {
   .cols {
     flex-direction: column;
@@ -301,7 +342,8 @@ function printReport() {
     margin-top: var(--sp-4);
   }
   .link,
-  .tabs {
+  .tabs,
+  .clip {
     display: none;
   }
 }
