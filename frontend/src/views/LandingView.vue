@@ -5,7 +5,6 @@ import { useInterviewStore } from '@/stores/interview'
 import { checkEnvironment, type EnvCheck } from '@/services/gpuCheck'
 import { isHandheld, verdict } from '@/utils/envVerdict'
 import { formatGB, formatSize } from '@/utils/format'
-import { useSectionWheel } from '@/composables/useSectionWheel'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
@@ -27,7 +26,6 @@ const modal = useModalStore()
 const root = ref<HTMLElement | null>(null)
 const hero = ref<HTMLElement | null>(null)
 const fade = ref(0)
-useSectionWheel(root)
 const onScroll = () => {
   const h = hero.value?.offsetHeight ?? 1
   fade.value = Math.min(1, Math.max(0, (root.value?.scrollTop ?? 0) / (h * 0.6)))

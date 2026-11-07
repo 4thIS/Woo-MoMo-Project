@@ -4,7 +4,6 @@ import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
 import { warmUpAudio } from '@/services/audio'
-import { useSectionWheel } from '@/composables/useSectionWheel'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModalStore } from '@/stores/modal'
 import { useHintsStore } from '@/stores/hints'
@@ -26,7 +25,6 @@ import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 const model = useModelStore()
 const interview = useInterviewStore()
 const root = ref<HTMLElement | null>(null)
-useSectionWheel(root)
 const iv = useInterviewerStore()
 const modal = useModalStore()
 
