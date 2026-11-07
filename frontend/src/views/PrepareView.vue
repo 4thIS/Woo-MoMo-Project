@@ -20,7 +20,6 @@ import { normalizePostingUrl } from '@/utils/postingUrl'
 import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
-import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
 const model = useModelStore()
 const interview = useInterviewStore()
@@ -144,28 +143,10 @@ watch(
   { immediate: true },
 )
 
-/* 입력 2단계: ① 지원 정보 → ② 이력서. 처음 완료 때만 자동 전환, 그 뒤엔 화살표로만 이동 */
-const step = ref<1 | 2>(1)
-const navigatedBack = ref(false)
-function tryAdvance() {
-  if (step.value === 1 && infoDone.value && !navigatedBack.value) step.value = 2
-}
-/** 직무 칸에서 넘어갈지. 벤 + 회사 트랙은 **아래에 회사명·공고 칸이 더 있어서**
- *  여기서 넘기면 사용자가 그 칸을 보지 못한다(이슈 143). 그때는 공고 칸이 마지막이다 */
-function advanceFromJob() {
-  if (benCompany.value) return
-  tryAdvance()
-}
-function goBack() {
-  step.value = 1
-  navigatedBack.value = true
-}
-function goNext() {
-  if (infoDone.value) step.value = 2
-}
+/* 2단계 전환은 없앴다(2026-11-07) — 칸이 넷 이하라 나눌 이유가 없고,
+   나누면 모델을 받는 4분 동안 한쪽밖에 못 채운다 */
 async function onField(field: Field) {
   await interview.setField(field)
-  if (interview.profile.job.trim()) tryAdvance()
 }
 
 /* 이력서 */
@@ -342,254 +323,226 @@ async function clearAndRetry() {
     <!-- 2. 입력: ① 지원 정보 → ② 이력서 (같은 자리, 페이드 전환) + 시작 -->
     <section class="snap">
       <div class="content">
-        <PixelWindow :title="step === 1 ? '어디에 지원하시나요?' : '이력서'">
+        <PixelWindow title="어디에 지원하시나요?">
           <template #tag>
             <div class="stepnav">
-              <PixelTag v-if="step === 1 && infoDone" tone="ok">입력 완료</PixelTag>
-              <PixelTag v-if="step === 2 && interview.resumeDone" tone="ok">
+              <PixelTag v-if="infoDone" tone="ok">입력 완료</PixelTag>
+              <PixelTag v-if="interview.resumeDone" tone="ok">
                 {{ interview.resumeText.length.toLocaleString() }}자 추출
               </PixelTag>
-              <button
-                type="button"
-                class="arrow press"
-                data-test="step-prev"
-                aria-label="이전: 지원 정보"
-                :disabled="step === 1"
-                @click="goBack"
-              >
-                <CursorIcon class="flip" />
-              </button>
-              <span class="mono stepnum">{{ step }} / 2</span>
-              <button
-                type="button"
-                class="arrow press"
-                data-test="step-next"
-                aria-label="다음: 이력서"
-                :disabled="step === 2 || !infoDone"
-                @click="goNext"
-              >
-                <CursorIcon />
-              </button>
             </div>
           </template>
 
-          <Transition name="fade" mode="out-in">
-            <div v-if="step === 1" key="profile" class="step" data-test="step-profile">
-              <!-- 트랙이 보는 칸만 그린다. 2단계 구조는 그대로 두고 안의 칸만 바뀐다 -->
-              <template v-if="interview.track === 'admission'">
-                <div class="two-up">
-                  <div class="field">
-                    <label class="mono label" for="ad-name">이름</label>
-                    <input
-                      id="ad-name"
-                      data-test="ad-name"
-                      class="input"
-                      maxlength="20"
-                      :value="interview.profile.name"
-                      placeholder="예: 홍길동"
-                      @input="setAd('name', ($event.target as HTMLInputElement).value)"
-                    />
-                  </div>
-                  <div class="field">
-                    <label class="mono label" for="ad-age">나이</label>
-                    <input
-                      id="ad-age"
-                      data-test="ad-age"
-                      class="input"
-                      type="number"
-                      min="10"
-                      max="99"
-                      :value="interview.profile.age ?? ''"
-                      placeholder="예: 19"
-                      @input="setAge(($event.target as HTMLInputElement).value)"
-                    />
-                  </div>
-                </div>
+          <div class="step" data-test="step-profile">
+            <!-- 트랙이 보는 칸만 그린다. 2단계 구조는 그대로 두고 안의 칸만 바뀐다 -->
+            <template v-if="interview.track === 'admission'">
+              <div class="two-up">
                 <div class="field">
-                  <label class="mono label" for="ad-univ">지원 대학</label>
+                  <label class="mono label" for="ad-name">이름</label>
                   <input
-                    id="ad-univ"
-                    data-test="ad-university"
+                    id="ad-name"
+                    data-test="ad-name"
                     class="input"
-                    maxlength="40"
-                    :value="interview.profile.university"
-                    placeholder="예: 한국대학교"
-                    @input="setAd('university', ($event.target as HTMLInputElement).value)"
+                    maxlength="20"
+                    :value="interview.profile.name"
+                    placeholder="예: 홍길동"
+                    @input="setAd('name', ($event.target as HTMLInputElement).value)"
                   />
                 </div>
                 <div class="field">
-                  <label class="mono label" for="ad-dept">지원 학과</label>
+                  <label class="mono label" for="ad-age">나이</label>
                   <input
-                    id="ad-dept"
-                    data-test="ad-department"
+                    id="ad-age"
+                    data-test="ad-age"
                     class="input"
-                    maxlength="40"
-                    :value="interview.profile.department"
-                    placeholder="예: 컴퓨터공학과"
-                    @input="setAd('department', ($event.target as HTMLInputElement).value)"
-                    @keydown.enter="tryAdvance"
-                    @blur="tryAdvance"
-                  />
-                  <span class="mono hint"
-                    >면접관이 질문의 방향을 잡는 데 씁니다 — 입력을 마치면 자기소개서 단계로
-                    넘어갑니다</span
-                  >
-                </div>
-              </template>
-
-              <template v-else>
-                <div class="field">
-                  <span class="mono label">기업 분야</span>
-                  <ChoiceMenu
-                    :items="fieldItems"
-                    :model-value="interview.profile.field"
-                    direction="horizontal"
-                    aria-label="기업 분야"
-                    @update:model-value="onField"
+                    type="number"
+                    min="10"
+                    max="99"
+                    :value="interview.profile.age ?? ''"
+                    placeholder="예: 19"
+                    @input="setAge(($event.target as HTMLInputElement).value)"
                   />
                 </div>
-                <div class="field">
-                  <label class="mono label" for="job">지원 직무</label>
-                  <input
-                    id="job"
-                    data-test="job"
-                    class="input"
-                    :value="interview.profile.job"
-                    maxlength="40"
-                    placeholder="예: 백엔드 개발자"
-                    @input="interview.setJob(($event.target as HTMLInputElement).value)"
-                    @keydown.enter="advanceFromJob"
-                    @blur="advanceFromJob"
-                  />
-                  <span class="mono hint"
-                    >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산
-                    관리<template v-if="!benCompany">
-                      — 입력을 마치면 이력서 단계로 넘어갑니다</template
-                    ></span
-                  >
-                </div>
-                <!-- 회사명은 벤만 쓴다(서버가 웹을 뒤져 브리핑을 만든다). 선택 입력이라
-                     비워도 시작을 막지 않는다 — 체크리스트에도 넣지 않는다 -->
-                <div v-if="benCompany" class="field">
-                  <label class="mono label" for="company-name"
-                    >지원 회사 <span class="dim">(선택)</span></label
-                  >
-                  <input
-                    id="company-name"
-                    data-test="company-name"
-                    class="input"
-                    :value="interview.profile.companyName"
-                    maxlength="100"
-                    placeholder="예: 삼성전자 DS부문(반도체), 토스(비바리퍼블리카)"
-                    @input="interview.setCompanyName(($event.target as HTMLInputElement).value)"
-                  />
-                  <span class="mono hint"
-                    >회사 이름이 비슷한 곳이 많으면 사업부·서비스명까지 적어 주세요</span
-                  >
-                </div>
-                <!-- 공고 링크도 선택 입력. 회사명과 따로 — 둘 중 하나만 있어도 조사가 돈다 -->
-                <div v-if="benCompany" class="field">
-                  <label class="mono label" for="posting-url"
-                    >모집공고 링크 <span class="dim">(선택)</span></label
-                  >
-                  <input
-                    id="posting-url"
-                    data-test="posting-url"
-                    class="input"
-                    :value="interview.profile.postingUrl"
-                    maxlength="500"
-                    placeholder="예: https://careers.example.com/jobs/1234"
-                    @input="interview.setPostingUrl(($event.target as HTMLInputElement).value)"
-                    @keydown.enter="tryAdvance"
-                    @blur="tryAdvance"
-                  />
-                  <span v-if="postingProblem" class="mono warn" data-test="posting-error">{{
-                    postingProblem
-                  }}</span>
-                  <span v-else class="mono hint"
-                    >공고를 열어 요구사항을 질문에 반영합니다. 회사명만 적어도 됩니다</span
-                  >
-                </div>
-              </template>
-            </div>
-
-            <div v-else key="resume" class="step" data-test="step-resume">
-              <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 줄 자체를 보이지 않는다 -->
-              <div v-if="savedResumes.length" class="saved" data-test="saved-resumes">
-                <span class="mono lbl">저장한 {{ longDocLabel }}</span>
-                <PixelButton
-                  v-for="s in savedResumes"
-                  :key="s.id"
-                  variant="secondary"
-                  data-test="saved-resume"
-                  @click="useSaved(s.id)"
-                >
-                  {{ s.title }}
-                </PixelButton>
               </div>
-              <label
-                class="file-row press"
-                :class="{ dragging }"
-                data-test="drop"
-                @dragover.prevent="dragging = true"
-                @dragleave="dragging = false"
-                @drop.prevent="onDrop"
-              >
-                <DocIcon />
-                <span class="mono name">{{
-                  interview.resumeName ?? `${longDocLabel} PDF를 끌어다 놓거나 클릭해서 선택`
-                }}</span>
-                <span class="mono pick">{{
-                  interview.resumeName && interview.resumeName !== FORM_NAME
-                    ? '다른 파일'
-                    : '파일 선택'
-                }}</span>
+              <div class="field">
+                <label class="mono label" for="ad-univ">지원 대학</label>
                 <input
-                  data-test="file"
-                  type="file"
-                  accept="application/pdf"
-                  class="sr"
-                  @change="onFile"
+                  id="ad-univ"
+                  data-test="ad-university"
+                  class="input"
+                  maxlength="40"
+                  :value="interview.profile.university"
+                  placeholder="예: 한국대학교"
+                  @input="setAd('university', ($event.target as HTMLInputElement).value)"
                 />
-              </label>
-              <PixelButton
-                v-if="!formOpen"
-                data-test="form-open"
-                variant="secondary"
-                @click="formOpen = true"
-              >
-                {{
-                  interview.resumeName === FORM_NAME
-                    ? `간단 ${longDocLabel} 수정`
-                    : `PDF가 없다면 간단 ${longDocLabel} 작성`
-                }}
-              </PixelButton>
-              <ResumeForm v-show="formOpen" @done="onFormDone" />
-              <p v-if="extracting" class="mono hint">읽는 중…</p>
-              <div v-if="interview.resumeText && !tooShort && !formOpen" class="preview">
-                {{ interview.resumeText }}
               </div>
-              <template v-if="tooShort && !formOpen">
-                <p class="mono warn">
-                  글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을
-                  직접 붙여넣어 주세요.
-                </p>
-                <textarea
-                  v-model="pasted"
-                  data-test="paste"
-                  class="input paste"
-                  rows="6"
-                  :placeholder="`${longDocLabel} 내용을 붙여넣기`"
-                  @input="usePasted"
-                  @blur="usePasted"
+              <div class="field">
+                <label class="mono label" for="ad-dept">지원 학과</label>
+                <input
+                  id="ad-dept"
+                  data-test="ad-department"
+                  class="input"
+                  maxlength="40"
+                  :value="interview.profile.department"
+                  placeholder="예: 컴퓨터공학과"
+                  @input="setAd('department', ($event.target as HTMLInputElement).value)"
                 />
-              </template>
-              <p class="mono hint">
-                앞 {{ (2000).toLocaleString() }}자만 면접관에게 전달됩니다. 이름·연락처 같은
-                개인정보도 이 브라우저 안에서만 읽힙니다.
-              </p>
+                <span class="mono hint"
+                  >면접관이 질문의 방향을 잡는 데 씁니다 — 입력을 마치면 자기소개서 단계로
+                  넘어갑니다</span
+                >
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="field">
+                <span class="mono label">기업 분야</span>
+                <ChoiceMenu
+                  :items="fieldItems"
+                  :model-value="interview.profile.field"
+                  direction="horizontal"
+                  aria-label="기업 분야"
+                  @update:model-value="onField"
+                />
+              </div>
+              <div class="field">
+                <label class="mono label" for="job">지원 직무</label>
+                <input
+                  id="job"
+                  data-test="job"
+                  class="input"
+                  :value="interview.profile.job"
+                  maxlength="40"
+                  placeholder="예: 백엔드 개발자"
+                  @input="interview.setJob(($event.target as HTMLInputElement).value)"
+                />
+                <span class="mono hint"
+                  >면접관이 질문의 방향을 잡는 데 씁니다. 예: 프론트엔드 개발, 재무 분석, 생산
+                  관리<template v-if="!benCompany">
+                    — 입력을 마치면 이력서 단계로 넘어갑니다</template
+                  ></span
+                >
+              </div>
+              <!-- 회사명은 벤만 쓴다(서버가 웹을 뒤져 브리핑을 만든다). 선택 입력이라
+                     비워도 시작을 막지 않는다 — 체크리스트에도 넣지 않는다 -->
+              <div v-if="benCompany" class="field">
+                <label class="mono label" for="company-name"
+                  >지원 회사 <span class="dim">(선택)</span></label
+                >
+                <input
+                  id="company-name"
+                  data-test="company-name"
+                  class="input"
+                  :value="interview.profile.companyName"
+                  maxlength="100"
+                  placeholder="예: 삼성전자 DS부문(반도체), 토스(비바리퍼블리카)"
+                  @input="interview.setCompanyName(($event.target as HTMLInputElement).value)"
+                />
+                <span class="mono hint"
+                  >회사 이름이 비슷한 곳이 많으면 사업부·서비스명까지 적어 주세요</span
+                >
+              </div>
+              <!-- 공고 링크도 선택 입력. 회사명과 따로 — 둘 중 하나만 있어도 조사가 돈다 -->
+              <div v-if="benCompany" class="field">
+                <label class="mono label" for="posting-url"
+                  >모집공고 링크 <span class="dim">(선택)</span></label
+                >
+                <input
+                  id="posting-url"
+                  data-test="posting-url"
+                  class="input"
+                  :value="interview.profile.postingUrl"
+                  maxlength="500"
+                  placeholder="예: https://careers.example.com/jobs/1234"
+                  @input="interview.setPostingUrl(($event.target as HTMLInputElement).value)"
+                />
+                <span v-if="postingProblem" class="mono warn" data-test="posting-error">{{
+                  postingProblem
+                }}</span>
+                <span v-else class="mono hint"
+                  >공고를 열어 요구사항을 질문에 반영합니다. 회사명만 적어도 됩니다</span
+                >
+              </div>
+            </template>
+          </div>
+
+          <h3 class="mono sep">{{ longDocLabel }}</h3>
+          <div class="step" data-test="step-resume">
+            <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 줄 자체를 보이지 않는다 -->
+            <div v-if="savedResumes.length" class="saved" data-test="saved-resumes">
+              <span class="mono lbl">저장한 {{ longDocLabel }}</span>
+              <PixelButton
+                v-for="s in savedResumes"
+                :key="s.id"
+                variant="secondary"
+                data-test="saved-resume"
+                @click="useSaved(s.id)"
+              >
+                {{ s.title }}
+              </PixelButton>
             </div>
-          </Transition>
+            <label
+              class="file-row press"
+              :class="{ dragging }"
+              data-test="drop"
+              @dragover.prevent="dragging = true"
+              @dragleave="dragging = false"
+              @drop.prevent="onDrop"
+            >
+              <DocIcon />
+              <span class="mono name">{{
+                interview.resumeName ?? `${longDocLabel} PDF를 끌어다 놓거나 클릭해서 선택`
+              }}</span>
+              <span class="mono pick">{{
+                interview.resumeName && interview.resumeName !== FORM_NAME
+                  ? '다른 파일'
+                  : '파일 선택'
+              }}</span>
+              <input
+                data-test="file"
+                type="file"
+                accept="application/pdf"
+                class="sr"
+                @change="onFile"
+              />
+            </label>
+            <PixelButton
+              v-if="!formOpen"
+              data-test="form-open"
+              variant="secondary"
+              @click="formOpen = true"
+            >
+              {{
+                interview.resumeName === FORM_NAME
+                  ? `간단 ${longDocLabel} 수정`
+                  : `PDF가 없다면 간단 ${longDocLabel} 작성`
+              }}
+            </PixelButton>
+            <ResumeForm v-show="formOpen" @done="onFormDone" />
+            <p v-if="extracting" class="mono hint">읽는 중…</p>
+            <div v-if="interview.resumeText && !tooShort && !formOpen" class="preview">
+              {{ interview.resumeText }}
+            </div>
+            <template v-if="tooShort && !formOpen">
+              <p class="mono warn">
+                글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을
+                직접 붙여넣어 주세요.
+              </p>
+              <textarea
+                v-model="pasted"
+                data-test="paste"
+                class="input paste"
+                rows="6"
+                :placeholder="`${longDocLabel} 내용을 붙여넣기`"
+                @input="usePasted"
+                @blur="usePasted"
+              />
+            </template>
+            <p class="mono hint">
+              앞 {{ (2000).toLocaleString() }}자만 면접관에게 전달됩니다. 이름·연락처 같은
+              개인정보도 이 브라우저 안에서만 읽힙니다.
+            </p>
+          </div>
         </PixelWindow>
 
         <!-- 시작 -->
