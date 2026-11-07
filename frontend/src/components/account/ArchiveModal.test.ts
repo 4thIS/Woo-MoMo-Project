@@ -114,12 +114,14 @@ describe('ArchiveModal — 목록', () => {
     await withEntries(
       ...[1, 2, 3, 4, 5].map((i) => draft({ startedAt: `2026-10-0${i}T00:00:00Z` })),
     )
-    expect(q('[data-test="archive-full"]')).not.toBeNull()
+    expect(q('[data-test="archive-limit"]')!.textContent).toContain('사라집니다')
   })
 
-  it('차지 않았으면 경고하지 않는다', async () => {
+  it('한도는 꽉 차기 전에도 적는다 — 꽉 찼을 때만 말하면 그전까지는 한도가 있는 줄 모른다', async () => {
     await withEntries(draft())
-    expect(q('[data-test="archive-full"]')).toBeNull()
+    const t = q('[data-test="archive-limit"]')!.textContent!
+    expect(t).toContain('5')
+    expect(t).not.toContain('사라집니다')
   })
 })
 
@@ -271,6 +273,6 @@ describe('ArchiveModal — 한도 경고 자리', () => {
     )
     document.querySelectorAll<HTMLElement>('[data-test="archive-tab"]')[2].click()
     await settle()
-    expect(q('[data-test="archive-full"]')).toBeNull()
+    expect(q('[data-test="archive-limit"]')).toBeNull()
   })
 })

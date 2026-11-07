@@ -74,14 +74,16 @@ async function remove() {
       </div>
 
       <div class="pane">
-        <!-- 한도는 일반 기록 얘기다. 프리미엄 탭에서 꺼내면 엉뚱한 자리에서 겁을 준다 -->
-        <p
-          v-if="account.archiveFull && tab !== 'premium'"
-          class="mono warn"
-          data-test="archive-full"
-        >
-          일반 기록이 {{ ARCHIVE_LIMIT }}개로 찼습니다 — 다음 면접을 마치면 가장 오래된 하나가
-          사라집니다.
+        <!-- 한도는 일반 기록 얘기다. 프리미엄 탭에서 꺼내면 엉뚱한 자리에서 겁을 준다.
+             꽉 차기 **전에도** 적는다 — 그때만 말하면 그전까지는 한도가 있는 줄 모른다 -->
+        <p v-if="tab !== 'premium'" class="mono warn" data-test="archive-limit">
+          <template v-if="account.archiveFull">
+            일반 기록이 {{ ARCHIVE_LIMIT }}개로 찼습니다 — 다음 면접을 마치면 가장 오래된 하나가
+            사라집니다.
+          </template>
+          <template v-else>
+            일반 기록은 {{ ARCHIVE_LIMIT }}개까지 남습니다 — 넘으면 오래된 것부터 밀려납니다.
+          </template>
         </p>
 
         <ArchiveRow v-for="e in shown" :key="e.id" :entry="e" @open="openDetail(e.id)" />
