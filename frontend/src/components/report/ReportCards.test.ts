@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReportCards from './ReportCards.vue'
+
+const src = readFileSync(join(__dirname, 'ReportCards.vue'), 'utf8')
 
 const report = [
   { question: '지원 동기는?', answerSummary: '동아리 경험', feedback: '구체적입니다' },
@@ -8,6 +12,36 @@ const report = [
 ]
 const answers = [['동아리에서 웹을 만들었습니다'], []]
 const w = () => mount(ReportCards, { props: { report, answers } })
+
+describe('ReportCards — 카드 속 (2026-11-07)', () => {
+  it('질문이 제목 줄이 되고 시간이 그 줄 오른쪽에 붙는다 — "시간" 창이 사라지는 자리다', () => {
+    const c = mount(ReportCards, { props: { report, answers, durations: [52_000, null] } })
+    const head = c.get('[data-test=card-head]')
+    expect(head.text()).toContain('Q1')
+    expect(head.text()).toContain('지원 동기는?')
+    expect(head.get('[data-test=card-time]').text()).toBe('52초')
+  })
+
+  it('시간을 안 넘기면 그 줄을 그리지 않는다 — 보관함은 아직 넘기지 않는다', () => {
+    expect(w().find('[data-test=card-time]').exists()).toBe(false)
+  })
+
+  it('라벨을 본문 위로 올려 본문이 폭을 다 쓴다', () => {
+    expect(src).toMatch(/line-height:\s*var\(--lh-read\)/)
+    expect(src).toMatch(/max-width:\s*var\(--read-w\)/)
+    expect(src).toMatch(/font-family:\s*var\(--font-read\)/)
+  })
+
+  it('강조는 카드마다 하나다 — 넷이 칠해지면 아무것도 강조되지 않는다', () => {
+    const c = mount(ReportCards, {
+      props: {
+        report: [{ question: 'q', answerSummary: '요약', feedback: '**하나** 그리고 **둘**' }],
+        answers: [[]],
+      },
+    })
+    expect(c.findAll('.strong')).toHaveLength(1)
+  })
+})
 
 describe('ReportCards', () => {
   it('문항 수만큼 카드를 그린다', () => {

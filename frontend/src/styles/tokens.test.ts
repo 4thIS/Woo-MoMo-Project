@@ -15,6 +15,7 @@ describe('tokens.css', () => {
     expect(css).toMatch(/--font-read:/)
     expect(css).toMatch(/--lh-read:\s*1\.8/)
     expect(css).toMatch(/--gap-card:/)
+    expect(css).toMatch(/--read-w:/)
   })
 
   it('읽는 글꼴로 새 웹폰트를 받지 않는다 — 시스템 스택만 쓴다', () => {
