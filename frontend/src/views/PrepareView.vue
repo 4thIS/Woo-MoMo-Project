@@ -493,7 +493,8 @@ async function clearAndRetry() {
           </button>
         </div>
         <div v-if="pickerOpen && !busy" ref="pickerBox">
-          <InterviewerPicker @need-premium="modal.show('premium')" />
+          <!-- 608px 칸에는 카드 넷(936px)이 들어가지 않는다 — 줄로 세운다 -->
+          <InterviewerPicker variant="rows" @need-premium="modal.show('premium')" />
         </div>
         <!-- 벤에게만 해당하는 것들을 한 상자로 묶는다 — 고지와 동의가 안내문 더미에
              흩어져 있으면 무엇이 벤 때문인지 보이지 않는다 (2026-11-07) -->
@@ -782,11 +783,13 @@ async function clearAndRetry() {
 
 <style scoped>
 /* 두 기둥. 왼쪽은 붙어 따라오고 오른쪽만 흐른다 — 기다리는 4분 동안 입력이 끝나게 (2026-11-07) */
+/* 읽는 화면(리포트)보다 넓게 쓴다 — 여기는 **입력**이 주라 한 줄 길이 상한(--read-w)이
+   걸리지 않고, 상황판 376px을 떼고 나면 입력 칸에 남는 폭이 얼마 안 된다 (2026-11-08) */
 .cols {
   display: flex;
   gap: var(--sp-6);
   align-items: flex-start;
-  max-width: var(--content-w);
+  max-width: 1280px;
   margin: 0 auto;
   padding: var(--sp-8) var(--sp-4);
 }

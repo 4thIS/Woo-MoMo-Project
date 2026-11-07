@@ -260,3 +260,80 @@ describe('InterviewerPicker — 휴대폰에서는 옆으로 넘긴다 (멘토�
     expect(on).toHaveLength(1)
   })
 })
+
+describe('InterviewerPicker — 줄 모양 (2026-11-08)', () => {
+  /* 준비 화면의 입력 칸은 608px이라 936px짜리 카드 넷이 들어가지 않는다.
+     바꾸러 온 사람은 이미 랜딩에서 넷을 봤으므로, 큰 초상은 지금 고른 한 명에게만 준다 */
+  const rows = async () => {
+    const w = mount(InterviewerPicker, { props: { variant: 'rows' } })
+    await flushPromises()
+    return w
+  }
+
+  it('카드 넷을 한 줄로 까는 판을 그리지 않는다 — 608px 칸을 넘친다', async () => {
+    expect((await rows()).find('.picker').exists()).toBe(false)
+  })
+
+  it('지금 고른 사람만 크게 보여 준다', async () => {
+    useInterviewerStore().select('f2')
+    const w = await rows()
+    const cur = w.get('[data-test=picker-current]')
+    expect(cur.text()).toContain('쥴리')
+    expect(w.findAll('[data-test=picker-row]')).toHaveLength(INTERVIEWERS.length - 1)
+  })
+
+  it('고른 사람은 줄 목록에 다시 나오지 않는다 — 같은 사람이 두 번 보이면 어느 쪽이 지금인지 흐려진다', async () => {
+    useInterviewerStore().select('f2')
+    const w = await rows()
+    const names = w.findAll('[data-test=picker-row]').map((r) => r.text())
+    expect(names.some((t) => t.includes('쥴리'))).toBe(false)
+  })
+
+  it('아직 아무도 안 골랐으면 넷이 다 줄로 선다', async () => {
+    const w = await rows()
+    expect(w.find('[data-test=picker-current]').exists()).toBe(false)
+    expect(w.findAll('[data-test=picker-row]')).toHaveLength(INTERVIEWERS.length)
+  })
+
+  it('줄을 누르면 그 면접관을 고른다', async () => {
+    useInterviewerStore().select('m1')
+    const w = await rows()
+    await w.findAll('[data-test=picker-row]')[0].trigger('click')
+    expect(useInterviewerStore().id).not.toBe('m1')
+  })
+
+  it('줄에 한 줄 설명을 적는다 — 넓어진 자리를 쓴다', async () => {
+    useInterviewerStore().select('m1')
+    const w = await rows()
+    expect(w.get('[data-test=picker-row]').text()).toContain('근거를 보여 주세요')
+  })
+
+  it('얼굴은 1/2배로 줄인다 — 92px 시트라 그 사이 값은 픽셀이 뭉개진다', async () => {
+    const w = await rows()
+    expect(w.findAllComponents({ name: 'SpriteFrame' })[0].props('scale')).toBe(0.5)
+  })
+
+  it('기본은 여전히 카드다 — 랜딩은 그대로다', async () => {
+    const w = mount(InterviewerPicker)
+    await flushPromises()
+    expect(w.find('.picker').exists()).toBe(true)
+    expect(w.find('[data-test=picker-row]').exists()).toBe(false)
+  })
+
+  it('줄 모양에서도 벤을 고르면 트랙을 묻는다', async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    const w = await rows()
+    useInterviewerStore().select('m2')
+    await flushPromises()
+    expect(w.find('[data-test=track-pick]').exists()).toBe(true)
+  })
+})
+
+describe('InterviewerPicker — 열 수는 칸을 본다', () => {
+  it('줄 모양의 열 수를 창이 아니라 칸으로 정한다 — 창을 본 것이 이 버그의 뿌리였다', () => {
+    expect(PickerSource).toMatch(/container-type:\s*inline-size/)
+    expect(PickerSource).toMatch(/@container \(min-width: 620px\)/)
+  })
+})
