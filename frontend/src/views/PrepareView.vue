@@ -24,7 +24,6 @@ import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
 const model = useModelStore()
 const interview = useInterviewStore()
-const root = ref<HTMLElement | null>(null)
 const iv = useInterviewerStore()
 const modal = useModalStore()
 
@@ -224,8 +223,9 @@ const startLabel = computed(() => {
 const blockedByError = computed(
   () => model.status === 'error' || (model.ttsEnabled && model.ttsStatus === 'error'),
 )
+/* 스크롤러는 문서다(2026-11-07 철거). 요소가 아니라 창을 올린다 */
 function scrollToProgress() {
-  root.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  scrollTo({ top: 0, behavior: 'smooth' })
 }
 /* 벤으로 왔다가 무료 면접관으로 바꾸면 그제야 브라우저 모델이 필요해진다.
    벤일 때는 아예 받지 않으므로(model.llmSkipped) 여기서 받기 시작한다 */
@@ -292,7 +292,7 @@ async function clearAndRetry() {
 </script>
 
 <template>
-  <div ref="root" class="prepare stars snap-root">
+  <div class="prepare stars">
     <header class="mono topbar">
       <span>모두의 모의면접 · 준비</span>
       <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>

@@ -439,10 +439,12 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     const w = mountView()
     await filled(w)
     expect(w.find('[data-test=start]').text()).toContain('면접관을 준비하지 못했습니다')
-    const root = w.find('.snap-root').element as HTMLElement
-    root.scrollTo = vi.fn()
+    // 스크롤러는 문서다 — 요소가 아니라 창이 움직인다 (2026-11-07 철거)
+    const scrollTo = vi.fn()
+    vi.stubGlobal('scrollTo', scrollTo)
     await w.find('[data-test=start-scroll-top]').trigger('click')
-    expect(root.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }))
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }))
+    vi.unstubAllGlobals()
   })
   it('간단 이력서를 열어 두고 완성을 안 눌렀으면 문구가 그걸 짚어 준다', async () => {
     const m = useModelStore()

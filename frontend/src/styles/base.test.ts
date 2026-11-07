@@ -30,7 +30,7 @@ function block(selector: string, css: string = bare): string {
 
 describe('base.css — 스크롤', () => {
   it('body는 힌트 바 높이를 패딩으로 먹지 않는다 — 스크롤바가 둘이 된다', () => {
-    // 화면 하나가 이미 100vh 스크롤러(.snap-root·면접 화면)인데 body까지 길어지면
+    // 화면 하나가 이미 100vh 스크롤러(면접 화면)인데 body까지 길어지면
     // 바깥 스크롤바가 하나 더 생겨 둘이 겹친다. 자리는 **실제로 스크롤하는 쪽**이 비운다
     expect(block('body')).not.toMatch(/--hint-space/)
   })
@@ -49,8 +49,7 @@ describe('base.css — 스크롤', () => {
   it('스크롤러는 문서 하나다 — 요소 스크롤러를 두면 스크롤바가 둘이 된다', () => {
     // 안쪽 스크롤러가 있으면 내용은 (뷰포트 − 스크롤바) 안에서 가운데 정렬되는데,
     // 바깥의 fixed 가이드 바는 뷰포트 기준이라 스크롤바 폭의 **절반**만큼 어긋난다
-    expect(block('.snap-root')).not.toMatch(/overflow-y:\s*auto/)
-    expect(block('.snap-root')).not.toMatch(/height:\s*100vh/)
+    expect(base).not.toMatch(/snap-root/)
   })
 
   it('앵커로 이동할 때 상단바에 가리지 않게 문서가 자리를 비운다', () => {

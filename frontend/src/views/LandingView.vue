@@ -171,7 +171,7 @@ function startDownload() {
 </script>
 
 <template>
-  <div ref="root" class="landing stars snap-root">
+  <div class="landing stars">
     <!-- 휴대폰·태블릿: 내려받을 수 없다는 것만 먼저 알리고, 둘러보기는 막지 않는다 -->
     <div v-if="handheld" class="mono handheld" data-test="handheld">
       <span class="mark" aria-hidden="true">!</span>
