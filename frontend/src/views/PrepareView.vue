@@ -755,7 +755,9 @@ async function clearAndRetry() {
   background: var(--bg);
   height: 72px;
   max-width: var(--content-w);
-  margin: var(--topbar-h) auto 0;
+  /* 위쪽 비킴은 전역 상단바의 자리지기가 맡는다 — 여기서 또 비키면 두 번 밀린다
+     (2026-11-07). sticky의 top은 그대로다: 고정된 전역 바 아래에 붙어야 한다 */
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
