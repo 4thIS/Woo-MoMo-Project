@@ -57,6 +57,17 @@ describe('base.css — 스크롤', () => {
     expect(block('html')).toMatch(/scroll-padding-top/)
   })
 
+  it('크롬에서만 도는 스크롤 타임라인을 기본 경험에 두지 않는다', () => {
+    // animation-timeline: view()는 크롬 계열 전용이다. 사파리·파이어폭스에서는
+    // 아무 일도 일어나지 않아 브라우저마다 다른 화면이 된다
+    expect(base).not.toMatch(/animation-timeline/)
+    expect(base).not.toMatch(/animation-range/)
+  })
+
+  it('스크롤을 재촉하는 바닥 화살표를 두지 않는다', () => {
+    expect(base).not.toMatch(/@keyframes bob/)
+  })
+
   it('스크롤바도 각진 어법을 따른다 — 둥근 기본 막대는 픽셀 창과 따로 논다', () => {
     expect(block('::-webkit-scrollbar-thumb')).not.toMatch(/border-radius/)
   })

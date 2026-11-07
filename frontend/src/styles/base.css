@@ -224,45 +224,16 @@ a:hover {
   justify-content: center;
   padding: var(--sp-14) var(--sp-4);
 }
-/* 다음 섹션이 있으면 바닥 가운데에 노란 화살표가 계단식으로 내려갔다 올라온다 */
-.snap:not(:last-of-type)::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: 28px;
-  width: 20px;
-  height: 12px;
-  margin-left: -10px;
-  background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 50% 100%);
-  animation: bob 1.6s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes bob {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.55;
-  }
-  50% {
-    transform: translateY(10px);
-    opacity: 1;
-  }
-}
-/* 섹션 내용은 화면에 들어오는 동안 rise 재생(Chrome scroll-driven animation). 미지원 브라우저는 로드 시 1회 */
+/* 섹션 내용의 폭만 맡는다. 등장 애니메이션은 뗐다 — 크롬에서만 도는
+   스크롤 타임라인이었고, 긴 문서에서는 보이지도 않는 채로 재생된다 (2026-11-07 철거) */
 .snap > .content {
   width: 100%;
   max-width: var(--content-w);
-  animation: rise var(--dur-3) var(--ease) both;
-  animation-timeline: view();
-  animation-range: entry 10% entry 70%;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .blink,
   .rise,
-  .snap > .content,
-  .snap:not(:last-of-type)::after,
   .press:hover > svg:first-child,
   .item:hover .slot > svg {
     animation: none;
@@ -279,12 +250,10 @@ a:hover {
   .stars {
     background-image: none;
   }
-  .blink,
-  .snap:not(:last-of-type)::after {
+  .blink {
     display: none;
   }
-  .rise,
-  .snap > .content {
+  .rise {
     animation: none;
   }
 }
