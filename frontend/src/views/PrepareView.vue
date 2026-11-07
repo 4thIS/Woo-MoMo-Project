@@ -167,6 +167,9 @@ async function readResume(file: File) {
   } finally {
     extracting.value = false
   }
+  /* 글자를 못 읽었으면 붙여넣기 탭으로 데려간다 — 경고만 띄우고 파일 탭에 두면
+     다음에 뭘 해야 하는지 보이지 않는다 (2026-11-07) */
+  if (tooShort.value) resumeTab.value = 'paste'
 }
 async function onFile(e: Event) {
   const input = e.target as HTMLInputElement
@@ -180,13 +183,32 @@ async function onDrop(e: DragEvent) {
   const file = e.dataTransfer?.files?.[0]
   if (file && isPdf(file)) await readResume(file)
 }
+/* 이력서를 넣는 방법 넷. 한 번에 하나만 보인다 — 넷을 늘 펼쳐 두면 창이 두 배가 된다
+   (2026-11-07). 저장본이 있으면 거기서 꺼내는 게 가장 빨라 그걸 기본 탭으로 */
+type ResumeTab = 'saved' | 'file' | 'form' | 'paste'
+const TAB_LABEL: Record<ResumeTab, string> = {
+  saved: '저장본에서',
+  file: '파일 올리기',
+  form: '직접 쓰기',
+  paste: '붙여넣기',
+}
+const resumeTab = ref<ResumeTab>('file')
+const resumeTabs = computed<ResumeTab[]>(() =>
+  savedResumes.value.length ? ['saved', 'file', 'form', 'paste'] : ['file', 'form', 'paste'],
+)
+watch(
+  savedResumes,
+  (list) => {
+    if (list.length && resumeTab.value === 'file') resumeTab.value = 'saved'
+  },
+  { immediate: true },
+)
+
 /* PDF 대신 항목별로 답하는 간단 이력서 */
 const FORM_NAME = '직접 작성'
-const formOpen = ref(false)
 function onFormDone(text: string) {
   interview.setResume(FORM_NAME, text)
   tooShort.value = false
-  formOpen.value = false
 }
 function usePasted() {
   interview.setResume(interview.resumeName ?? '직접 입력', pasted.value)
@@ -196,7 +218,7 @@ function usePasted() {
 /* 막힌 이유(#41): 간단 이력서를 열어 두고 '이력서 완성'을 안 누른 상태가 가장 흔한 "다 채웠는데 안 열림" */
 const startLabel = computed(() => {
   if (interview.canStart) return '면접 시작'
-  if (formOpen.value && !interview.resumeDone && infoDone.value)
+  if (resumeTab.value === 'form' && !interview.resumeDone && infoDone.value)
     return "면접 시작 — 간단 이력서의 '이력서 완성'을 눌러 주세요"
   return `면접 시작 — ${interview.startBlockReason}`
 })
@@ -468,8 +490,26 @@ async function clearAndRetry() {
 
           <h3 class="mono sep">{{ longDocLabel }}</h3>
           <div class="step" data-test="step-resume">
-            <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 줄 자체를 보이지 않는다 -->
-            <div v-if="savedResumes.length" class="saved" data-test="saved-resumes">
+            <!-- 넷을 한꺼번에 펼치지 않는다. 탭 이름이 "넣는 방법이 넷"이라는 것도 알려 준다 -->
+            <div class="tabs" role="tablist">
+              <button
+                v-for="t in resumeTabs"
+                :key="t"
+                type="button"
+                role="tab"
+                class="mono tab press"
+                :class="{ on: resumeTab === t }"
+                :aria-selected="resumeTab === t"
+                data-test="resume-tab"
+                @click="resumeTab = t"
+              >
+                {{ TAB_LABEL[t] }}
+                <span v-if="t === 'saved'" class="mono count">{{ savedResumes.length }}</span>
+              </button>
+            </div>
+
+            <!-- 미리 써 둔 것이 있으면 그것부터. 없는 사람에게는 탭 자체가 없다 -->
+            <div v-if="resumeTab === 'saved'" class="saved" data-test="saved-resumes">
               <span class="mono lbl">저장한 {{ longDocLabel }}</span>
               <PixelButton
                 v-for="s in savedResumes"
@@ -482,6 +522,7 @@ async function clearAndRetry() {
               </PixelButton>
             </div>
             <label
+              v-if="resumeTab === 'file'"
               class="file-row press"
               :class="{ dragging }"
               data-test="drop"
@@ -506,38 +547,27 @@ async function clearAndRetry() {
                 @change="onFile"
               />
             </label>
-            <PixelButton
-              v-if="!formOpen"
-              data-test="form-open"
-              variant="secondary"
-              @click="formOpen = true"
-            >
-              {{
-                interview.resumeName === FORM_NAME
-                  ? `간단 ${longDocLabel} 수정`
-                  : `PDF가 없다면 간단 ${longDocLabel} 작성`
-              }}
-            </PixelButton>
-            <ResumeForm v-show="formOpen" @done="onFormDone" />
+            <ResumeForm v-if="resumeTab === 'form'" @done="onFormDone" />
             <p v-if="extracting" class="mono hint">읽는 중…</p>
-            <div v-if="interview.resumeText && !tooShort && !formOpen" class="preview">
+            <!-- 글자를 못 읽었으면 경고만 띄우고 두지 않는다. 붙여넣기 탭으로 데려간 뒤
+                 그 자리에서 이유를 말한다 (2026-11-07) -->
+            <p v-if="tooShort && resumeTab === 'paste'" class="mono warn">
+              글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을 직접
+              붙여넣어 주세요.
+            </p>
+            <textarea
+              v-if="resumeTab === 'paste'"
+              v-model="pasted"
+              data-test="paste"
+              class="input paste"
+              rows="8"
+              :placeholder="`${longDocLabel} 내용을 붙여넣기`"
+              @input="usePasted"
+              @blur="usePasted"
+            />
+            <div v-if="interview.resumeText && !tooShort && resumeTab !== 'form'" class="preview">
               {{ interview.resumeText }}
             </div>
-            <template v-if="tooShort && !formOpen">
-              <p class="mono warn">
-                글자를 거의 읽지 못했습니다(스캔본일 수 있어요). 아래에 {{ longDocLabel }} 내용을
-                직접 붙여넣어 주세요.
-              </p>
-              <textarea
-                v-model="pasted"
-                data-test="paste"
-                class="input paste"
-                rows="6"
-                :placeholder="`${longDocLabel} 내용을 붙여넣기`"
-                @input="usePasted"
-                @blur="usePasted"
-              />
-            </template>
             <p class="mono hint">
               앞 {{ (2000).toLocaleString() }}자만 면접관에게 전달됩니다. 이름·연락처 같은
               개인정보도 이 브라우저 안에서만 읽힙니다.
