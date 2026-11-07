@@ -406,6 +406,21 @@ class AdmissionInputs(BaseModel):
     department: NonBlank100
 
 
+Level = Literal["low", "mid", "high"]
+
+
+class BenSettings(BaseModel):
+    """벤 성향 설정(2026-11-07). 기본값이면 지금 벤과 같다. 정해진 값만 받는다(자유 입력 없음)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    warmth: Level = "low"
+    followUp: Level = "mid"
+    questionMix: Literal["technical", "balanced", "personal"] = "balanced"
+    difficulty: Literal["basic", "practical", "advanced"] = "practical"
+    companyWeight: Level = "mid"
+
+
 class InterviewStart(BaseModel):
     track: Track
     resumeText: Annotated[
@@ -415,6 +430,8 @@ class InterviewStart(BaseModel):
     admission: AdmissionInputs | None = None
     # 목소리 분석 동의(2026-10-23, additive). 안 하면 1단계와 같다
     voiceAnalysisConsent: bool = False
+    # 벤 성향 설정(2026-11-07, additive). 없으면 기본값
+    benSettings: BenSettings | None = None
 
 
 class InterviewStarted(BaseModel):
