@@ -6,7 +6,7 @@
  *
  * "한 번에 하나만 연다"는 규칙을 여기서 지킨다 — 모달 상태가 이 하나뿐이다.
  */
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useModalStore } from '@/stores/modal'
@@ -16,12 +16,24 @@ import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
 import ArchiveModal from '@/components/account/ArchiveModal.vue'
 import TicketIcon from '@/components/ui/icons/TicketIcon.vue'
+import ArchiveIcon from '@/components/ui/icons/ArchiveIcon.vue'
+import MeIcon from '@/components/ui/icons/MeIcon.vue'
 
 const account = useAccountStore()
 const interview = useInterviewStore()
 const modal = useModalStore()
 const onAdmin = isAdminPath()
 const shown = computed(() => interview.phase !== 'interview')
+
+/** 판이 깔렸는가. Task 5에서 문서 맨 위 센티넬을 보고 채운다 */
+const docked = ref(false)
+/** 판이 깔렸을 때 왼쪽에 적는 지금 단계 */
+const STEP: Record<string, string> = {
+  landing: '고르기',
+  prepare: '준비',
+  interview: '면접',
+  report: '리포트',
+}
 
 // 바가 사라지는 화면으로 넘어가면 열려 있던 모달도 거둔다
 watch(shown, (on) => {
@@ -32,7 +44,15 @@ onMounted(() => void account.load())
 </script>
 
 <template>
-  <header v-if="shown" class="topbar" data-test="topbar">
+  <header v-if="shown" class="topbar" :class="{ docked }" data-test="topbar">
+    <!-- 맨 위에서는 비워 둔다 — 히어로 가운데에 이미 큰 이름이 있다. 판이 깔린 뒤에만
+         작은 이름과 지금 단계가 들어온다 (2026-11-07) -->
+    <div v-if="docked" class="brand" data-test="top-brand">
+      <span class="mark" aria-hidden="true" />
+      <span class="display name">모두의 모의면접</span>
+      <span class="mono step">{{ STEP[interview.phase] }}</span>
+    </div>
+    <div v-else class="brand" aria-hidden="true" />
     <div class="side">
       <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>
       <template v-if="account.signedIn">
@@ -57,16 +77,28 @@ onMounted(() => void account.load())
         >
           <TicketIcon /> {{ account.tickets }}
         </span>
+        <!-- 상태(위)와 이동(아래)을 세로줄로 가른다. 프리미엄·티켓은 "지금 내 상태"고
+             보관함·내정보는 "가는 곳"이다 (2026-11-07) -->
+        <span class="divider" data-test="top-divider" aria-hidden="true" />
         <button
           type="button"
           class="mono link press"
+          aria-label="보관함"
           data-test="top-archive"
           @click="modal.show('archive')"
         >
-          보관함
+          <ArchiveIcon />
+          <span class="label">보관함</span>
         </button>
-        <button type="button" class="mono link press" data-test="top-me" @click="modal.show('me')">
-          내정보
+        <button
+          type="button"
+          class="mono link press"
+          aria-label="내정보"
+          data-test="top-me"
+          @click="modal.show('me')"
+        >
+          <MeIcon />
+          <span class="label">내정보</span>
         </button>
       </template>
       <button
@@ -102,14 +134,43 @@ onMounted(() => void account.load())
   left: 0;
   right: 0;
   z-index: 40;
-  /* 아래 화면이 "이만큼은 비켜 간다"고 믿는 높이다 — 토큰과 실제를 어긋나게 두지 않는다 */
+  /* 아래 화면이 "이만큼은 비켜 간다"고 믿는 높이다 — 토큰과 실제를 어긋나게 두지 않는다.
+     **두 상태(떠 있음·판 깔림) 모두 같은 높이다** — 바뀔 때 아래가 밀리면 안 된다 */
   min-height: var(--topbar-h);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--sp-4);
-  padding: var(--sp-3) var(--sp-6);
+  /* 안쪽을 조금 더 벌린다. 같은 요소인데 답답함이 사라진다 (2026-11-07) */
+  padding: var(--sp-3) calc(var(--sp-6) + var(--sp-1));
   pointer-events: none; /* 빈 자리가 아래 화면의 클릭을 막지 않게 */
+}
+/* 왼쪽 묶음 — 판이 깔렸을 때만 내용이 찬다. 비어 있어도 자리를 잡아 오른쪽이 끝에 붙는다 */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  pointer-events: auto;
+}
+.brand .mark {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  background: var(--accent);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.brand .name {
+  font-size: var(--fs-body-sm);
+  color: var(--text);
+  white-space: nowrap;
+}
+.brand .step {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  border: 1px solid var(--off);
+  padding: var(--sp-1) var(--sp-2);
+  white-space: nowrap;
 }
 .side {
   display: flex;
@@ -117,7 +178,30 @@ onMounted(() => void account.load())
   gap: var(--sp-5);
   pointer-events: auto;
 }
+/* 상태 묶음과 이동 묶음을 가르는 한 줄 */
+.divider {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: var(--off);
+}
+.link .label {
+  margin-left: var(--sp-2);
+}
+/* 좁아지면 접는 대신 **글자를 뗀다** — 한 줄을 지켜야 --topbar-h가 한 값으로 남는다.
+   이름은 aria-label로 남아 화면 낭독기가 읽는다 (2026-11-07) */
+@media (max-width: 720px) {
+  .link .label,
+  .brand .step {
+    display: none;
+  }
+  .side {
+    gap: var(--sp-4);
+  }
+}
 .link {
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
   font-size: var(--fs-label);
   color: var(--text-2);

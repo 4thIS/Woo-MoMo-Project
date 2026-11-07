@@ -65,7 +65,36 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const keys = [...w.element.querySelectorAll('[data-test^=top-]')].map(
       (e) => (e as HTMLElement).dataset.test,
     )
-    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-archive', 'top-me'])
+    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-divider', 'top-archive', 'top-me'])
+  })
+
+  it('상태(프리미엄·티켓)와 이동(보관함·내정보)을 세로줄로 가른다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    expect(w.find('[data-test=top-divider]').exists()).toBe(true)
+  })
+
+  it('좁은 화면에서 글자를 떼도 이름이 남게 그림 버튼에 라벨을 단다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    for (const [key, name] of [
+      ['top-archive', '보관함'],
+      ['top-me', '내정보'],
+    ]) {
+      const b = w.get(`[data-test=${key}]`)
+      expect(b.attributes('aria-label')).toBe(name)
+      expect(b.find('svg').exists()).toBe(true)
+      expect(b.find('.label').text()).toBe(name)
+    }
+  })
+
+  it('왼쪽 묶음은 맨 위에서 보이지 않는다 — 히어로의 큰 이름이 대신한다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    expect(w.find('[data-test=top-brand]').exists()).toBe(false)
   })
 
   it('티켓은 이모지가 아니라 픽셀 아이콘으로 그린다 — 기종마다 모양이 달라진다', async () => {
