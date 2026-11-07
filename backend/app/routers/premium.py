@@ -35,6 +35,7 @@ from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import (
+    BenSettings,
     DeliveryMetric,
     InterviewStart,
     InterviewStarted,
@@ -75,7 +76,12 @@ def start_interview(
     group = body.company if body.track == "company" else body.admission
     if group is None:
         raise ApiError(422, "missing_field", field=body.track)
-    inputs = {"resumeText": body.resumeText, body.track: group.model_dump(exclude_none=True)}
+    inputs = {
+        "resumeText": body.resumeText,
+        body.track: group.model_dump(exclude_none=True),
+        # 성향 설정(2026-11-07): 기본값을 채워 저장한다. 턴·리포트가 이 값을 읽는다
+        "benSettings": (body.benSettings or BenSettings()).model_dump(),
+    }
     # 회사명 또는 모집공고 링크가 있으면 첫 턴에 조사한다(대입 트랙은 무시)
     research = bool(
         body.track == "company"
@@ -490,6 +496,7 @@ def _report_v2_events(
         delivery.render(merged),
         voice=delivery.voice_used(merged),
         posting=has_posting,
+        warmth=prompts.ben_settings(interview.inputs)["warmth"],
     )
     n = report_v2.answer_count(interview.messages)
     for attempt in (1, 2):
@@ -556,10 +563,13 @@ def make_report(
     with_voice = interview.voice_consent and bool(parsed)
     settings = request.app.state.settings
     v2 = settings.ben_report_v2
+    warmth = prompts.ben_settings(interview.inputs)["warmth"]
     messages = (
         None
         if with_voice or v2
-        else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
+        else prompts.report_messages(
+            interview.messages, delivery.render(_metrics(parsed)), warmth=warmth
+        )
     )
     if v2 and report_v2.answer_count(interview.messages) == 0:
         raise ApiError(409, "no_answers")  # 시도를 세기 전에 거절 — Claude를 부르지 않는다
@@ -586,7 +596,10 @@ def make_report(
             voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
             merged = _metrics(parsed, voices)
             msgs = prompts.report_messages(
-                interview.messages, delivery.render(merged), voice=delivery.voice_used(merged)
+                interview.messages,
+                delivery.render(merged),
+                voice=delivery.voice_used(merged),
+                warmth=warmth,
             )
         chunks: list[str] = []
         try:

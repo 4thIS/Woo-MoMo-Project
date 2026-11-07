@@ -301,6 +301,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 { "track": "admission", "resumeText": "...(자기소개서)",
   "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
 // 선택 "voiceAnalysisConsent": true   // 목소리 분석 동의(기본 false, 2026-10-23)
+// 선택 "benSettings": { "warmth": "high", "difficulty": "advanced" }   // 벤 성향 설정(2026-11-07), 일부만 보내도 됨
 // 201 { "interviewId": "pi_01J9ZQ...", "session": Session, "voiceAnalysis": "on" }   // 티켓 1장 차감된 Session
 // 403 premium_required
 // 409 { "error": "no_tickets" }
@@ -314,6 +315,16 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 - `company.postingUrl`(선택, 2026-10-23): 모집공고 링크. 공백 제거 후 1~500자, ASCII 문자만(한글 경로는 퍼센트 인코딩된 주소), `http`/`https` 스킴과 호스트가 있는 절대 URL이어야 하고 비면 없는 것으로 친다(위반은 `422 invalid`, `field: "postingUrl"`). 회사명 **또는** 공고 링크가 있으면 첫 턴에 조사를 시작한다(둘 다 없으면 지금처럼 조사 없음). 조사에 보내는 것은 회사명·직무·공고 URL뿐이며 이력서·대화는 보내지 않는다. `track: "admission"`이면 무시하고 저장하지 않는다.
 
 - `voiceAnalysisConsent`(선택, 2026-10-23, additive): 답변 녹음을 외부 AI(Google Gemini — 서버 설정 `VOICE_PROVIDER`에 따라 직접 또는 학교 BAZE 게이트웨이 경유, 2026-11-03)로 보내 목소리를 분석하는 데 동의했는지. 기본 `false`이며 `false`이거나 서버에 고른 쪽의 키가 없으면 동작은 이전과 같다. 응답 `voiceAnalysis`는 `"off"`(동의 안 함) / `"on"`(동의 + 분석 가능) / `"unavailable"`(동의했지만 키가 없거나 모두 쓸 수 없음 - 프론트는 업로드하지 않는다). 동의 여부는 면접에 저장된다.
+
+- `benSettings`(선택, 2026-11-07, additive): 벤 성향 설정. 다섯 칸 모두 선택이며 빠진 칸은 기본값이다. **설정을 안 보내거나 모두 기본값이면 프롬프트가 이전과 같다**(지금의 압박형 벤). 정해진 값이 아니거나 모르는 키는 `422 invalid`. 면접 시작 때 저장되고 면접 중에는 바꿀 수 없다(턴·리포트가 저장된 값을 쓴다). 응답 형태는 그대로다.
+
+  | 칸 | 값 (굵은 것이 기본) | 뜻 |
+  |---|---|---|
+  | `warmth` | **`low`** / `mid` / `high` | 온화함. 면접 말투·짧은 반응·리포트 말투가 함께 바뀐다(low = 지금 벤, mid = 데이빗과 같은 표준, high = 부드럽게) |
+  | `followUp` | `low` / **`mid`** / `high` | 꼬리질문 깊이. low = 너무 짧을 때만·전체 1개, mid = 질문당 2개·전체 3개, high = 적극적으로·질문당 3개·전체 3개 |
+  | `questionMix` | `technical` / **`balanced`** / `personal` | 질문 비중. 자기소개 다음 질문 중 3개 이상을 직무 지식·문제 해결(입학 트랙: 전공 지식·탐구) 또는 인성·동기로 |
+  | `difficulty` | `basic` / **`practical`** / `advanced` | 난이도. 기초 개념 확인 ~ 선택 이유·대안 비교·한계까지 |
+  | `companyWeight` | `low` / **`mid`** / `high` | 회사·공고 비중. 회사 소식 질문 1개 / 1~2개 / 2~3개(공고가 있으면 공고·회사 합쳐 1~2개 / 2~3개 / 3~4개). 브리핑이 없는 면접·입학 트랙은 무시 |
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 
