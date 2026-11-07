@@ -743,13 +743,8 @@ async function clearAndRetry() {
     grid-template-columns: 1fr;
   }
 }
-.prepare {
-  /* 이 화면의 머리글(72px) + 그 위를 덮는 전역 상단바만큼 아래에 섹션이 맞춰진다 */
-  scroll-padding-top: calc(72px + var(--topbar-h));
-}
-.prepare .snap {
-  min-height: calc(100vh - 72px - var(--topbar-h));
-}
+/* scroll-padding-top은 문서(html)로 옮겼고, 섹션 최소 높이는 버렸다 — 스크롤러가
+   요소가 아니라 문서이고, 내용이 길면 그냥 더 스크롤된다 (2026-11-07 철거) */
 /* 전역 상단바(로그인·보관함·내정보)는 fixed로 화면 오른쪽 위를 덮는다.
    머리글을 그 아래에서 시작하게 해야 "…떠나지 않습니다"와 상단바 글자가 포개지지 않는다.
    가로로 피하는 방법은 화면이 좁아질수록 무너진다 — 세로로 비킨다 (점검 2026-11-02) */
