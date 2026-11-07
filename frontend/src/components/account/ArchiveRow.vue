@@ -85,9 +85,11 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
 </template>
 
 <style scoped>
+/* 열 폭은 **고정**이다. auto로 두면 줄마다 제 내용에 맞춰 잡혀 — 표식이 붙은 줄 하나가
+   다른 줄과 어긋난다. 줄마다 따로 선 grid라서 그렇다(목록 전체가 한 grid가 아니다) */
 .row {
   display: grid;
-  grid-template-columns: auto minmax(104px, auto) auto 1fr auto auto auto;
+  grid-template-columns: auto 140px 40px 1fr 64px 96px 64px;
   align-items: center;
   gap: var(--sp-4);
   width: 100%;
@@ -107,6 +109,7 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
+  overflow: hidden;
 }
 .nm {
   font-size: var(--fs-body-sm);

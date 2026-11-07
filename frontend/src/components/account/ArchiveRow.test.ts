@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ArchiveRow from './ArchiveRow.vue'
@@ -56,5 +58,15 @@ describe('ArchiveRow — 열로 세운다 (2026-11-07)', () => {
 
   it('좁은 화면용 줄에 면접관 이름을 함께 적는다 — 그 폭에서는 이름 열이 사라진다', () => {
     expect(row().get('.sub.narrow').text()).toContain('벤')
+  })
+})
+
+describe('ArchiveRow — 열이 줄마다 어긋나지 않는다', () => {
+  const src = readFileSync(join(__dirname, 'ArchiveRow.vue'), 'utf8')
+
+  it('열 폭이 고정이다 — auto로 두면 표식이 붙은 줄 하나가 다른 줄과 어긋난다', () => {
+    const cols = src.match(/grid-template-columns:\s*([^;]+);/)![1]
+    expect(cols).not.toMatch(/\bauto\b.*\bauto\b/)
+    expect(cols).toMatch(/140px/)
   })
 })
