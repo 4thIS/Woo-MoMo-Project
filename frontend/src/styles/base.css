@@ -256,4 +256,11 @@ a:hover {
   .rise {
     animation: none;
   }
+  /* 접힌 것은 전부 펴서 인쇄한다 — 종이에는 펴기 버튼이 없다 */
+  details > summary {
+    display: none;
+  }
+  details > *:not(summary) {
+    display: revert;
+  }
 }

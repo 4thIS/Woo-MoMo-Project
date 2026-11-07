@@ -10,16 +10,21 @@
 import { computed } from 'vue'
 import type { ProfileAxis } from '@/utils/reportV2'
 
-const props = defineProps<{ profile: ProfileAxis[] }>()
+const props = withDefaults(defineProps<{ profile: ProfileAxis[]; size?: number }>(), {
+  /** 카드 안에서는 작게(110), 혼자 띄울 때는 크게. 계산식은 건드리지 않는다 */
+  size: 180,
+})
 
 /** 단계를 말로. 숫자만 두면 점수표처럼 읽힌다 */
 const SAID = ['아쉬워요', '조금 부족해요', '보통이에요', '좋아요', '아주 좋아요']
 const say = (level: number | null) => (level === null ? '측정 없음' : (SAID[level - 1] ?? ''))
 
-const SIZE = 180
-const C = SIZE / 2
+/** 크기는 prop이 정하고, 나머지는 **비율로** 따라간다 — 180 기준으로 잡았던
+ *  눈금 반지름 58과 이름표 여백 16을 그대로 쓰면 작게 줄일 때 글자가 밖으로 나간다 */
+const C = () => props.size / 2
 /** 바깥 눈금까지의 거리. 축 이름 자리를 남긴다 */
-const R = 58
+const R = () => (props.size * 58) / 180
+const LABEL_GAP = () => (props.size * 16) / 180
 const RINGS = [1, 2, 3, 4, 5]
 
 /** i번째 축의 각도 — 맨 위에서 시작해 시계 방향 */
@@ -28,25 +33,25 @@ function angle(i: number) {
 }
 function point(i: number, dist: number) {
   const a = angle(i)
-  return [C + Math.cos(a) * dist, C + Math.sin(a) * dist] as const
+  return [C() + Math.cos(a) * dist, C() + Math.sin(a) * dist] as const
 }
 const ring = (step: number) =>
   props.profile
-    .map((_, i) => point(i, (R * step) / 5))
+    .map((_, i) => point(i, (R() * step) / 5))
     .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
     .join(' ')
 
 /** 값 다각형. 측정 없는 축은 중심(0)으로 */
 const shape = computed(() =>
   props.profile
-    .map((a, i) => point(i, (R * (a.level ?? 0)) / 5))
+    .map((a, i) => point(i, (R() * (a.level ?? 0)) / 5))
     .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`)
     .join(' '),
 )
 
 /** 이름표 자리 — 눈금보다 조금 바깥 */
 const labelAt = (i: number) => {
-  const [x, y] = point(i, R + 16)
+  const [x, y] = point(i, R() + LABEL_GAP())
   return { x, y }
 }
 
@@ -58,7 +63,7 @@ const described = computed(() => props.profile.map((a) => `${a.label} ${say(a.le
   <div class="hex" data-test="profile-hex">
     <svg
       class="chart"
-      :viewBox="`0 0 ${SIZE} ${SIZE}`"
+      :viewBox="`0 0 ${size} ${size}`"
       role="img"
       :aria-label="`답변 프로필: ${described}`"
     >
@@ -73,10 +78,10 @@ const described = computed(() => props.profile.map((a) => `${a.label} ${say(a.le
         v-for="(a, i) in profile"
         :key="`spoke-${a.key}`"
         class="spoke"
-        :x1="C"
-        :y1="C"
-        :x2="point(i, R)[0]"
-        :y2="point(i, R)[1]"
+        :x1="size / 2"
+        :y1="size / 2"
+        :x2="point(i, R())[0]"
+        :y2="point(i, R())[1]"
       />
       <polygon class="shape" data-test="hex-shape" :points="shape" />
       <text
@@ -183,10 +188,11 @@ const described = computed(() => props.profile.map((a) => `${a.label} ${say(a.le
   }
 }
 
-/* 인쇄하면 색이 빠질 수 있다 — 단계 말이 글로 남아 읽힌다 */
+/* 종이에서는 선만 남긴다 — 회색으로 떨어진 칠이 축 이름을 삼킨다.
+   단계 말은 옆의 표에 글로 남아 읽힌다 */
 @media print {
   .shape {
-    fill-opacity: 0.15;
+    fill: none;
   }
 }
 </style>

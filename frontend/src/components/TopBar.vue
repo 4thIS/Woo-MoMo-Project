@@ -315,4 +315,11 @@ onBeforeUnmount(() => io?.disconnect())
   box-shadow: 3px 3px 0 var(--ink);
   cursor: pointer;
 }
+
+/* 종이에 길잡이 바는 쓸모가 없다 — 누를 수 없는 버튼만 남는다 */
+@media print {
+  .topbar {
+    display: none;
+  }
+}
 </style>

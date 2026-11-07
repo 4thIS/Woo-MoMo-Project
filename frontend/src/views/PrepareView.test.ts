@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -1082,5 +1084,31 @@ describe('PrepareView — 벤 회사 면접의 추가 칸 (이슈 143)', () => {
     await w.find('[data-test=job]').trigger('blur')
     await flushPromises()
     expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+  })
+})
+
+describe('PrepareView — 이력서 탭 꼴 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'PrepareView.vue'), 'utf8')
+
+  it('탭에 제 꼴이 있다 — 규칙이 없으면 기본 버튼 배경 위 흰 글자가 되어 보이지 않는다', () => {
+    expect(src).toMatch(/\.tab \{[^}]*background:\s*none/)
+    expect(src).toMatch(/\.tab \{[^}]*color:\s*var\(--text-3\)/)
+  })
+
+  it('고른 탭만 채운다 — 넷이 다 칠해지면 어느 것이 켜졌는지 모른다', () => {
+    expect(src).toMatch(/\.tab\.on \{[^}]*background:\s*var\(--accent\)/)
+  })
+
+  it('화면 이름과 개인정보 고지를 준비 화면이 또 적지 않는다 — 전역 상단바와 랜딩이 이미 적는다', () => {
+    expect(src).not.toMatch(/모의면접 · 준비/)
+    expect(src).not.toMatch(/이력서·입력 내용은/)
+  })
+})
+
+describe('PrepareView — 탭은 떠오르지 않는다 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'PrepareView.vue'), 'utf8')
+
+  it('탭에 .press를 붙이지 않는다 — 기본 그림자가 없어 hover에서만 튀어나와 옆 탭을 덮는다', () => {
+    expect(src).not.toMatch(/class="mono tab press"/)
   })
 })

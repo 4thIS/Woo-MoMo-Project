@@ -333,11 +333,6 @@ async function clearAndRetry() {
 
 <template>
   <div class="prepare stars">
-    <header class="mono topbar">
-      <span>모두의 모의면접 · 준비</span>
-      <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>
-    </header>
-
     <!-- 기다리는 4분을 입력하는 4분으로 — 상황판과 입력을 한 화면에 나란히 세운다.
          좁으면 상황판이 위로 올라가 가로로 눕는다 (2026-11-07) -->
     <div class="cols">
@@ -703,7 +698,7 @@ async function clearAndRetry() {
                 :key="t"
                 type="button"
                 role="tab"
-                class="mono tab press"
+                class="mono tab"
                 :class="{ on: resumeTab === t }"
                 :aria-selected="resumeTab === t"
                 data-test="resume-tab"
@@ -869,37 +864,8 @@ async function clearAndRetry() {
 }
 /* scroll-padding-top은 문서(html)로 옮겼고, 섹션 최소 높이는 버렸다 — 스크롤러가
    요소가 아니라 문서이고, 내용이 길면 그냥 더 스크롤된다 (2026-11-07 철거) */
-/* 전역 상단바(로그인·보관함·내정보)는 fixed로 화면 오른쪽 위를 덮는다.
-   머리글을 그 아래에서 시작하게 해야 "…떠나지 않습니다"와 상단바 글자가 포개지지 않는다.
-   가로로 피하는 방법은 화면이 좁아질수록 무너진다 — 세로로 비킨다 (점검 2026-11-02) */
-.topbar {
-  position: sticky;
-  top: var(--topbar-h);
-  z-index: 1;
-  background: var(--bg);
-  height: 72px;
-  max-width: var(--content-w);
-  /* 위쪽 비킴은 전역 상단바의 자리지기가 맡는다 — 여기서 또 비키면 두 번 밀린다
-     (2026-11-07). sticky의 top은 그대로다: 고정된 전역 바 아래에 붙어야 한다 */
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--fs-label);
-  color: var(--text-2);
-  padding: 0 var(--sp-4);
-}
-/* 좁으면 둘을 나란히 둘 자리가 없다 — 가로로 밀어 넣으면 어절 중간에서 끊긴다 */
-@media (max-width: 720px) {
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: var(--sp-1);
-    height: auto;
-    min-height: 72px;
-  }
-}
+/* 준비 화면의 지역 머리글을 걷었다 (2026-11-08). 화면 이름은 전역 상단바가 이미
+   적고, 개인정보 고지는 랜딩과 약관에 남아 있다 — 같은 말을 세 번 하지 않는다 */
 .dim {
   color: var(--text-3);
 }
@@ -962,6 +928,49 @@ async function clearAndRetry() {
   padding: var(--sp-3) var(--sp-4);
   resize: vertical;
 }
+/* 이력서를 넣는 네 방법. 고른 것만 채운다 — 넷이 다 칠해지면 어느 것이 켜졌는지 모른다.
+   (2026-11-08: 이 규칙이 통째로 빠져 있어 탭이 기본 버튼 배경 위 흰 글자로 보이지 않았다)
+
+   `.press`를 쓰지 않는 이유: 그 어법은 "기본 그림자 → hover면 2px 떠오르며 6px"이라
+   기본 그림자가 없는 탭에 붙이면 hover에서만 검은 그림자가 튀어나오며 옆 탭 위로 올라탄다.
+   탭은 떠오르는 버튼이 아니라 고르는 것이다 — 자리에 가만히 있고 색으로만 답한다. */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: var(--win-border);
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+.tab:hover:not(.on) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.tab.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+/* 저장해 둔 것이 몇 개인지 — 탭 이름 뒤에 붙는다 */
+.tab .count {
+  font-size: var(--fs-meta);
+  padding: 0 var(--sp-1);
+  background: var(--raise);
+  color: var(--text-2);
+}
+.tab.on .count {
+  background: var(--bg);
+  color: var(--accent);
+}
+
 /* 저장해 둔 것 고르기 — PDF 올리기 위에 둔다. 가진 사람에게는 이쪽이 빠른 길이다 */
 .saved {
   display: flex;
