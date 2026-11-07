@@ -78,9 +78,13 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
       <span v-if="sub" class="mono sub wide">{{ sub }}</span>
       <span class="mono sub narrow">{{ subNarrow }}</span>
     </span>
-    <span class="mono num" data-test="row-count">{{ entry.questionCount }}문항</span>
-    <span class="mono num" data-test="row-took">{{ took }}</span>
-    <span class="mono num" data-test="row-when">{{ when }}</span>
+    <!-- 셋을 묶어 둔다. 넓은 화면에서는 display:contents로 풀려 제 열에 서고,
+         좁은 화면에서는 한 줄로 모인다 — 안 묶으면 저마다 한 줄씩 먹는다 -->
+    <span class="nums">
+      <span class="mono num" data-test="row-count">{{ entry.questionCount }}문항</span>
+      <span class="mono num" data-test="row-took">{{ took }}</span>
+      <span class="mono num" data-test="row-when">{{ when }}</span>
+    </span>
   </button>
 </template>
 
@@ -143,6 +147,9 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
 .sub.narrow {
   display: none;
 }
+.nums {
+  display: contents;
+}
 /* 숫자는 자릿수 고정 — 그래야 세로로 훑어 비교된다 */
 .num {
   text-align: right;
@@ -150,7 +157,7 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
-/* 640px 아래에서는 열이 안 선다 — 두 줄로 돌아가되 지원 직무가 첫 줄이다 */
+/* 640px 아래에서는 열이 안 선다 — 얼굴 옆에 제목·곁·숫자가 세 줄로 쌓인다 */
 @media (max-width: 640px) {
   .row {
     grid-template-columns: auto 1fr;
@@ -164,13 +171,19 @@ const subNarrow = computed(() => [sub.value, iv.value.displayName].filter(Boolea
   .sub.narrow {
     display: inline;
   }
+  .face {
+    grid-row: 1 / span 2;
+  }
   .subject {
     grid-column: 2;
   }
-  .num {
+  .nums {
+    display: flex;
     grid-column: 2;
+    gap: var(--sp-3);
+  }
+  .num {
     text-align: left;
-    display: inline;
   }
 }
 </style>

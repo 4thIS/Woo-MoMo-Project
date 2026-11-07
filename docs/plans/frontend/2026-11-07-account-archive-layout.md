@@ -62,7 +62,7 @@
 - Consumes: `ArchiveEntry`(`services/account`), `interviewerById`·`CENTER_FRAME_PX`·`DEFAULT_INTERVIEWER`(`@/interviewers`), `formatDuration`(`utils/timing`), `FIELD_LABELS`·`Field`(`stores/interview`)
 - Produces: 없음(화면만)
 
-- [ ] **Step 1: 실패하는 테스트 — `ArchiveRow.test.ts`**
+- [x] **Step 1: 실패하는 테스트 — `ArchiveRow.test.ts`**
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -123,12 +123,12 @@ describe('ArchiveRow — 열로 세운다 (2026-11-07)', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/components/account/ArchiveRow.test.ts`
 Expected: FAIL — `[data-test=row-subject]`를 찾지 못한다
 
-- [ ] **Step 3: `ArchiveRow.vue` 다시 쓰기**
+- [x] **Step 3: `ArchiveRow.vue` 다시 쓰기**
 
 `ROW_SCALE`을 `0.5`로 고친다. 시트는 92×92이므로 46px이 된다 — 1/2배는 픽셀이 정확히 2:1로 줄어 또렷하고, 지금의 0.6배(55.2px)는 뭉갠다.
 
@@ -291,12 +291,12 @@ const when = computed(() => {
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/components/account/ArchiveRow.test.ts`
 Expected: PASS 6/6
 
-- [ ] **Step 5: 한도 안내를 상시로 — 실패하는 테스트**
+- [x] **Step 5: 한도 안내를 상시로 — 실패하는 테스트**
 
 `ArchiveModal.test.ts`에 더한다:
 
@@ -307,7 +307,7 @@ it('한도는 꽉 차기 전에도 적는다 — 꽉 찼을 때만 말하면 그
 })
 ```
 
-- [ ] **Step 6: 실패 확인 → 구현**
+- [x] **Step 6: 실패 확인 → 구현**
 
 Run: `pnpm exec vitest run src/components/account/ArchiveModal.test.ts`
 Expected: FAIL — `archive-limit`이 없다
@@ -329,7 +329,7 @@ Expected: FAIL — `archive-limit`이 없다
 
 기존 `data-test="archive-full"`을 보던 테스트는 `archive-limit`의 **글**로 옮겨 쓴다(단언을 지우지 않는다).
 
-- [ ] **Step 7: 게이트 + 커밋**
+- [x] **Step 7: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -350,7 +350,7 @@ git add frontend/src && git commit -m "feat(frontend): 보관함 목록을 열�
 - Consumes: `ArchiveDetail`(`services/account`), `useAccountStore().getArchive(id)`, `useInterviewStore().phase`, `useModalStore()`
 - Produces: `useArchiveViewStore()` — `{ detail: ArchiveDetail | null, open(id: string): Promise<void>, close(): void }`
 
-- [ ] **Step 1: 실패하는 테스트 — `archiveView.test.ts`**
+- [x] **Step 1: 실패하는 테스트 — `archiveView.test.ts`**
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -418,12 +418,12 @@ describe('archiveView', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/stores/archiveView.test.ts`
 Expected: FAIL — `./archiveView` 모듈이 없다
 
-- [ ] **Step 3: `stores/archiveView.ts`**
+- [x] **Step 3: `stores/archiveView.ts`**
 
 ```ts
 /** 지금 보고 있는 보관함 상세 하나.
@@ -457,12 +457,12 @@ export const useArchiveViewStore = defineStore('archiveView', {
 })
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/stores/archiveView.test.ts`
 Expected: PASS 6/6
 
-- [ ] **Step 5: 뒤로 가기와 화면 분기 — `App.vue`**
+- [x] **Step 5: 뒤로 가기와 화면 분기 — `App.vue`**
 
 `popstate`를 듣는 곳은 앱 하나다. 스토어가 전역 리스너를 달면 테스트마다 쌓인다.
 
@@ -504,7 +504,7 @@ async function onRemove() {
 
 `ArchiveDetailView`는 Task 3에서 채운다. 이 Step에서는 `<main>{{ entry.id }}</main>`짜리 껍데기로 두고 `defineProps`/`defineEmits`만 맞춘다.
 
-- [ ] **Step 6: `ArchiveModal`이 스토어로 넘긴다**
+- [x] **Step 6: `ArchiveModal`이 스토어로 넘긴다**
 
 `ArchiveModal.vue`에서 `detail` ref, `ArchiveDetail` import, `openDetail`, `remove`를 걷는다. 줄 클릭을 스토어로 보낸다:
 
@@ -514,7 +514,7 @@ async function onRemove() {
 
 `ArchiveDetail.vue`와 `ArchiveDetail.test.ts`를 `git rm`한다.
 
-- [ ] **Step 7: 게이트 + 커밋**
+- [x] **Step 7: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -534,14 +534,14 @@ git add -A frontend/src && git commit -m "feat(frontend): 보관함 상세를 �
 - Consumes: `ReportRail`(+`TocItem`), `ReportCards`, `ReportV2Cards`, `answersForReport`(`utils/reportAnswers`), `asReportV2`·`itemsInOrder`(`utils/reportV2`), `formatDuration`
 - Produces: `useReadingToc(bodyRef, tocItems)` — `{ current: Ref<string|undefined>, read: Ref<Set<string>> }`
 
-- [ ] **Step 1: 읽음 추적을 composable로 — 먼저 옮기고 기존 테스트로 확인**
+- [x] **Step 1: 읽음 추적을 composable로 — 먼저 옮기고 기존 테스트로 확인**
 
 `ReportView.vue`의 `current`/`read`/`watchCards` 블록을 그대로 `composables/useReadingToc.ts`로 옮긴다. 동작은 바꾸지 않는다.
 
 Run: `pnpm exec vitest run src/views/ReportView.test.ts`
 Expected: PASS — 기존 전부. 하나라도 깨지면 옮기다 바꾼 것이다
 
-- [ ] **Step 2: 실패하는 테스트 — `ArchiveDetailView.test.ts`**
+- [x] **Step 2: 실패하는 테스트 — `ArchiveDetailView.test.ts`**
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -643,12 +643,12 @@ describe('ArchiveDetailView', () => {
 })
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run: `pnpm exec vitest run src/views/ArchiveDetailView.test.ts`
 Expected: FAIL — 파일이 없다
 
-- [ ] **Step 4: `ArchiveDetailView.vue`**
+- [x] **Step 4: `ArchiveDetailView.vue`**
 
 `ReportView.vue`의 두 기둥 어법을 그대로 따른다. 다른 것은 머리 슬롯·액션 슬롯·탭뿐이다.
 
@@ -775,12 +775,12 @@ function anchorOf(i: number): string | undefined {
 `.read`는 리포트 카드와 같은 읽기 꼴을 쓴다(`--font-read` · `--lh-read` · `--read-w`).
 `.cols`/`.body` 스타일은 `ReportView.vue`의 것과 같은 값으로 둔다 — 둘이 어긋나면 "같은 화면"이 아니게 된다.
 
-- [ ] **Step 5: 통과 확인**
+- [x] **Step 5: 통과 확인**
 
 Run: `pnpm exec vitest run src/views/ArchiveDetailView.test.ts src/views/ReportView.test.ts`
 Expected: PASS — 새 10건 + 기존 ReportView 전부
 
-- [ ] **Step 6: 게이트 + 커밋**
+- [x] **Step 6: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit && pnpm build
@@ -800,7 +800,7 @@ git add -A frontend/src && git commit -m "feat(frontend): 보관함 상세 화�
 - Consumes: `matchQuestions`(`utils/reportAnswers`)
 - Produces: `clipsByCard(report, messages, recordings): Clip[][]`
 
-- [ ] **Step 1: 실패하는 테스트 — `archiveClips.test.ts`**
+- [x] **Step 1: 실패하는 테스트 — `archiveClips.test.ts`**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -844,12 +844,12 @@ describe('clipsByCard', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/utils/archiveClips.test.ts`
 Expected: FAIL — 모듈이 없다
 
-- [ ] **Step 3: `utils/archiveClips.ts`**
+- [x] **Step 3: `utils/archiveClips.ts`**
 
 ```ts
 /** 녹음을 리포트 카드에 나눠 붙인다.
@@ -899,12 +899,12 @@ export function clipsByCard(
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/utils/archiveClips.test.ts`
 Expected: PASS 4/4
 
-- [ ] **Step 5: 카드 바닥 슬롯 — 실패하는 테스트**
+- [x] **Step 5: 카드 바닥 슬롯 — 실패하는 테스트**
 
 `ReportCards.test.ts`에 더한다:
 
@@ -918,7 +918,7 @@ it('카드 바닥에 끼울 자리를 연다 — 보관함이 녹음 재생바�
 })
 ```
 
-- [ ] **Step 6: 실패 확인 → 구현**
+- [x] **Step 6: 실패 확인 → 구현**
 
 Run: `pnpm exec vitest run src/components/report/ReportCards.test.ts`
 Expected: FAIL — 슬롯이 없다
@@ -932,7 +932,7 @@ Expected: FAIL — 슬롯이 없다
 
 `ReportV2Cards.vue`에도 같은 슬롯을 연다. **벤 기록이 녹음을 갖는 쪽**이므로 여기가 더 중요하다. 슬롯 인자는 카드 순번(`i`)으로 같게 맞춘다.
 
-- [ ] **Step 7: 상세 화면에서 채운다**
+- [x] **Step 7: 상세 화면에서 채운다**
 
 `ArchiveDetailView.vue`:
 
@@ -966,7 +966,7 @@ const clips = computed(() =>
 </template>
 ```
 
-- [ ] **Step 8: Review Focus 1 — 옛 벤 기록**
+- [x] **Step 8: Review Focus 1 — 옛 벤 기록**
 
 `ArchiveDetailView.test.ts`에:
 
@@ -983,7 +983,7 @@ it('녹음이 없는 기록에는 재생바를 그리지 않는다', () => {
 })
 ```
 
-- [ ] **Step 9: 게이트 + 커밋**
+- [x] **Step 9: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -1002,7 +1002,7 @@ git add -A frontend/src && git commit -m "feat(frontend): 녹음을 그 문항 �
 - Consumes: `useAccountStore()`(`session`·`profile`·`tickets`·`isPremium`·`archive`), `SpriteFrame`, `ARCHIVE_LIMIT`(`utils/archive`), `useModalStore()`
 - Produces: 없음
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 기존 `MeModal.test.ts`의 마운트 헬퍼를 그대로 쓴다(없으면 `me(patch)` 하나를 만든다 — `account.$patch` 후 `mount(MeModal, { props: { open: true } })`).
 
@@ -1048,12 +1048,12 @@ describe('MeModal — 윗덩이 (2026-11-07)', () => {
 
 > `src`는 `readFileSync(join(__dirname, 'MeModal.vue'), 'utf8')`. 줄 높이·칸 폭은 마운트로 잴 수 없어(jsdom에 레이아웃이 없다) 규칙으로 고정한다.
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/components/account/MeModal.test.ts`
 Expected: FAIL — `me-identity`가 없다
 
-- [ ] **Step 3: 윗덩이를 다시 짠다**
+- [x] **Step 3: 윗덩이를 다시 짠다**
 
 `dl.kv`를 버리고 셋으로 가른다: **신원(초상+이름 줄+이메일)** · **티켓 칸** · **보관함 칸**.
 
@@ -1192,12 +1192,12 @@ Expected: FAIL — `me-identity`가 없다
 
 티켓 더 사기는 `useModalStore().show('premium')`을 부른다 — 모달 하나 규칙(`stores/modal.ts`)을 따른다.
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/components/account/MeModal.test.ts`
 Expected: PASS — 새 6건 + 기존 전부
 
-- [ ] **Step 5: 게이트 + 커밋**
+- [x] **Step 5: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -1216,7 +1216,7 @@ git add frontend/src && git commit -m "feat(frontend): 내정보 윗덩이 — �
 - Consumes: `RESUME_SLOTS`·`ResumeSlot`(`services/account`), `account.slotsOf(kind)`, `ResumeSlotEditor`
 - Produces: 없음
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 describe('MeModal — 이력서 칸 (2026-11-07)', () => {
@@ -1271,12 +1271,12 @@ describe('MeModal — 이력서 칸 (2026-11-07)', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/components/account/MeModal.test.ts`
 Expected: FAIL — `slot-card`가 없다(지금은 `slot-row`)
 
-- [ ] **Step 3: 슬롯을 카드로**
+- [x] **Step 3: 슬롯을 카드로**
 
 `moreOpen`을 더한다(한 번에 하나만):
 
@@ -1405,12 +1405,12 @@ watch(kind, () => {
 
 `ResumeSlotEditor`는 격자 **아래**에 그대로 둔다 — 카드 안에 넣으면 한 칸이 세로로 길어져 격자가 무너진다.
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/components/account/MeModal.test.ts`
 Expected: PASS — 새 6건 + 기존 전부
 
-- [ ] **Step 5: 로그아웃을 바닥 오른쪽으로**
+- [x] **Step 5: 로그아웃을 바닥 오른쪽으로**
 
 `#foot` 슬롯: 왼쪽에 `계정을 지우려면 메일로 알려 주세요`, 오른쪽에 빨간 테두리 `로그아웃`.
 
@@ -1427,7 +1427,7 @@ Expected: PASS — 새 6건 + 기존 전부
 }
 ```
 
-- [ ] **Step 6: 게이트 전부 + 커밋**
+- [x] **Step 6: 게이트 전부 + 커밋**
 
 ```bash
 cd frontend
@@ -1441,22 +1441,22 @@ git add frontend/src && git commit -m "feat(frontend): 내정보 이력서 칸 �
 
 **Files:** 없음(확인만)
 
-- [ ] **Step 1: 1440 / 900 / 380px에서 세 화면**
+- [x] **Step 1: 1440 / 900 / 380px에서 세 화면**
 
 개발 서버를 띄우고 보관함 목록 · 보관함 상세 · 내정보를 본다.
 Expected: 380px에서 `document.documentElement.scrollWidth === clientWidth`, 보관함 줄이 두 줄로 눕고 지원 직무가 첫 줄, 내정보가 1열, 빈 이력서 칸은 하나.
 
-- [ ] **Step 2: 뒤로 가기 두 번 (Review Focus 3)**
+- [x] **Step 2: 뒤로 가기 두 번 (Review Focus 3)**
 
 상세에서 목차 앵커를 누른 뒤 뒤로 가기를 두 번.
 Expected: 첫 번째는 앵커가 되감기고 두 번째에 목록으로 돌아온다.
 
-- [ ] **Step 3: 면접 중 차단 (Review Focus 2)**
+- [x] **Step 3: 면접 중 차단 (Review Focus 2)**
 
 면접을 시작한 상태에서 상단바 → 보관함 → 한 줄 클릭.
 Expected: 아무 일도 일어나지 않는다. 면접 화면 그대로.
 
-- [ ] **Step 4: 인쇄**
+- [x] **Step 4: 인쇄**
 
 상세 화면에서 인쇄 미리보기.
 Expected: 레일의 목차·액션·탭이 빠지고 한 줄기로 이어진다(리포트 화면과 같다).

@@ -538,5 +538,6 @@ watch(
 .signout {
   border-color: var(--danger);
   color: var(--danger);
+  white-space: nowrap;
 }
 </style>
