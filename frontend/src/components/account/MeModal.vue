@@ -213,6 +213,10 @@ watch(
     </div>
 
     <template #foot>
+      <!-- 상단바에서 옮겨 왔다 — 쓰는 사람이 둘뿐이라 평소에 보일 이유가 없다 (2026-11-07) -->
+      <a v-if="account.session?.isAdmin" href="/admin" class="mono link press" data-test="me-admin"
+        >관리자 화면</a
+      >
       <PixelButton variant="secondary" data-test="me-signout" @click="signOut"
         >로그아웃</PixelButton
       >

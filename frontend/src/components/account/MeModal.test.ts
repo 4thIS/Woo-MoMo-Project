@@ -224,3 +224,36 @@ describe('MeModal — 이력서 슬롯', () => {
     expect(document.querySelector('[data-test=slot-title]')).toBeNull()
   })
 })
+
+describe('MeModal — 관리자 진입 (상단바에서 옮겨 옴)', () => {
+  const asUser = (isAdmin: boolean) => {
+    setAccountApi({
+      ...makeMockAccount({ delayMs: 0 }),
+      me: async () => ({
+        userId: 'u_1',
+        email: 'a@b.com',
+        tier: 'member' as const,
+        tickets: 0,
+        isAdmin,
+        profile: { name: 'x', age: null },
+        createdAt: '2026-10-01T00:00:00Z',
+      }),
+    })
+  }
+
+  it('관리자는 내정보에서 관리자 화면으로 간다', async () => {
+    asUser(true)
+    await useAccountStore().load()
+    modal()
+    await settle()
+    expect(q<HTMLAnchorElement>('me-admin').getAttribute('href')).toBe('/admin')
+  })
+
+  it('관리자가 아니면 그 링크가 없다', async () => {
+    asUser(false)
+    await useAccountStore().load()
+    modal()
+    await settle()
+    expect(document.querySelector('[data-test=me-admin]')).toBeNull()
+  })
+})

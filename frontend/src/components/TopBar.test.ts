@@ -8,6 +8,9 @@ import { makeMockAccount } from '@/services/accountMock'
 
 const bar = () => mount(TopBar, { attachTo: document.body })
 
+/** 그림문자 한 자라도 있으면 기종마다 모양이 달라진다 — 픽셀 UI에서는 쓰지 않는다 */
+const EMOJI = /\p{Extended_Pictographic}/u
+
 /** onMounted의 load()는 0ms 타이머를 거친다 — flushPromises만으로는 안 끝난다 */
 const settle = async () => {
   await new Promise((r) => setTimeout(r, 0))
@@ -59,11 +62,19 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const w = bar()
     await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
     await flushPromises()
-    // 목업 가입 계정은 관리자라 top-admin도 나온다 — 순서는 나머지 셋만 본다
-    const keys = [...w.element.querySelectorAll('[data-test^=top-]')]
-      .map((e) => (e as HTMLElement).dataset.test)
-      .filter((k) => k !== 'top-admin')
+    const keys = [...w.element.querySelectorAll('[data-test^=top-]')].map(
+      (e) => (e as HTMLElement).dataset.test,
+    )
     expect(keys).toEqual(['top-premium', 'top-tickets', 'top-archive', 'top-me'])
+  })
+
+  it('티켓은 이모지가 아니라 픽셀 아이콘으로 그린다 — 기종마다 모양이 달라진다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    const t = w.get('[data-test=top-tickets]')
+    expect(t.text()).not.toMatch(EMOJI)
+    expect(t.find('svg').exists()).toBe(true)
   })
 
   it('뜰 때 저장된 세션을 되찾는다', async () => {
@@ -143,13 +154,11 @@ describe('TopBar — 관리자 진입', () => {
     })
   }
 
-  it('관리자는 /admin 링크가 보인다', async () => {
+  it('관리자 링크는 상단바에 두지 않는다 — 쓰는 사람이 둘뿐이라 내정보 안으로 옮겼다', async () => {
     asUser(true)
     const w = bar()
     await settle()
-    const a = w.get('[data-test=top-admin]')
-    expect(a.attributes('href')).toBe('/admin')
-    expect(a.element.tagName).toBe('A')
+    expect(w.find('[data-test=top-admin]').exists()).toBe(false)
   })
 
   it('일반 로그인 사용자에게는 없다', async () => {
