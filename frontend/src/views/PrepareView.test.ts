@@ -48,10 +48,20 @@ import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
 import PrepareView from './PrepareView.vue'
 
+/** 이력서 탭을 이름으로 연다 — 저장본 탭이 있고 없고에 따라 차례가 달라진다 */
+const openTab = async (
+  w: { findAll: (s: string) => { text: () => string; trigger: (e: string) => Promise<void> }[] },
+  label: string,
+) => {
+  const tab = w.findAll('[data-test=resume-tab]').find((t) => t.text().startsWith(label))
+  if (!tab) throw new Error(`이력서 탭 없음: ${label}`)
+  await tab.trigger('click')
+}
+
 const mountView = () =>
   mount(PrepareView, { global: { stubs: { PixelProgress: true, InterviewerPicker: true } } })
 
-/** ① 지원 정보(분야 IT + 직무)를 채우고 직무 입력을 떠나 ② 이력서 단계로 넘어간다 */
+/** 지원 정보(분야 IT + 직무)를 채운다 — 이력서는 같은 화면에 이미 있다 */
 async function fillProfile(w: ReturnType<typeof mountView>) {
   await w.findAll('[role=radio]')[0].trigger('click') // IT
   await flushPromises()
@@ -142,11 +152,10 @@ describe('PrepareView', () => {
     expect(useInterviewStore().resumeDone).toBe(true)
   })
 
-  it('간단 이력서 작성을 열어 완성하면 이력서 입력이 끝난다', async () => {
+  it('직접 쓰기 탭에서 완성하면 이력서 입력이 끝난다', async () => {
     const w = mountView()
     await fillProfile(w)
-    await w.find('[data-test=form-open]').trigger('click')
-    expect(w.find('[data-test=form-open]').exists()).toBe(false)
+    await openTab(w, '직접 쓰기')
     w.findComponent({ name: 'ResumeForm' }).vm.$emit(
       'done',
       '이름: 홍길동 ' + '지원동기: 가 '.repeat(20),
@@ -154,43 +163,49 @@ describe('PrepareView', () => {
     await flushPromises()
     expect(useInterviewStore().resumeDone).toBe(true)
     expect(useInterviewStore().resumeName).toBe('직접 작성')
-    expect(w.find('[data-test=form-open]').text()).toContain('간단 이력서 수정')
   })
 
-  it('처음엔 지원 정보만 보이고 이력서 폼은 없다; 다음 화살표는 비활성', () => {
-    const w = mountView()
-    expect(w.find('[data-test=step-profile]').exists()).toBe(true)
-    expect(w.find('[data-test=step-resume]').exists()).toBe(false)
-    expect((w.find('[data-test=step-next]').element as HTMLButtonElement).disabled).toBe(true)
-    expect((w.find('[data-test=step-prev]').element as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('분야·직무를 채우고 직무 입력을 떠나면 같은 자리에 이력서 폼이 나타난다', async () => {
-    const w = mountView()
-    await w.findAll('[role=radio]')[0].trigger('click')
-    await flushPromises() // 폴백 질문 로드까지 끝낸 뒤 직무 입력
-    await w.find('[data-test=job]').setValue('백엔드 개발자')
-    expect(w.find('[data-test=step-resume]').exists()).toBe(false) // 입력 중엔 안 넘어감
-    await w.find('[data-test=job]').trigger('blur')
-    await flushPromises()
-    expect(w.find('[data-test=step-profile]').exists()).toBe(false)
-    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
-    expect(w.text()).toContain('2 / 2')
-  })
-
-  it('화살표로 지원 정보 ↔ 이력서를 왕복하고, 뒤로 간 뒤엔 자동 전환하지 않는다', async () => {
+  it('이력서 넣는 방법을 탭으로 접는다 — 비로그인은 셋, 한 번에 하나만 보인다', async () => {
     const w = mountView()
     await fillProfile(w)
-    await w.find('[data-test=step-prev]').trigger('click')
+    const tabs = w.findAll('[data-test=resume-tab]')
+    expect(tabs).toHaveLength(3)
+    expect(w.find('[data-test=drop]').exists()).toBe(true)
+    expect(w.find('[data-test=paste]').exists()).toBe(false)
+    await tabs.at(-1)!.trigger('click')
+    expect(w.find('[data-test=paste]').exists()).toBe(true)
+    expect(w.find('[data-test=drop]').exists()).toBe(false)
+  })
+
+  it('PDF에서 글자를 못 읽으면 붙여넣기 탭으로 데려간다 — 경고만 띄우고 두면 길이 끊긴다', async () => {
+    vi.mocked(extractPdfText).mockResolvedValue('짧음')
+    const w = mountView()
+    await fillProfile(w)
+    const file = new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' })
+    await w.find('[data-test=drop]').trigger('drop', { dataTransfer: { files: [file] } })
+    await flushPromises()
+    expect(w.find('[data-test=paste]').exists()).toBe(true)
+    expect(w.text()).toContain('글자를 거의 읽지 못했습니다')
+  })
+
+  it('지원 정보와 이력서를 한 화면에 둔다 — 칸이 넷 이하라 단계를 나누지 않는다', () => {
+    const w = mountView()
     expect(w.find('[data-test=step-profile]').exists()).toBe(true)
-    expect((w.find('[data-test=job]').element as HTMLInputElement).value).toBe('백엔드 개발자')
-    await w.find('[data-test=job]').setValue('프론트엔드 개발자')
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
+    expect(w.find('[data-test=step-next]').exists()).toBe(false)
+    expect(w.find('[data-test=step-prev]').exists()).toBe(false)
+  })
+
+  it('직무를 채워도 화면이 갈아 끼워지지 않는다 — 둘 다 그대로 있다', async () => {
+    const w = mountView()
+    await w.findAll('[role=radio]')[0].trigger('click')
+    await flushPromises()
+    await w.find('[data-test=job]').setValue('백엔드 개발자')
     await w.find('[data-test=job]').trigger('blur')
     await flushPromises()
-    expect(w.find('[data-test=step-profile]').exists()).toBe(true) // 자동 전환 없음
-    await w.find('[data-test=step-next]').trigger('click')
+    expect(w.find('[data-test=step-profile]').exists()).toBe(true)
     expect(w.find('[data-test=step-resume]').exists()).toBe(true)
-    expect(useInterviewStore().profile.job).toBe('프론트엔드 개발자')
+    expect(useInterviewStore().profile.job).toBe('백엔드 개발자')
   })
 
   it('모델 ready + 입력 완료면 버튼 활성, 클릭하면 세션을 시작한다', async () => {
@@ -453,8 +468,96 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
     m.ttsStatus = 'ready'
     const w = mountView()
     await fillProfile(w)
-    await w.find('[data-test=form-open]').trigger('click')
+    await openTab(w, '직접 쓰기')
     expect(w.find('[data-test=start]').text()).toContain("'이력서 완성'을 눌러 주세요")
+  })
+})
+
+describe('PrepareView — 두 기둥', () => {
+  it('상황판과 입력이 한 화면에 나란히 선다 — 기다리는 동안 입력한다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    const rail = w.get('[data-test=status-rail]')
+    expect(rail.find('[data-test=progress]').exists()).toBe(true)
+    expect(rail.find('[data-test=checklist]').exists()).toBe(true)
+    expect(rail.find('[data-test=start]').exists()).toBe(true)
+  })
+
+  it('면접관 칩과 도움말 다시 보기는 입력 창 머리로 올라간다', async () => {
+    useHintsStore().disable()
+    const w = mountView()
+    await fillProfile(w)
+    const head = w.get('[data-test=form-head]')
+    expect(head.find('[data-test=interviewer-chip]').exists()).toBe(true)
+    expect(head.find('[data-test=change-interviewer]').exists()).toBe(true)
+    expect(head.find('[data-test=hints-on]').exists()).toBe(true)
+  })
+})
+
+describe('PrepareView — 시작 영역', () => {
+  it('벤 고지와 목소리 동의를 한 상자로 묶고, 벤일 때만 띄운다', async () => {
+    const free = mountView()
+    await fillProfile(free)
+    expect(free.find('[data-test=ben-box]').exists()).toBe(false)
+
+    useInterviewerStore().select('m2')
+    const ben = mountView()
+    await fillProfile(ben)
+    const box = ben.get('[data-test=ben-box]')
+    expect(box.find('[data-test=ben-notice]').exists()).toBe(true)
+    expect(box.find('[data-test=voice-consent-row]').exists()).toBe(true)
+  })
+
+  it('"목소리 없이 시작"은 버튼이 아니라 곁가지 링크다 — 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다', async () => {
+    const m = useModelStore()
+    m.manifest = manifestWithTts
+    m.status = 'ready'
+    m.$patch({ ttsStatus: 'error', ttsError: 'boom' })
+    const w = mountView()
+    await fillProfile(w)
+    useInterviewStore().setResume('cv.pdf', '가'.repeat(100))
+    await flushPromises()
+    const alt = w.get('[data-test=start-voiceless]')
+    expect(alt.element.tagName).toBe('BUTTON')
+    expect(alt.classes()).toContain('link')
+  })
+
+  it('체크리스트는 시작 버튼과 한 묶음이다 — 왜 못 누르는지가 버튼 옆에 있어야 한다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    const go = w.get('[data-test=go-box]')
+    expect(go.find('[data-test=checklist]').exists()).toBe(true)
+    expect(go.find('[data-test=start]').exists()).toBe(true)
+  })
+})
+
+describe('PrepareView — 벤 성향', () => {
+  it('무료 면접관에는 성향 버튼이 없다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=ben-toggle]').exists()).toBe(false)
+  })
+
+  it('벤이면 성향 버튼이 있고 기본은 접혀 있다 — 준비 화면이 설정 화면이 되면 안 된다', async () => {
+    useInterviewerStore().select('m2')
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.find('[data-test=ben-toggle]').exists()).toBe(true)
+    expect(w.find('[data-test=ben-axis]').exists()).toBe(false)
+    await w.get('[data-test=ben-toggle]').trigger('click')
+    expect(w.findAll('[data-test=ben-axis]').length).toBeGreaterThan(0)
+  })
+
+  it('회사 이름이 없으면 회사 이야기 줄을 그리지 않는다 — 서버가 무시하는 칸이다', async () => {
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack('company') // 벤은 두 갈래를 다 본다 — 골라야 track이 정해진다
+    const w = mountView()
+    await fillProfile(w)
+    await w.get('[data-test=ben-toggle]').trigger('click')
+    expect(w.findAll('[data-test=ben-axis]')).toHaveLength(4)
+    useInterviewStore().setCompanyName('토스')
+    await w.vm.$nextTick()
+    expect(w.findAll('[data-test=ben-axis]')).toHaveLength(5)
   })
 })
 
@@ -755,10 +858,9 @@ describe('PrepareView — 트랙별 입력', () => {
     expect(w.find('[data-test=job]').exists()).toBe(false)
   })
 
-  it('대입이면 2단계 문구가 자기소개서로 바뀐다', async () => {
+  it('대입이면 긴 글의 이름이 자기소개서로 바뀐다', () => {
     pick('f3')
     const w = mountView()
-    await w.findAll('[data-test=step-next]')[0].trigger('click')
     expect(w.text()).toContain('자기소개서')
     expect(w.text()).not.toContain('이력서 PDF를')
   })
@@ -783,11 +885,10 @@ describe('PrepareView — 트랙별 입력', () => {
     expect((w.find('[data-test=start]').element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('대입은 네 칸을 채우면 자기소개서 단계로 넘어가는 화살표가 열린다', async () => {
+  it('대입은 네 칸을 채우기 전에도 자기소개서 자리가 같이 보인다', async () => {
     pick('f3')
     const w = mountView()
-    const next = () => w.find('[data-test=step-next]').element as HTMLButtonElement
-    expect(next().disabled).toBe(true)
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
     for (const [k, v] of [
       ['ad-name', '홍길동'],
       ['ad-age', '19'],
@@ -796,7 +897,8 @@ describe('PrepareView — 트랙별 입력', () => {
     ])
       await w.find(`[data-test=${k}]`).setValue(v)
     await flushPromises()
-    expect(next().disabled).toBe(false)
+    expect(w.find('[data-test=step-profile]').exists()).toBe(true)
+    expect(w.find('[data-test=step-resume]').exists()).toBe(true)
   })
 
   it('대입에서 네 칸을 채우면 입력 완료 표시가 뜬다', async () => {
@@ -870,6 +972,14 @@ describe('PrepareView — 저장한 이력서', () => {
     for (const s of slots) await a.saveResume({ ...s, text: `${s.title} 내용 `.repeat(20) })
     return a
   }
+
+  it('저장본이 있으면 탭이 넷이 되고 저장본이 기본이다 — 거기서 꺼내는 게 가장 빠르다', async () => {
+    await signedInWith({ kind: 'company', title: '백엔드 지원용' })
+    const w = mountView()
+    await fillProfile(w)
+    expect(w.findAll('[data-test=resume-tab]')).toHaveLength(4)
+    expect(w.find('[data-test=saved-resumes]').exists()).toBe(true)
+  })
 
   it('로그인했고 저장한 이력서가 있으면 고를 수 있다', async () => {
     await signedInWith(
