@@ -698,7 +698,7 @@ async function clearAndRetry() {
                 :key="t"
                 type="button"
                 role="tab"
-                class="mono tab press"
+                class="mono tab"
                 :class="{ on: resumeTab === t }"
                 :aria-selected="resumeTab === t"
                 data-test="resume-tab"
@@ -929,7 +929,11 @@ async function clearAndRetry() {
   resize: vertical;
 }
 /* 이력서를 넣는 네 방법. 고른 것만 채운다 — 넷이 다 칠해지면 어느 것이 켜졌는지 모른다.
-   (2026-11-08: 이 규칙이 통째로 빠져 있어 탭이 기본 버튼 배경 위 흰 글자로 보이지 않았다) */
+   (2026-11-08: 이 규칙이 통째로 빠져 있어 탭이 기본 버튼 배경 위 흰 글자로 보이지 않았다)
+
+   `.press`를 쓰지 않는 이유: 그 어법은 "기본 그림자 → hover면 2px 떠오르며 6px"이라
+   기본 그림자가 없는 탭에 붙이면 hover에서만 검은 그림자가 튀어나오며 옆 탭 위로 올라탄다.
+   탭은 떠오르는 버튼이 아니라 고르는 것이다 — 자리에 가만히 있고 색으로만 답한다. */
 .tabs {
   display: flex;
   flex-wrap: wrap;

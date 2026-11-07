@@ -1104,3 +1104,11 @@ describe('PrepareView — 이력서 탭 꼴 (2026-11-08)', () => {
     expect(src).not.toMatch(/이력서·입력 내용은/)
   })
 })
+
+describe('PrepareView — 탭은 떠오르지 않는다 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'PrepareView.vue'), 'utf8')
+
+  it('탭에 .press를 붙이지 않는다 — 기본 그림자가 없어 hover에서만 튀어나와 옆 탭을 덮는다', () => {
+    expect(src).not.toMatch(/class="mono tab press"/)
+  })
+})
