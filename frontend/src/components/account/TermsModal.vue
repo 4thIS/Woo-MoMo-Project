@@ -25,11 +25,14 @@ const emit = defineEmits<{ close: [] }>()
   border: 2px solid var(--line);
   padding: var(--sp-6);
 }
+/* 긴 글은 산세로. 픽셀 글꼴은 로고·제목·버튼·숫자가 맡는다. 산세는 같은 px에서
+   픽셀 글꼴보다 작아 보여 한 단계 키운다 (2026-11-07) */
 .line {
   margin: 0;
-  font-size: var(--fs-meta);
+  font-family: var(--font-read);
+  font-size: var(--fs-body-sm);
   color: var(--text-2);
-  line-height: 1.8;
+  line-height: var(--lh-read);
   word-break: keep-all;
 }
 </style>
