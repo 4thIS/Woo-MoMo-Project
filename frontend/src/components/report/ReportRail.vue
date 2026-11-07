@@ -176,9 +176,10 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
 .warn {
   color: var(--danger);
 }
-/* 16줄이 넘치면 **목차 안에서만** 스크롤한다. 본문 스크롤과 분리된다 */
+/* 16줄이 넘치면 **목차 안에서만** 스크롤한다. 본문 스크롤과 분리된다.
+   basis가 0이면 안 된다 — 높이가 내용에 맞는(auto) 기둥에서는 0으로 접혀 목록이 사라진다 */
 .toc {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -201,7 +202,7 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
   color: var(--danger);
 }
 .list {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   list-style: none;
@@ -263,11 +264,27 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
 .row .t.over {
   color: var(--danger);
 }
+/* 좁은 기둥에 버튼 셋을 나란히 두면 글자가 세로로 쪼개진다 — 쌓는다 */
 .actions {
   flex: none;
   padding: var(--sp-3);
   display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
+}
+.actions :deep(button) {
+  width: 100%;
+  white-space: nowrap;
+}
+/* 넓은 화면에서 기둥이 눕는 자리에서는 버튼도 한 줄로 돌아간다 */
+@media (max-width: 1024px) {
+  .actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .actions :deep(button) {
+    width: auto;
+  }
 }
 /* 종이에는 고정 기둥이 설 자리가 없다 — 머리글과 총평만 남기고 한 줄기로 편다.
    목차는 종이에서 쓸모가 없고(앵커를 누를 수 없다) 액션은 더 그렇다 */

@@ -76,6 +76,18 @@ describe('ReportRail', () => {
   })
 })
 
+describe('ReportRail — 기둥이 접히지 않는다', () => {
+  const src = readFileSync(join(__dirname, 'ReportRail.vue'), 'utf8')
+
+  it('목차의 flex-basis가 0이면 안 된다 — 높이가 auto인 기둥에서 목록이 0으로 접힌다', () => {
+    expect(src).not.toMatch(/\.toc \{[^}]*flex:\s*1 1 0/)
+  })
+
+  it('버튼은 쌓는다 — 336px에 셋을 나란히 두면 글자가 세로로 쪼개진다', () => {
+    expect(src).toMatch(/\.actions \{[^}]*flex-direction:\s*column/)
+  })
+})
+
 describe('ReportRail — 인쇄', () => {
   const src = readFileSync(join(__dirname, 'ReportRail.vue'), 'utf8')
   const print = src.match(/@media print \{[\s\S]*?\n\}/)?.[0] ?? ''

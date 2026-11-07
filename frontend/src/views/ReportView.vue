@@ -280,6 +280,10 @@ function printReport() {
   .cols {
     display: block;
   }
+  /* block이 되면 기둥 사이 gap이 사라진다 — 머리글과 첫 문항이 붙지 않게 */
+  .body {
+    margin-top: var(--sp-4);
+  }
   .note,
   .shelf {
     display: none;
