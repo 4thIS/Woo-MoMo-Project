@@ -22,20 +22,11 @@ const interview = useInterviewStore()
 const iv = useInterviewerStore()
 const modal = useModalStore()
 
-/* 히어로 페이드: 스크롤 진행률 0→1 (스크롤 컨테이너는 .snap-root인 루트 요소) */
-const root = ref<HTMLElement | null>(null)
-const hero = ref<HTMLElement | null>(null)
-const fade = ref(0)
-const onScroll = () => {
-  const h = hero.value?.offsetHeight ?? 1
-  fade.value = Math.min(1, Math.max(0, (root.value?.scrollTop ?? 0) / (h * 0.6)))
-}
 /* 매니페스트 로드 실패 안내는 5초 지연 후에만 보여준다(spec §5: "확인 중" 유지) */
 const manifestTimedOut = ref(false)
 let manifestTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
-  root.value?.addEventListener('scroll', onScroll, { passive: true })
   if (!model.manifest) model.loadManifest()
   manifestTimer = setTimeout(() => (manifestTimedOut.value = true), 5000)
   // 휴대폰 배너는 들어오자마자 떠야 한다 — 동의 단계까지 기다리면 이미 3단계를 내려온 뒤다.
@@ -43,7 +34,6 @@ onMounted(() => {
   if (!env.value && !envBusy.value) void runCheck()
 })
 onBeforeUnmount(() => {
-  root.value?.removeEventListener('scroll', onScroll)
   if (manifestTimer) clearTimeout(manifestTimer)
 })
 
@@ -194,11 +184,7 @@ function startDownload() {
     </div>
 
     <!-- 1. 타이틀 -->
-    <section
-      ref="hero"
-      class="hero snap"
-      :style="{ opacity: 1 - fade, transform: `translateY(${-40 * fade}px)` }"
-    >
+    <section class="hero snap">
       <PixelWindow padding="md" class="title-win rise">
         <template #header><PixelTag>브라우저에서 실행 · 서버 전송 없음</PixelTag></template>
         <h1 class="display logo rise"><b class="mo">모</b>두의<br /><b class="mo">모</b>의면접</h1>

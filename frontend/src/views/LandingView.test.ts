@@ -79,6 +79,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('LandingView', () => {
+  it('히어로를 스크롤 진행률로 흐리지 않는다 — 인라인 opacity·transform이 없다', () => {
+    // 히어로 페이드가 루트 요소의 scrollTop을 읽어 매 스크롤 다시 그렸다. 그 유일한
+    // 출력이 이 인라인 style이었다 (2026-11-07 철거)
+    const hero = mountView().find('section.hero')
+    expect(hero.attributes('style') ?? '').not.toMatch(/opacity|transform/)
+  })
+
   it('매니페스트 용량을 동의 창에 보여준다 — tts가 없으면 음성·합계 행 없음', async () => {
     const w = mountView()
     await flushPromises()
