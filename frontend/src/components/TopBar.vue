@@ -6,7 +6,7 @@
  *
  * "한 번에 하나만 연다"는 규칙을 여기서 지킨다 — 모달 상태가 이 하나뿐이다.
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useModalStore } from '@/stores/modal'
@@ -25,8 +25,12 @@ const modal = useModalStore()
 const onAdmin = isAdminPath()
 const shown = computed(() => interview.phase !== 'interview')
 
-/** 판이 깔렸는가. Task 5에서 문서 맨 위 센티넬을 보고 채운다 */
+/** 판이 깔렸는가. 문서 맨 위에 둔 자리지기가 화면을 벗어나면 참이 된다 —
+ *  그 지점이 바가 내용을 덮기 시작하는 곳이다. **scrollTop을 읽지 않는다**
+ *  (2026-11-07 철거에서 못 박은 원칙) */
 const docked = ref(false)
+const sentinel = ref<HTMLElement | null>(null)
+let io: IntersectionObserver | null = null
 /** 판이 깔렸을 때 왼쪽에 적는 지금 단계 */
 const STEP: Record<string, string> = {
   landing: '고르기',
@@ -40,10 +44,20 @@ watch(shown, (on) => {
   if (!on) modal.close()
 })
 
-onMounted(() => void account.load())
+onMounted(() => {
+  void account.load()
+  if (!sentinel.value || typeof IntersectionObserver === 'undefined') return
+  io = new IntersectionObserver(([e]) => (docked.value = !e.isIntersecting))
+  io.observe(sentinel.value)
+})
+onBeforeUnmount(() => io?.disconnect())
 </script>
 
 <template>
+  <!-- 문서 맨 위의 자리지기. 이만큼 내려가면 바가 내용을 덮기 시작하므로 판을 깐다.
+       고정이 아닌 보통 흐름에 있어야 해서 바 바깥에 둔다 (2026-11-07) -->
+  <div ref="sentinel" class="sentinel" aria-hidden="true" />
+
   <header v-if="shown" class="topbar" :class="{ docked }" data-test="topbar">
     <!-- 맨 위에서는 비워 둔다 — 히어로 가운데에 이미 큰 이름이 있다. 판이 깔린 뒤에만
          작은 이름과 지금 단계가 들어온다 (2026-11-07) -->
@@ -61,11 +75,12 @@ onMounted(() => void account.load())
           type="button"
           class="mono link press premium"
           :class="{ lit: account.isPremium }"
+          aria-label="모모 프리미엄"
           data-test="top-premium"
           @click="modal.show('premium')"
         >
           <span class="led" aria-hidden="true" />
-          모모 프리미엄
+          <span class="text">모모 프리미엄</span>
         </button>
         <!-- 남은 티켓은 벤 면접을 시작할 수 있는지 그대로 말해 준다. 0장이면 흐리게 두되 숨기지 않는다.
              누르는 곳이 아니다 — 옆의 "모모 프리미엄"과 버튼 둘로 보여 텍스트로 둔다(이슈 137) -->
@@ -128,6 +143,11 @@ onMounted(() => void account.load())
 </template>
 
 <style scoped>
+/* 자리지기. 높이만큼 문서 맨 위를 차지해, 화면들이 따로 --topbar-h만큼 비킬 필요가 없다 */
+.sentinel {
+  height: var(--topbar-h);
+  pointer-events: none;
+}
 .topbar {
   position: fixed;
   top: 0;
@@ -144,6 +164,29 @@ onMounted(() => void account.load())
   /* 안쪽을 조금 더 벌린다. 같은 요소인데 답답함이 사라진다 (2026-11-07) */
   padding: var(--sp-3) calc(var(--sp-6) + var(--sp-1));
   pointer-events: none; /* 빈 자리가 아래 화면의 클릭을 막지 않게 */
+  /* 기본은 **떠 있다** — 판도 선도 없다. 글자는 제 하드 그림자로 별 위에서 읽힌다 */
+  background: none;
+}
+.topbar .link,
+.topbar .tickets,
+.topbar .brand .name,
+.topbar .brand .step {
+  text-shadow: 1px 1px 0 var(--ink);
+}
+/* 히어로를 지나면 판이 깔린다. 뒤가 비치는 --dock이라 덮은 게 아니라 떠 있는 것으로 읽힌다 */
+.topbar.docked {
+  background: var(--dock);
+  /* 아래 선을 테두리가 아니라 그림자로 긋는다 — 테두리는 높이를 1px 더해
+     두 상태의 키가 달라진다 (2026-11-07) */
+  box-shadow:
+    0 1px 0 var(--raise),
+    inset 0 -1px 0 var(--edge-hi);
+}
+.topbar.docked .link,
+.topbar.docked .tickets,
+.topbar.docked .brand .name,
+.topbar.docked .brand .step {
+  text-shadow: none;
 }
 /* 왼쪽 묶음 — 판이 깔렸을 때만 내용이 찬다. 비어 있어도 자리를 잡아 오른쪽이 끝에 붙는다 */
 .brand {
@@ -190,13 +233,25 @@ onMounted(() => void account.load())
 }
 /* 좁아지면 접는 대신 **글자를 뗀다** — 한 줄을 지켜야 --topbar-h가 한 값으로 남는다.
    이름은 aria-label로 남아 화면 낭독기가 읽는다 (2026-11-07) */
+.topbar,
+.side,
+.brand {
+  flex-wrap: nowrap;
+}
 @media (max-width: 720px) {
   .link .label,
-  .brand .step {
+  .brand .step,
+  .premium .text {
     display: none;
   }
   .side {
     gap: var(--sp-4);
+  }
+}
+/* 더 좁으면 이름도 뗀다 — 노란 네모만으로도 어디인지 안다 */
+@media (max-width: 480px) {
+  .brand .name {
+    display: none;
   }
 }
 .link {

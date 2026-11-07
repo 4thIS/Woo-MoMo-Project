@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import TopBar from './TopBar.vue'
@@ -95,6 +95,32 @@ describe('TopBar — 등급별로 보이는 것', () => {
     await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
     await flushPromises()
     expect(w.find('[data-test=top-brand]').exists()).toBe(false)
+    expect(w.find('[data-test=topbar]').classes()).not.toContain('docked')
+  })
+
+  it('센티넬이 화면에서 벗어나면 판을 깐다 — scrollTop을 읽지 않는다', async () => {
+    let fire: (e: Pick<IntersectionObserverEntry, 'isIntersecting'>[]) => void = () => {}
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(fn: typeof fire) {
+          fire = fn
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    fire([{ isIntersecting: false }])
+    await flushPromises()
+    expect(w.find('[data-test=topbar]').classes()).toContain('docked')
+    expect(w.find('[data-test=top-brand]').exists()).toBe(true)
+    fire([{ isIntersecting: true }])
+    await flushPromises()
+    expect(w.find('[data-test=topbar]').classes()).not.toContain('docked')
+    vi.unstubAllGlobals()
   })
 
   it('티켓은 이모지가 아니라 픽셀 아이콘으로 그린다 — 기종마다 모양이 달라진다', async () => {
