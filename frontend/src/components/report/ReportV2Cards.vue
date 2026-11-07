@@ -7,7 +7,14 @@
 import { computed } from 'vue'
 import ProfileHex from './ProfileHex.vue'
 import { splitEmphasis } from '@/utils/reportParser'
-import { itemsInOrder, type Measurements, type ReportV2 } from '@/utils/reportV2'
+import {
+  itemsInOrder,
+  type Measurements,
+  type ReportV2,
+  type Voice,
+  type VoiceFlag,
+  type VoiceLevel,
+} from '@/utils/reportV2'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 
 const props = defineProps<{ report: ReportV2 }>()
@@ -38,6 +45,50 @@ function fillerText(m: Measurements): string {
   return parts.join(' · ')
 }
 const sec = (v: number | null) => (v === null ? '—' : `${v}초`)
+
+/** 정상 범위로 읽히는 말. 이 밖은 "눈에 띄는 것"으로 본다 */
+const PLAIN_LEVELS = new Set(['보통', '좋음', '적음', '없음', '차분'])
+const VOICE_LABEL = {
+  confidence: '자신감',
+  tone: '어조',
+  tremor: '떨림',
+  trailingOff: '끝 흐려짐',
+  clarity: '발음',
+} as const
+
+/** 고칠 거리가 되는 축인가. 접기의 유일한 기준이다 (2026-11-07) */
+function said(v: VoiceLevel | VoiceFlag): string {
+  return 'present' in v ? (v.present ? '있음' : '없음') : v.level
+}
+function isFlag(v: VoiceLevel | VoiceFlag): boolean {
+  return 'present' in v ? v.present : !PLAIN_LEVELS.has(v.level)
+}
+const axes = (voice: Voice) =>
+  (Object.keys(VOICE_LABEL) as (keyof typeof VOICE_LABEL)[]).map((k) => ({
+    label: VOICE_LABEL[k],
+    said: said(voice[k]),
+    reason: voice[k].reason,
+    flag: isFlag(voice[k]),
+  }))
+/** 근거까지 펼칠 축 */
+const flags = (voice: Voice) => axes(voice).filter((a) => a.flag)
+/** 이름만 한 줄로 모을 축 */
+const plain = (voice: Voice) =>
+  axes(voice)
+    .filter((a) => !a.flag)
+    .map((a) => `${a.label} ${a.said}`)
+
+/** 숫자는 바닥 한 줄로 편다 — 표 다섯 줄이 카드마다 반복되면 피드백보다 길어진다 */
+function numbersLine(m: Measurements): string {
+  return [
+    withGrade(m.syllablesPerMin, m.speed),
+    m.pause ? `쉼 ${m.pause}` : null,
+    m.firstWordSec === null ? null : `첫마디 ${sec(m.firstWordSec)}`,
+    fillerText(m),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 </script>
 
 <template>
@@ -108,7 +159,7 @@ const sec = (v: number | null) => (v === null ? '—' : `${v}초`)
       </dd>
       <template v-if="it.profile">
         <dt class="mono">프로필</dt>
-        <dd data-test="v2-profile"><ProfileHex :profile="it.profile" /></dd>
+        <dd data-test="v2-profile"><ProfileHex :profile="it.profile" :size="110" /></dd>
       </template>
       <template v-if="it.delivery">
         <dt class="mono">전달력</dt>
@@ -121,7 +172,12 @@ const sec = (v: number | null) => (v === null ? '—' : `${v}초`)
             측정 부족 — 말한 시간이 너무 짧습니다
           </p>
           <template v-else>
-            <ul class="mono rows" data-test="measure-rows">
+            <!-- 프로필 육각형이 있으면 숫자는 한 줄로 편다. 예전에 저장된 리포트에는
+                 프로필이 없어 지금처럼 표를 그린다(`docs/API.md` 396행) -->
+            <p v-if="it.profile" class="mono line" data-test="measure-line">
+              {{ numbersLine(it.measurements) }}
+            </p>
+            <ul v-else class="mono rows" data-test="measure-rows">
               <li>
                 <span class="k">분당 음절</span>
                 <span>{{ withGrade(it.measurements.syllablesPerMin, it.measurements.speed) }}</span>
@@ -157,43 +213,26 @@ const sec = (v: number | null) => (v === null ? '—' : `${v}초`)
                 <span>{{ fillerText(it.measurements) }}</span>
               </li>
             </ul>
-            <ul v-if="it.measurements.voice" class="mono rows voice" data-test="voice">
-              <li>
-                <span class="k">자신감</span>
-                <span
-                  >{{ it.measurements.voice.confidence.level }} —
-                  {{ it.measurements.voice.confidence.reason }}</span
-                >
-              </li>
-              <li>
-                <span class="k">어조</span>
-                <span
-                  >{{ it.measurements.voice.tone.level }} —
-                  {{ it.measurements.voice.tone.reason }}</span
-                >
-              </li>
-              <li>
-                <span class="k">떨림</span>
-                <span
-                  >{{ it.measurements.voice.tremor.present ? '있음' : '없음' }} —
-                  {{ it.measurements.voice.tremor.reason }}</span
-                >
-              </li>
-              <li>
-                <span class="k">끝 흐려짐</span>
-                <span
-                  >{{ it.measurements.voice.trailingOff.present ? '있음' : '없음' }} —
-                  {{ it.measurements.voice.trailingOff.reason }}</span
-                >
-              </li>
-              <li>
-                <span class="k">발음</span>
-                <span
-                  >{{ it.measurements.voice.clarity.level }} —
-                  {{ it.measurements.voice.clarity.reason }}</span
-                >
-              </li>
-            </ul>
+            <!-- 눈에 띄는 축은 근거까지, 보통인 축은 이름만 한 줄로 (2026-11-07).
+                 "자신감 낮음"만 보이고 근거가 접히면 고칠 수가 없어, 접는 것은 보통인 축뿐이다 -->
+            <template v-if="it.measurements.voice">
+              <p
+                v-for="v in flags(it.measurements.voice)"
+                :key="v.label"
+                class="mono flag"
+                data-test="voice-flag"
+              >
+                <span class="tag">{{ v.label }} {{ v.said }}</span>
+                {{ v.reason }}
+              </p>
+              <p
+                v-if="plain(it.measurements.voice).length"
+                class="mono plain"
+                data-test="voice-plain"
+              >
+                {{ plain(it.measurements.voice).join(' · ') }}
+              </p>
+            </template>
           </template>
         </dd>
       </template>
