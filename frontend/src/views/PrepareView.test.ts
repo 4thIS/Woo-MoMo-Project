@@ -473,6 +473,27 @@ describe('PrepareView — 막혔을 때 빠져나가는 길 (#41)', () => {
   })
 })
 
+describe('PrepareView — 두 기둥', () => {
+  it('상황판과 입력이 한 화면에 나란히 선다 — 기다리는 동안 입력한다', async () => {
+    const w = mountView()
+    await fillProfile(w)
+    const rail = w.get('[data-test=status-rail]')
+    expect(rail.find('[data-test=progress]').exists()).toBe(true)
+    expect(rail.find('[data-test=checklist]').exists()).toBe(true)
+    expect(rail.find('[data-test=start]').exists()).toBe(true)
+  })
+
+  it('면접관 칩과 도움말 다시 보기는 입력 창 머리로 올라간다', async () => {
+    useHintsStore().disable()
+    const w = mountView()
+    await fillProfile(w)
+    const head = w.get('[data-test=form-head]')
+    expect(head.find('[data-test=interviewer-chip]').exists()).toBe(true)
+    expect(head.find('[data-test=change-interviewer]').exists()).toBe(true)
+    expect(head.find('[data-test=hints-on]').exists()).toBe(true)
+  })
+})
+
 describe('PrepareView — 시작 영역', () => {
   it('벤 고지와 목소리 동의를 한 상자로 묶고, 벤일 때만 띄운다', async () => {
     const free = mountView()

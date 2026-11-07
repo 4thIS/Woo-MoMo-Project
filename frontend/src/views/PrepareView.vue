@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TTS_STUCK_MS, useModelStore } from '@/stores/model'
 import { FIELD_LABELS, RESUME_MIN, useInterviewStore, type Field } from '@/stores/interview'
 import { extractPdfText } from '@/services/pdf'
@@ -226,6 +226,28 @@ const startLabel = computed(() => {
 const blockedByError = computed(
   () => model.status === 'error' || (model.ttsEnabled && model.ttsStatus === 'error'),
 )
+/* 출근 장면은 320x64 픽셀 그림이라 **정수 배율로만** 줄일 수 있다(루트 CLAUDE.md).
+   두 기둥일 때 상황판은 376px이라 1배(320px)만 들어간다. 위로 누우면 가로가 생겨 2배(640px)까지
+   간다. 3배(960px)는 이 배치에서 어디에도 안 맞는다 — 소수 배율로 줄이느니 한 단계 내린다 */
+const stacked = ref(false) // 상황판이 위로 누웠는가(두 기둥이 아닌가)
+const roomForTwo = ref(false) // 2배(640px)를 놓을 가로가 되는가
+const watchers: (() => void)[] = []
+function follow(query: string, target: { value: boolean }) {
+  if (typeof matchMedia !== 'function') return // jsdom에는 없다 — 두 기둥(1배)으로 둔다
+  const m = matchMedia(query)
+  const on = (e: MediaQueryListEvent | MediaQueryList) => (target.value = e.matches)
+  on(m)
+  m.addEventListener('change', on)
+  watchers.push(() => m.removeEventListener('change', on))
+}
+onMounted(() => {
+  follow('(max-width: 1024px)', stacked)
+  follow('(min-width: 720px)', roomForTwo)
+})
+onBeforeUnmount(() => watchers.forEach((off) => off()))
+/** 두 기둥에서는 상황판이 376px이라 1배만 들어간다. 누우면 가로가 생겨 2배까지 간다 */
+const sceneScale = computed(() => (stacked.value && roomForTwo.value ? 2 : 1))
+
 /* 스크롤러는 문서다(2026-11-07 철거). 요소가 아니라 창을 올린다 */
 function scrollToProgress() {
   scrollTo({ top: 0, behavior: 'smooth' })
@@ -301,11 +323,13 @@ async function clearAndRetry() {
       <span class="dim">이력서·입력 내용은 이 브라우저를 떠나지 않습니다 (음성 인식 제외)</span>
     </header>
 
-    <!-- 1. 다운로드 / 초기화 -->
-    <section class="snap">
-      <div class="content">
-        <PixelWindow class="rise" :title="TITLE[phase]" padding="sm">
+    <!-- 기다리는 4분을 입력하는 4분으로 — 상황판과 입력을 한 화면에 나란히 세운다.
+         좁으면 상황판이 위로 올라가 가로로 눕는다 (2026-11-07) -->
+    <div class="cols">
+      <aside class="rail" data-test="status-rail">
+        <PixelWindow class="rise" :title="TITLE[phase]" padding="sm" data-test="progress">
           <PixelProgress
+            :scale="sceneScale"
             :progress="model.overallProgress"
             :phase="phase"
             :received="model.overallReceived"
@@ -339,12 +363,151 @@ async function clearAndRetry() {
             </template>
           </PixelProgress>
         </PixelWindow>
-      </div>
-    </section>
 
-    <!-- 2. 입력: ① 지원 정보 → ② 이력서 (같은 자리, 페이드 전환) + 시작 -->
-    <section class="snap">
-      <div class="content">
+        <div class="start-row" data-test="go-box">
+          <ul class="mono checklist" data-test="checklist">
+            <li>
+              <i :class="{ ok: infoDone, wait: !infoDone }" />
+              {{ interview.track === 'admission' ? '이름 · 학교 · 학과 입력' : '분야 · 직무 입력' }}
+            </li>
+            <li>
+              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" />
+              {{ longDocLabel }} 읽기
+            </li>
+            <li>
+              <i
+                :class="{
+                  ok: model.status === 'ready',
+                  wait: model.status !== 'ready',
+                  blink: model.status !== 'ready',
+                }"
+              />
+              면접관 출근 ({{
+                model.status === 'ready' ? '완료' : `다운로드 ${model.progress}% → 초기화`
+              }})
+            </li>
+            <li v-if="model.ttsEnabled">
+              <i
+                :class="{
+                  ok: voiceReady,
+                  wait: !voiceReady,
+                  blink:
+                    model.voiceSwitching ||
+                    (model.ttsStatus !== 'ready' && model.ttsStatus !== 'error'),
+                }"
+              />
+              목소리 준비 · {{ interviewerName }} ({{
+                model.voiceSwitching
+                  ? '바꾸는 중'
+                  : model.ttsStatus === 'ready'
+                    ? '완료'
+                    : model.ttsStatus === 'error'
+                      ? '실패'
+                      : `${model.ttsProgress}%`
+              }})
+            </li>
+          </ul>
+          <!-- 목소리를 기다리지 않고 시작할 수 있다. 무엇을 포기하는지는 알고 누르게 한다 -->
+          <p v-if="model.voicePending" class="mono voice-pending" data-test="voice-pending">
+            목소리는 아직 받는 중입니다 — 지금 시작하면 자막으로 진행하다가 준비되는 질문부터
+            말합니다.
+          </p>
+          <p v-else-if="voiceFailed" class="mono voice-pending" data-test="voice-failed">
+            목소리를 준비하지 못했습니다 — 자막으로 진행합니다.
+          </p>
+          <div class="start-btns">
+            <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
+              startLabel
+            }}</PixelButton>
+            <!-- 곁가지다. 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다 (2026-11-07) -->
+            <button
+              v-if="voicelessOffer"
+              type="button"
+              class="mono link press"
+              data-test="start-voiceless"
+              :disabled="busy"
+              @click="startVoiceless"
+            >
+              목소리 없이 시작
+            </button>
+            <button
+              v-if="blockedByError"
+              type="button"
+              class="mono link press"
+              data-test="start-scroll-top"
+              @click="scrollToProgress"
+            >
+              ▲ 진행 창으로
+            </button>
+          </div>
+          <p v-if="model.voiceError" class="mono start-error" data-test="voice-error">
+            {{ model.voiceError }}
+          </p>
+          <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
+        </div>
+      </aside>
+
+      <div class="form">
+        <!-- 면접관과 도움말은 입력 창 머리로. 시작 버튼은 왼쪽 상황판에 있다 -->
+        <div class="form-head" data-test="form-head">
+          <span class="mono" data-test="interviewer-chip">면접관: {{ interviewerName }}</span>
+          <!-- 면접 시작을 기다리는 동안(busy)은 잠근다 — 면접은 옛 페르소나로 고정되는데 목소리만 바뀌지 않게 -->
+          <button
+            type="button"
+            class="mono link press"
+            data-test="change-interviewer"
+            :disabled="busy"
+            @click="pickerOpen = !pickerOpen"
+          >
+            {{ pickerOpen ? '닫기' : '바꾸기' }}
+          </button>
+          <!-- 힌트를 꺼 둔 사람이 다시 켜는 유일한 길 -->
+          <button
+            v-if="!hints.enabled"
+            type="button"
+            class="mono link press"
+            data-test="hints-on"
+            @click="hints.enable()"
+          >
+            도움말 다시 보기
+          </button>
+        </div>
+        <div v-if="pickerOpen && !busy" ref="pickerBox">
+          <InterviewerPicker @need-premium="modal.show('premium')" />
+        </div>
+        <!-- 벤에게만 해당하는 것들을 한 상자로 묶는다 — 고지와 동의가 안내문 더미에
+             흩어져 있으면 무엇이 벤 때문인지 보이지 않는다 (2026-11-07) -->
+        <div v-if="iv.current?.premium" class="ben-box" data-test="ben-box">
+          <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
+             웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
+          <p class="mono notice" data-test="ben-notice">
+            벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
+            <template v-if="interview.track === 'company'">
+              회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
+              <template v-if="interview.profile.postingUrl.trim()">
+                모집공고 링크를 열어 요구사항을 참고합니다.
+              </template>
+            </template>
+          </p>
+          <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
+             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다.
+             경유지(직접 호출인지 학교 게이트웨이인지)는 서버 설정으로 바뀌므로 적지 않는다.
+             대신 무료 등급을 쓰는 동안 구글이 이 녹음을 보게 될 수 있다는 것은 밝힌다
+             (2026-11-03 개정, `docs/specs/backend/2026-11-03-voice-gemini-direct-design.md`) -->
+          <label class="mono voice-consent" data-test="voice-consent-row">
+            <input
+              type="checkbox"
+              data-test="voice-consent"
+              :checked="interview.voiceConsent"
+              @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
+            />
+            <span>
+              답변 녹음을 목소리 분석을 위해 외부 AI(Google Gemini)로 보냅니다. Google이 서비스
+              개선에 쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
+            </span>
+          </label>
+        </div>
+
         <PixelWindow title="어디에 지원하시나요?">
           <template #tag>
             <div class="stepnav">
@@ -574,154 +737,55 @@ async function clearAndRetry() {
             </p>
           </div>
         </PixelWindow>
-
-        <!-- 시작 -->
-        <div class="interviewer-row">
-          <span class="mono" data-test="interviewer-chip">면접관: {{ interviewerName }}</span>
-          <!-- 면접 시작을 기다리는 동안(busy)은 잠근다 — 면접은 옛 페르소나로 고정되는데 목소리만 바뀌지 않게 -->
-          <button
-            type="button"
-            class="mono link press"
-            data-test="change-interviewer"
-            :disabled="busy"
-            @click="pickerOpen = !pickerOpen"
-          >
-            {{ pickerOpen ? '닫기' : '바꾸기' }}
-          </button>
-          <!-- 힌트를 꺼 둔 사람이 다시 켜는 유일한 길 -->
-          <button
-            v-if="!hints.enabled"
-            type="button"
-            class="mono link press"
-            data-test="hints-on"
-            @click="hints.enable()"
-          >
-            도움말 다시 보기
-          </button>
-        </div>
-        <div v-if="pickerOpen && !busy" ref="pickerBox">
-          <InterviewerPicker @need-premium="modal.show('premium')" />
-        </div>
-        <!-- 벤에게만 해당하는 것들을 한 상자로 묶는다 — 고지와 동의가 안내문 더미에
-             흩어져 있으면 무엇이 벤 때문인지 보이지 않는다 (2026-11-07) -->
-        <div v-if="iv.current?.premium" class="ben-box" data-test="ben-box">
-          <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
-             웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
-          <p class="mono notice" data-test="ben-notice">
-            벤과의 대화는 서버를 거쳐 외부 AI(Claude)로 갑니다.
-            <template v-if="interview.track === 'company'">
-              회사명·직무로 웹을 검색해 최신 정보를 참고합니다.
-              <template v-if="interview.profile.postingUrl.trim()">
-                모집공고 링크를 열어 요구사항을 참고합니다.
-              </template>
-            </template>
-          </p>
-          <!-- 목소리 분석은 녹음이 밖으로 한 번 더 나가는 일이라 따로 받는다(루트 CLAUDE.md 8번,
-             2026-10-23 개정). 기본은 꺼짐 — 켜지 않으면 지금처럼 브라우저 측정만 쓴다.
-             경유지(직접 호출인지 학교 게이트웨이인지)는 서버 설정으로 바뀌므로 적지 않는다.
-             대신 무료 등급을 쓰는 동안 구글이 이 녹음을 보게 될 수 있다는 것은 밝힌다
-             (2026-11-03 개정, `docs/specs/backend/2026-11-03-voice-gemini-direct-design.md`) -->
-          <label class="mono voice-consent" data-test="voice-consent-row">
-            <input
-              type="checkbox"
-              data-test="voice-consent"
-              :checked="interview.voiceConsent"
-              @change="interview.setVoiceConsent(($event.target as HTMLInputElement).checked)"
-            />
-            <span>
-              답변 녹음을 목소리 분석을 위해 외부 AI(Google Gemini)로 보냅니다. Google이 서비스
-              개선에 쓰거나 사람이 검토할 수 있어요. 분석 후 서버에서 지웁니다.
-            </span>
-          </label>
-        </div>
-
-        <div class="start-row" data-test="go-box">
-          <ul class="mono checklist" data-test="checklist">
-            <li>
-              <i :class="{ ok: infoDone, wait: !infoDone }" />
-              {{ interview.track === 'admission' ? '이름 · 학교 · 학과 입력' : '분야 · 직무 입력' }}
-            </li>
-            <li>
-              <i :class="{ ok: interview.resumeDone, wait: !interview.resumeDone }" />
-              {{ longDocLabel }} 읽기
-            </li>
-            <li>
-              <i
-                :class="{
-                  ok: model.status === 'ready',
-                  wait: model.status !== 'ready',
-                  blink: model.status !== 'ready',
-                }"
-              />
-              면접관 출근 ({{
-                model.status === 'ready' ? '완료' : `다운로드 ${model.progress}% → 초기화`
-              }})
-            </li>
-            <li v-if="model.ttsEnabled">
-              <i
-                :class="{
-                  ok: voiceReady,
-                  wait: !voiceReady,
-                  blink:
-                    model.voiceSwitching ||
-                    (model.ttsStatus !== 'ready' && model.ttsStatus !== 'error'),
-                }"
-              />
-              목소리 준비 · {{ interviewerName }} ({{
-                model.voiceSwitching
-                  ? '바꾸는 중'
-                  : model.ttsStatus === 'ready'
-                    ? '완료'
-                    : model.ttsStatus === 'error'
-                      ? '실패'
-                      : `${model.ttsProgress}%`
-              }})
-            </li>
-          </ul>
-          <!-- 목소리를 기다리지 않고 시작할 수 있다. 무엇을 포기하는지는 알고 누르게 한다 -->
-          <p v-if="model.voicePending" class="mono voice-pending" data-test="voice-pending">
-            목소리는 아직 받는 중입니다 — 지금 시작하면 자막으로 진행하다가 준비되는 질문부터
-            말합니다.
-          </p>
-          <p v-else-if="voiceFailed" class="mono voice-pending" data-test="voice-failed">
-            목소리를 준비하지 못했습니다 — 자막으로 진행합니다.
-          </p>
-          <div class="start-btns">
-            <PixelButton data-test="start" :disabled="!interview.canStart || busy" @click="start">{{
-              startLabel
-            }}</PixelButton>
-            <!-- 곁가지다. 노란 버튼이 둘이면 어디를 눌러야 할지 흐려진다 (2026-11-07) -->
-            <button
-              v-if="voicelessOffer"
-              type="button"
-              class="mono link press"
-              data-test="start-voiceless"
-              :disabled="busy"
-              @click="startVoiceless"
-            >
-              목소리 없이 시작
-            </button>
-            <button
-              v-if="blockedByError"
-              type="button"
-              class="mono link press"
-              data-test="start-scroll-top"
-              @click="scrollToProgress"
-            >
-              ▲ 진행 창으로
-            </button>
-          </div>
-          <p v-if="model.voiceError" class="mono start-error" data-test="voice-error">
-            {{ model.voiceError }}
-          </p>
-          <p v-if="startError" class="mono start-error" data-test="start-error">{{ startError }}</p>
-        </div>
       </div>
-    </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 두 기둥. 왼쪽은 붙어 따라오고 오른쪽만 흐른다 — 기다리는 4분 동안 입력이 끝나게 (2026-11-07) */
+.cols {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: flex-start;
+  max-width: var(--content-w);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-4);
+}
+.rail {
+  flex: none;
+  width: 376px;
+  /* 전역 상단바 아래에 붙는다. 100vh는 쓰지 않는다(1번 철거 원칙) */
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--sp-4));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.form {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.form-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+/* 좁으면 두 기둥이 안 선다 — 상황판이 위로 올라가 가로로 눕는다 */
+@media (max-width: 1024px) {
+  .cols {
+    flex-direction: column;
+    /* 세로로 쌓이면 flex-start는 "내용 너비"가 된다 — 늘려 주지 않으면
+       입력 창이 제 내용만큼 넓어져 화면 밖으로 나간다 (2026-11-07) */
+    align-items: stretch;
+  }
+  .rail,
+  .form {
+    width: 100%;
+    position: static;
+  }
+}
 /* 이름·나이는 짧아 나란히 둔다 */
 .two-up {
   display: grid;
