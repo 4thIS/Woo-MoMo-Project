@@ -141,7 +141,7 @@ function numbersLine(m: Measurements): string {
   </PixelWindow>
 
   <PixelWindow
-    v-for="it in items"
+    v-for="(it, i) in items"
     :id="`item-${it.id}`"
     :key="it.id"
     :title="`${it.id}. ${it.question}`"
@@ -237,6 +237,9 @@ function numbersLine(m: Measurements): string {
         </dd>
       </template>
     </dl>
+
+    <!-- 카드 바닥. 보관함이 그 문항의 녹음 재생바를 여기 붙인다 — 벤 기록이 녹음을 갖는 쪽이다 -->
+    <slot name="foot" :i="i" />
   </PixelWindow>
 </template>
 

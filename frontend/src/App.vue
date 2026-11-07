@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from 'vue'
 import { useInterviewStore } from '@/stores/interview'
+import { useArchiveViewStore } from '@/stores/archiveView'
+import { useAccountStore } from '@/stores/account'
+import ArchiveDetailView from '@/views/ArchiveDetailView.vue'
 import LandingView from '@/views/LandingView.vue'
 import PrepareView from '@/views/PrepareView.vue'
 import InterviewView from '@/views/InterviewView.vue'
@@ -14,6 +17,20 @@ const AdminView = defineAsyncComponent(() => import('@/views/admin/AdminView.vue
 const onAdmin = isAdminPath()
 
 const interview = useInterviewStore()
+/* 보관함 상세는 화면이다. 뒤로 가기로 목록에 돌아와야 하므로 popstate를 여기서 듣는다 —
+   스토어가 전역 리스너를 달면 테스트마다 쌓인다 */
+const archive = useArchiveViewStore()
+function onPop() {
+  if (archive.detail) archive.close()
+}
+onMounted(() => window.addEventListener('popstate', onPop))
+onBeforeUnmount(() => window.removeEventListener('popstate', onPop))
+
+async function removeArchive() {
+  const id = archive.detail?.id
+  archive.close()
+  if (id) await useAccountStore().deleteArchive(id)
+}
 const view = computed(
   () =>
     ({ landing: LandingView, prepare: PrepareView, interview: InterviewView, report: ReportView })[
@@ -27,11 +44,18 @@ const view = computed(
   <!-- 화면 전환: 나가는 화면이 먼저 사라지고 들어오는 화면이 떠오른다.
        둘을 겹치면 100vh 화면끼리 포개져 스크롤이 튄다 -->
   <AdminView v-if="onAdmin" />
+  <!-- 보관함 상세는 면접 단계보다 앞선다 — 면접 중에는 애초에 열리지 않는다(archiveView.open) -->
+  <ArchiveDetailView
+    v-else-if="archive.detail"
+    :entry="archive.detail"
+    @back="archive.close()"
+    @remove="removeArchive()"
+  />
   <Transition v-else name="view" mode="out-in">
     <component :is="view" :key="interview.phase" />
   </Transition>
   <!-- 면접 화면은 무대 안에 쪽지로 띄운다(InterviewView) — 여기서 또 띄우면 둘이 된다 -->
-  <HintBar v-if="!onAdmin && interview.phase !== 'interview'" />
+  <HintBar v-if="!onAdmin && !archive.detail && interview.phase !== 'interview'" />
 </template>
 
 <style>

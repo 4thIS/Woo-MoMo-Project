@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { makeMockAccount } from '@/services/accountMock'
 import type { ArchiveDraft } from '@/services/account'
+import { useArchiveViewStore } from '@/stores/archiveView'
 import ArchiveModal from './ArchiveModal.vue'
 
 const draft = (over: Partial<ArchiveDraft> = {}): ArchiveDraft => ({
@@ -114,151 +115,31 @@ describe('ArchiveModal — 목록', () => {
     await withEntries(
       ...[1, 2, 3, 4, 5].map((i) => draft({ startedAt: `2026-10-0${i}T00:00:00Z` })),
     )
-    expect(q('[data-test="archive-full"]')).not.toBeNull()
+    expect(q('[data-test="archive-limit"]')!.textContent).toContain('사라집니다')
   })
 
-  it('차지 않았으면 경고하지 않는다', async () => {
+  it('한도는 꽉 차기 전에도 적는다 — 꽉 찼을 때만 말하면 그전까지는 한도가 있는 줄 모른다', async () => {
     await withEntries(draft())
-    expect(q('[data-test="archive-full"]')).toBeNull()
+    const t = q('[data-test="archive-limit"]')!.textContent!
+    expect(t).toContain('5')
+    expect(t).not.toContain('사라집니다')
   })
 })
 
-describe('ArchiveModal — 상세', () => {
-  async function openDetail() {
-    const a = await withEntries(draft())
+describe('ArchiveModal — 줄을 누르면', () => {
+  /* 상세는 **화면으로 나갔다** (2026-11-07). 모달은 목록만 맡는다 —
+     상세가 무엇을 그리는지는 ArchiveDetailView.test.ts가 본다 */
+  it('상세 화면을 열고 모달은 닫힌다 — 한 번에 하나만 연다', async () => {
+    await withEntries(draft())
+    const open = vi.spyOn(useArchiveViewStore(), 'open').mockResolvedValue()
     q('[data-test="archive-row"]')!.click()
     await settle()
-    return a
-  }
-
-  it('줄을 누르면 상세로 갈아 낀다 — 모달은 하나다', async () => {
-    await openDetail()
-    expect(document.querySelectorAll('[data-test="modal"]')).toHaveLength(1)
-    expect(q('[data-test="archive-detail"]')).not.toBeNull()
-    expect(rows()).toHaveLength(0)
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
-  it('상세가 리포트 카드를 그린다', async () => {
-    await openDetail()
-    expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(1)
-  })
-
-  it('버전 2로 남은 기록은 버전 2 카드로 다시 그린다', async () => {
-    await withEntries(
-      draft({
-        reportV2: {
-          version: 2,
-          items: [
-            {
-              id: 'Q1',
-              parent: null,
-              answer: 1,
-              kind: 'main',
-              question: '버전 2 질문',
-              answerSummary: '요약',
-              feedback: '피드백',
-              delivery: null,
-              measurements: null,
-              profile: null,
-            },
-          ],
-          summary: { strengths: [], improvements: [], delivery: null, postingFit: null },
-        },
-      }),
-    )
+  it('모달 안에는 상세를 그리지 않는다 — 같은 내용을 두 레이아웃으로 그리던 일을 끝냈다', async () => {
+    await withEntries(draft())
     q('[data-test="archive-row"]')!.click()
-    await settle()
-    expect(document.querySelectorAll('[data-test="v2-card"]')).toHaveLength(1)
-    expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(0)
-    expect(q('[data-test="archive-detail"]')!.textContent).toContain('버전 2 질문')
-  })
-
-  it('예전 기록에는 reportV2가 없다 — 그래도 기존 카드로 열린다', async () => {
-    await openDetail()
-    expect(document.querySelectorAll('[data-test="v2-card"]')).toHaveLength(0)
-    expect(document.querySelectorAll('[data-test="card"]')).toHaveLength(1)
-  })
-
-  it('상세가 대화를 보여 준다', async () => {
-    await openDetail()
-    expect(q('[data-test="archive-detail"]')!.textContent).toContain(
-      '안녕하세요 백엔드 개발자입니다',
-    )
-  })
-
-  it('녹음이 있으면 답변 옆에서 재생할 수 있다', async () => {
-    const a = useAccountStore()
-    await a.signUp('a@b.com', 'pw123456', '이우진')
-    await a.saveArchive(
-      draft({ premium: true, hasRecording: true, recordings: [{ turn: 0, url: 'blob:x' }] }),
-    )
-    w = mount(ArchiveModal, { props: { open: true } })
-    await settle()
-    q('[data-test="archive-row"]')!.click()
-    await settle()
-    expect(document.querySelectorAll('[data-test="archive-clip"]')).toHaveLength(1)
-  })
-
-  it('녹음이 없으면 재생 줄을 그리지 않는다 — 빈 플레이어는 고장처럼 보인다', async () => {
-    await openDetail()
-    expect(q('[data-test="archive-clip"]')).toBeNull()
-  })
-
-  it('상세의 뒤로가기로 목록에 돌아온다', async () => {
-    await openDetail()
-    q('[data-test="archive-back"]')!.click()
-    await settle()
-    expect(q('[data-test="archive-detail"]')).toBeNull()
-    expect(rows()).toHaveLength(1)
-  })
-
-  /* 지우기는 되돌릴 수 없고 기록은 다시 만들 수 없다 — 한 번 더 묻는다 */
-  it('지우기를 눌러도 바로 지워지지 않고 한 번 더 묻는다', async () => {
-    await openDetail()
-    q('[data-test="archive-delete"]')!.click()
-    await settle()
-    expect(q('[data-test="archive-delete-confirm"]')).not.toBeNull()
-    expect(q('[data-test="archive-detail"]')).not.toBeNull()
-    expect(rows()).toHaveLength(0) // 상세를 보는 중이라 목록은 그려지지 않는다
-  })
-
-  it('묻는 자리에서 취소하면 기록이 남는다', async () => {
-    await openDetail()
-    q('[data-test="archive-delete"]')!.click()
-    await settle()
-    q('[data-test="archive-delete-cancel"]')!.click()
-    await settle()
-    expect(q('[data-test="archive-delete-confirm"]')).toBeNull()
-    q('[data-test="archive-back"]')!.click()
-    await settle()
-    expect(rows()).toHaveLength(1)
-  })
-
-  it('확인하고 지우면 목록으로 돌아가고 줄이 사라진다', async () => {
-    await openDetail()
-    q('[data-test="archive-delete"]')!.click()
-    await settle()
-    q('[data-test="archive-delete-confirm"]')!.click()
-    await settle()
-    expect(q('[data-test="archive-detail"]')).toBeNull()
-    expect(rows()).toHaveLength(0)
-  })
-
-  it('목록에 갔다 다시 열면 묻던 것이 풀려 있다', async () => {
-    await openDetail()
-    q('[data-test="archive-delete"]')!.click()
-    await settle()
-    q('[data-test="archive-back"]')!.click()
-    await settle()
-    q('[data-test="archive-row"]')!.click()
-    await settle()
-    expect(q('[data-test="archive-delete-confirm"]')).toBeNull()
-  })
-
-  it('닫았다 열면 목록부터 시작한다', async () => {
-    await openDetail()
-    await w!.setProps({ open: false })
-    await w!.setProps({ open: true })
     await settle()
     expect(q('[data-test="archive-detail"]')).toBeNull()
   })
@@ -271,6 +152,6 @@ describe('ArchiveModal — 한도 경고 자리', () => {
     )
     document.querySelectorAll<HTMLElement>('[data-test="archive-tab"]')[2].click()
     await settle()
-    expect(q('[data-test="archive-full"]')).toBeNull()
+    expect(q('[data-test="archive-limit"]')).toBeNull()
   })
 })

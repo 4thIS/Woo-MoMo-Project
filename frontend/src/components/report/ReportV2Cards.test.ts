@@ -314,3 +314,13 @@ describe('ReportV2Cards — 답변별 프로필', () => {
     expect(w.find('[data-test=v2-profile]').exists()).toBe(false)
   })
 })
+
+describe('ReportV2Cards — 카드 바닥 (2026-11-07)', () => {
+  it('끼울 자리를 연다 — 벤 기록이 녹음을 갖는 쪽이다', () => {
+    const w = mount(ReportV2Cards, {
+      props: { report: report() },
+      slots: { foot: '<b data-test="x-foot">끼운 것</b>' },
+    })
+    expect(w.findAll('[data-test=x-foot]').length).toBe(w.findAll('[data-test=v2-card]').length)
+  })
+})
