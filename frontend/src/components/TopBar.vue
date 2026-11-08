@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useModalStore } from '@/stores/modal'
+import { useArchiveViewStore } from '@/stores/archiveView'
 import { isAdminPath } from '@/services/route'
 import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
@@ -22,6 +23,7 @@ import MeIcon from '@/components/ui/icons/MeIcon.vue'
 const account = useAccountStore()
 const interview = useInterviewStore()
 const modal = useModalStore()
+const archive = useArchiveViewStore()
 const onAdmin = isAdminPath()
 const shown = computed(() => interview.phase !== 'interview')
 
@@ -31,7 +33,8 @@ const shown = computed(() => interview.phase !== 'interview')
 const docked = ref(false)
 const sentinel = ref<HTMLElement | null>(null)
 let io: IntersectionObserver | null = null
-/** 판이 깔렸을 때 왼쪽에 적는 지금 단계 */
+/** 왼쪽에 적는 지금 단계. 보관함 상세는 면접 단계와 무관한 화면이라 따로 센다 */
+const step = computed(() => (archive.detail ? '보관함' : STEP[interview.phase]))
 const STEP: Record<string, string> = {
   landing: '고르기',
   prepare: '준비',
@@ -77,7 +80,7 @@ onBeforeUnmount(() => io?.disconnect())
     <button type="button" class="brand" data-test="top-brand" @click="goHome">
       <span class="mark" aria-hidden="true" />
       <span class="display name">모두의 모의면접</span>
-      <span class="mono step">{{ STEP[interview.phase] }}</span>
+      <span class="mono step">{{ step }}</span>
     </button>
     <div class="side">
       <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>

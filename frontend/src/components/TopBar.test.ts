@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import TopBar from './TopBar.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
+import { useArchiveViewStore } from '@/stores/archiveView'
 import { makeMockAccount } from '@/services/accountMock'
 
 const bar = () => mount(TopBar, { attachTo: document.body })
@@ -347,5 +348,14 @@ describe('TopBar — 이름을 누르면 처음으로 (2026-11-08)', () => {
     await flushPromises()
     await w.get('[data-test=top-brand]').trigger('click')
     expect(s.phase).toBe('landing')
+  })
+})
+
+describe('TopBar — 지금 단계 (2026-11-08)', () => {
+  it('보관함 상세에서는 보관함이라 적는다 — 면접 단계와 무관한 화면이다', async () => {
+    useArchiveViewStore().$patch({ detail: { id: 'a1' } as never })
+    const w = bar()
+    await flushPromises()
+    expect(w.get('[data-test=top-brand]').text()).toContain('보관함')
   })
 })

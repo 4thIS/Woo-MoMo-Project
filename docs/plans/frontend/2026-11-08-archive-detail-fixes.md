@@ -66,7 +66,7 @@
 **Interfaces:**
 - Produces: `scrollToId(id: string): boolean` — 그 id의 요소로 굴러간다. 찾으면 `true`
 
-- [ ] **Step 1: 실패하는 테스트 — `anchorScroll.test.ts`**
+- [x] **Step 1: 실패하는 테스트 — `anchorScroll.test.ts`**
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -114,12 +114,12 @@ describe('scrollToId', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/utils/anchorScroll.test.ts`
 Expected: FAIL — 모듈이 없다
 
-- [ ] **Step 3: `utils/anchorScroll.ts`**
+- [x] **Step 3: `utils/anchorScroll.ts`**
 
 ```ts
 /** 해시를 건드리지 않고 문서 안의 id로 굴러간다 (2026-11-08).
@@ -140,12 +140,12 @@ export function scrollToId(id: string): boolean {
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/utils/anchorScroll.test.ts`
 Expected: PASS 4/4
 
-- [ ] **Step 5: 레일 목차가 헬퍼를 쓴다 — 실패하는 테스트**
+- [x] **Step 5: 레일 목차가 헬퍼를 쓴다 — 실패하는 테스트**
 
 `ReportRail.test.ts`에 더한다:
 
@@ -168,7 +168,7 @@ it('링크는 여전히 진짜 href다 — Tab 차례와 우클릭이 거저 따
 })
 ```
 
-- [ ] **Step 6: 실패 확인 → 구현**
+- [x] **Step 6: 실패 확인 → 구현**
 
 Run: `pnpm exec vitest run src/components/report/ReportRail.test.ts`
 Expected: FAIL — 해시가 `#q1`로 바뀐다
@@ -202,7 +202,7 @@ it('총평의 문항 참조도 해시를 바꾸지 않는다 — 레일만 고�
 })
 ```
 
-- [ ] **Step 7: `popstate`도 단단하게 — 실패하는 테스트**
+- [x] **Step 7: `popstate`도 단단하게 — 실패하는 테스트**
 
 `src/App.test.ts`가 이미 있다(주소 분기 테스트 둘). 거기에 더한다 — 그 파일은 `fetch`를 막아 두고 `afterEach`로 히스토리를 되돌리므로, 새 테스트도 그 틀을 그대로 쓴다:
 
@@ -219,7 +219,7 @@ describe('App — 보관함 상세의 뒤로 가기', () => {
 })
 ```
 
-- [ ] **Step 8: 실패 확인 → 구현**
+- [x] **Step 8: 실패 확인 → 구현**
 
 `App.vue`의 `onPop`이 **상세 항목을 빠져나온 경우만** 닫는다:
 
@@ -232,7 +232,7 @@ function onPop(e: PopStateEvent) {
 }
 ```
 
-- [ ] **Step 9: 게이트 + 커밋**
+- [x] **Step 9: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -251,7 +251,7 @@ git add frontend/src && git commit -m "fix(frontend): 목차를 눌러도 보관
 - Consumes: `useArchiveViewStore()`, `useModalStore()`, `useAccountStore().deleteArchive`
 - Produces: 없음
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 `App.test.ts`에 마운트 테스트를 더한다. `App.vue`는 화면을 다 끌고 오므로 자식을 stub한다. 그 파일에 이미 있는 `mount`·`createPinia` import와 `fetch` 스텁을 그대로 쓰고, 핀을 테스트마다 새로 꽂는다(`setActivePinia`를 import에 더한다):
 
@@ -296,12 +296,12 @@ describe('App — 보관함으로 돌아가기', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/App.test.ts`
 Expected: FAIL — 모달이 열리지 않는다(`open`이 `null`)
 
-- [ ] **Step 3: 돌아가는 길을 한 곳으로**
+- [x] **Step 3: 돌아가는 길을 한 곳으로**
 
 ```ts
 /** 상세에서 목록으로. 셋을 같이 해야 한다 —
@@ -333,16 +333,16 @@ async function removeArchive() {
 
 > `history.back()`이 쏘는 `popstate`는 `onPop`에 닿지만, 그때 `archive.detail`은 이미 `null`이라 아무 일도 하지 않는다.
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/App.test.ts`
 Expected: PASS 3/3
 
-- [ ] **Step 5: Review Focus 3 — 지우고 난 뒤**
+- [x] **Step 5: Review Focus 3 — 지우고 난 뒤**
 
 Step 1의 세 번째 테스트가 이것이다. 통과하는지 확인한다.
 
-- [ ] **Step 6: 게이트 + 커밋**
+- [x] **Step 6: 게이트 + 커밋**
 
 ```bash
 cd frontend && pnpm test && pnpm lint && pnpm exec prettier --check src && pnpm exec vue-tsc --noEmit
@@ -357,7 +357,7 @@ git add frontend/src && git commit -m "fix(frontend): 보관함으로 버튼이 
 - Modify: `frontend/src/views/ArchiveDetailView.vue`
 - Test: `frontend/src/views/ArchiveDetailView.test.ts`
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 describe('ArchiveDetailView — 폭', () => {
@@ -369,7 +369,7 @@ describe('ArchiveDetailView — 폭', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인 → 구현**
+- [x] **Step 2: 실패 확인 → 구현**
 
 Run: `pnpm exec vitest run src/views/ArchiveDetailView.test.ts`
 Expected: FAIL
@@ -385,7 +385,7 @@ Expected: FAIL
 
 > 리포트 화면(`ReportView`)은 **건드리지 않는다.** 보관함 상세는 대화 전문 탭이 있어 넓은 폭이 실제로 일하지만, 리포트는 읽는 화면이라 `--read-w`(68ch)가 본문 줄을 묶는다. 둘이 달라지는 것이 눈에 거슬리면 그때 함께 정한다.
 
-- [ ] **Step 3: 통과 확인 + 커밋**
+- [x] **Step 3: 통과 확인 + 커밋**
 
 ```bash
 pnpm exec vitest run src/views/ArchiveDetailView.test.ts
@@ -405,7 +405,7 @@ git add frontend/src && git commit -m "fix(frontend): 보관함 상세 폭을 �
 - Consumes: `extractPdfText`(`services/pdf`), `DocIcon`
 - Produces: `ResumeFileDrop` — `@read="{ name: string; text: string }"`를 올린다. 글자를 못 뽑으면 제 자리에서 말하고 올리지 않는다
 
-- [ ] **Step 1: 실패하는 테스트 — `ResumeFileDrop.test.ts`**
+- [x] **Step 1: 실패하는 테스트 — `ResumeFileDrop.test.ts`**
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -453,12 +453,12 @@ describe('ResumeFileDrop', () => {
 })
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `pnpm exec vitest run src/components/account/ResumeFileDrop.test.ts`
 Expected: FAIL — 파일이 없다
 
-- [ ] **Step 3: `ResumeFileDrop.vue`**
+- [x] **Step 3: `ResumeFileDrop.vue`**
 
 준비 화면의 드롭존과 같은 어법을 쓴다. 다만 **스토어를 건드리지 않는다** — 읽은 것을 올리기만 한다.
 
@@ -553,12 +553,12 @@ async function onDrop(e: DragEvent) {
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `pnpm exec vitest run src/components/account/ResumeFileDrop.test.ts`
 Expected: PASS 4/4
 
-- [ ] **Step 5: 편집기가 쓴다 — 실패하는 테스트 (Review Focus 4·5)**
+- [x] **Step 5: 편집기가 쓴다 — 실패하는 테스트 (Review Focus 4·5)**
 
 `MeModal.test.ts`에:
 
@@ -589,7 +589,7 @@ describe('MeModal — 이력서를 파일로 채우기 (2026-11-08)', () => {
 
 > 마운트한 자식에 이벤트를 쏘는 모양은 이 파일의 다른 테스트와 맞춰 쓴다(`modal()`이 `mount`를 돌려주므로 `findComponent({ name: 'ResumeFileDrop' }).vm.$emit('read', …)`가 가장 곧다).
 
-- [ ] **Step 6: 실패 확인 → `ResumeSlotEditor`에 끼운다**
+- [x] **Step 6: 실패 확인 → `ResumeSlotEditor`에 끼운다**
 
 ```ts
 function onRead({ name, text }: { name: string; text: string }) {
@@ -607,12 +607,12 @@ function onRead({ name, text }: { name: string; text: string }) {
 
 드롭존을 제목 칸 **아래, 본문 칸 위**에 둔다 — 파일을 넣으면 제목과 본문이 함께 차므로 그 사이가 제 자리다.
 
-- [ ] **Step 7: 통과 확인**
+- [x] **Step 7: 통과 확인**
 
 Run: `pnpm exec vitest run src/components/account/`
 Expected: PASS — 새 것 + 기존 전부
 
-- [ ] **Step 8: 게이트 전부 + 커밋**
+- [x] **Step 8: 게이트 전부 + 커밋**
 
 ```bash
 cd frontend
@@ -626,29 +626,29 @@ git add frontend/src && git commit -m "feat(frontend): 내정보 이력서를 PD
 
 **Files:** 없음(확인만)
 
-- [ ] **Step 1: 목차 (Review Focus 1·2)**
+- [x] **Step 1: 목차 (Review Focus 1·2)**
 
 보관함 상세에서 목차 `Q1`~`Q5`를 차례로 누른다.
 Expected: 화면이 닫히지 않고 그 문항으로 굴러간다. 상단바에 제목이 가리지 않는다. URL의 해시가 바뀌지 않는다.
 벤 리포트가 있으면 총평의 문항 참조(`Q2` 같은 작은 링크)도 눌러 본다.
 리포트 화면(면접 직후)의 목차도 같은지 본다.
 
-- [ ] **Step 2: 돌아가는 길**
+- [x] **Step 2: 돌아가는 길**
 
 `← 보관함으로`를 누른다.
 Expected: 상세가 닫히고 **보관함 목록 모달이 다시 열린다**. 그 상태에서 브라우저 뒤로 가기를 누르면 사이트를 벗어나지 않고 직전 화면으로 간다.
 
-- [ ] **Step 3: 폭**
+- [x] **Step 3: 폭**
 
 1440px에서 상세를 연다.
 Expected: 준비 화면과 같은 폭. 대화 전문 탭에서 글줄이 `--read-w`에 묶여 지나치게 길지 않다.
 
-- [ ] **Step 4: 이력서 파일 (Review Focus 4·5)**
+- [x] **Step 4: 이력서 파일 (Review Focus 4·5)**
 
 내정보 → 이력서 칸 → `새로 쓰기` → PDF를 끌어다 놓는다.
 Expected: 제목이 파일명으로, 본문이 뽑은 글로 찬다. 제목을 먼저 써 두고 넣으면 그 제목이 남는다. 글자 없는 PDF(스캔본)를 넣으면 빈 글이 저장되지 않고 그 자리에서 말한다.
 
-- [ ] **Step 5: 380px**
+- [x] **Step 5: 380px**
 
 Expected: `document.documentElement.scrollWidth === clientWidth`.
 
