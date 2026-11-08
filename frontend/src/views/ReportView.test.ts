@@ -453,3 +453,14 @@ describe('ReportView — 마지막 문항에 닿는다 (2026-11-08)', () => {
     expect(ReportViewSource).toMatch(/\.body::after \{[^}]*height:/)
   })
 })
+
+describe('ReportView — 폭 (2026-11-08)', () => {
+  it('보관함 상세와 같은 폭을 쓴다 — 같은 레일을 쓰는 두 화면이 서로 다른 폭이면 "같은 화면"이 아니다', () => {
+    expect(ReportViewSource).toMatch(/max-width:\s*1280px/)
+  })
+
+  it('좌우 여백은 --page-x가 아니다 — 120px씩 떼면 내용이 1040px로 되돌아간다', () => {
+    const report = ReportViewSource.match(/\.report \{[^}]*\}/)![0]
+    expect(report).not.toMatch(/padding:[^;]*--page-x/)
+  })
+})

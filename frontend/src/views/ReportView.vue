@@ -216,10 +216,13 @@ function printReport() {
     align-items: stretch;
   }
 }
+/* 보관함 상세와 **같은 폭**이다(2026-11-08). 같은 레일을 쓰는 두 화면이 서로 다른 폭이면
+   "같은 화면"이 아니게 된다. 좌우는 --page-x(120px)가 아니라 16px이다 —
+   120px씩 떼면 1280px을 줘도 내용은 1040px로 되돌아간다 */
 .report {
-  max-width: var(--content-w);
+  max-width: 1280px;
   margin: 0 auto;
-  padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
+  padding: var(--sp-8) var(--sp-4) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);

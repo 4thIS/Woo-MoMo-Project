@@ -336,3 +336,18 @@ describe('ReportV2Cards — 총평의 문항 참조 (2026-11-08)', () => {
     for (const a of refs) expect(a).toMatch(/@click\.prevent/)
   })
 })
+
+describe('ReportV2Cards — 카드 폭은 일정하다 (2026-11-08)', () => {
+  const src2 = readFileSync(join(__dirname, 'ReportV2Cards.vue'), 'utf8')
+
+  it('꼬리질문 카드를 들여쓰지 않는다 — 그 카드만 좁아져 줄이 들쭉날쭉해진다', () => {
+    const follow = src2.match(/\.follow \{[^}]*\}/)![0]
+    expect(follow).not.toMatch(/margin-left/)
+    expect(follow).not.toMatch(/margin-inline-start/)
+  })
+
+  it('대신 왼쪽 띠로 묶음을 보인다 — 폭을 줄이지 않고도 부모에 딸린 것이 보인다', () => {
+    const follow = src2.match(/\.follow \{[^}]*\}/)![0]
+    expect(follow).toMatch(/border-left/)
+  })
+})
