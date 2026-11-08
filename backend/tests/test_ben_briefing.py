@@ -301,20 +301,23 @@ def test_empty_material_skips_claude_and_continues(client, fake_claude, fake_col
 
 
 def test_deadline_is_enforced_before_the_first_ping(client, fake_claude, monkeypatch):
-    # ping 간격이 기한보다 길어도 기한에서 바로 포기한다(예전엔 ping 간격만큼 더 기다렸다)
-    monkeypatch.setattr(premium_router, "PING_EVERY", 1.0)
+    # ping 간격이 기한보다 길어도 기한에서 바로 포기한다(예전엔 ping 간격만큼 더 기다렸다).
+    # 요약은 문이 열릴 때까지 막아 두고, 차이(기한 0.1초 vs ping 5초)를 크게 잡아 느린 기계에서도 안정적이다
+    monkeypatch.setattr(premium_router, "PING_EVERY", 5.0)
     monkeypatch.setattr(premium_router, "RESEARCH_DEADLINE", 0.1)
     original = fake_claude.complete
+    release = threading.Event()
 
-    def stuck(**kwargs):
-        time.sleep(0.5)
+    def gated(**kwargs):
+        release.wait(5)
         return original(**kwargs)
 
-    fake_claude.complete = stuck
+    fake_claude.complete = gated
     iid = start_ben(client, NAMED)
     started = time.monotonic()
     text = _turn(client, iid).text
     elapsed = time.monotonic() - started
-    assert sse_events(text)[:2] == [RESEARCHING, FAILED]
-    assert elapsed < 0.45
+    release.set()
     _join_workers()
+    assert sse_events(text)[:2] == [RESEARCHING, FAILED]
+    assert elapsed < 2.0
