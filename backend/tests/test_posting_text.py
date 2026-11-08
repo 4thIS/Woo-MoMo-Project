@@ -85,3 +85,63 @@ def test_saramin_view_goes_to_detail():
 def test_other_urls_unchanged():
     url = "https://www.wanted.co.kr/wd/1"
     assert pt.detail_url(url) == url
+
+
+def test_many_lt_without_gt_is_fast():
+    import time
+
+    html = "<p>" + "a < b " * 300000
+    start = time.perf_counter()
+    got = pt.extract(html)
+    assert time.perf_counter() - start < 2.0
+    assert got
+
+
+def test_deeply_nested_json_ld_falls_back_to_body():
+    html = _page(f'<script type="application/ld+json">{"[" * 5000}</script>', f"<p>{LONG}</p>")
+    assert pt.extract(html).startswith("결제 시스템")
+
+
+def test_deep_valid_json_ld_does_not_raise():
+    deep = "[" * 900 + "]" * 900
+    html = _page(f'<script type="application/ld+json">{deep}</script>', f"<p>{LONG}</p>")
+    assert pt.extract(html).startswith("결제 시스템")
+
+
+def test_unclosed_nav_recovers_at_main():
+    got = pt.extract(_page(body=f"<nav>메뉴<main><p>{LONG}</p></main>"))
+    assert got.startswith("결제 시스템") and "메뉴" not in got
+
+
+def test_unclosed_header_without_main_uses_meta_fallback():
+    html = _page(
+        f'<meta name="description" content="{LONG}">',
+        f"<header>로그인<div><p>{LONG}</p></div>",
+    )
+    got = pt.extract(html)
+    assert got.startswith("결제 시스템") and "로그인" not in got
+
+
+def test_json_ld_list_and_string_fields():
+    ld = {
+        "@type": "JobPosting",
+        "title": "T",
+        "hiringOrganization": [{"name": "토스"}],
+        "description": LONG,
+        "skills": [{"name": "Kotlin"}, "Spring"],
+    }
+    html = _page(
+        f'<script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>'
+    )
+    got = pt.extract(html)
+    assert "토스" in got and "Kotlin" in got and "Spring" in got
+    ld["hiringOrganization"] = "카카오"
+    html = _page(
+        f'<script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>'
+    )
+    assert "카카오" in pt.extract(html)
+
+
+def test_saramin_non_ascii_digit_rejected():
+    url = "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx=²"
+    assert pt.detail_url(url) == url
