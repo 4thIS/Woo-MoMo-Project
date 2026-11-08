@@ -216,6 +216,18 @@ POSTING = "https://www.wanted.co.kr/wd/1"
 URL_ONLY = {**COMPANY_START, "company": {**COMPANY_START["company"], "postingUrl": POSTING}}
 
 
+def _posting_read(fake_collector):
+    """공고 본문을 실제로 읽은 모으기 결과 — 캐시 대상."""
+    from app.llm.briefing import Material
+    from app.llm.naver import Doc
+
+    fake_collector.material = Material(
+        posting=Doc("posting", "모집공고", "Kotlin 결제 백엔드 " * 30, POSTING),
+        found=fake_collector.material.found,
+        posting_url=POSTING,
+    )
+
+
 def test_posting_url_only_researches_on_the_first_turn(
     client, fake_claude, fake_collector, settings
 ):
@@ -231,6 +243,7 @@ def test_posting_url_only_researches_on_the_first_turn(
 
 
 def test_cache_depends_on_the_posting_url(client, fake_collector):
+    _posting_read(fake_collector)
     other = {**URL_ONLY, "company": {**URL_ONLY["company"], "postingUrl": POSTING + "2"}}
     _turn(client, start_ben(client, URL_ONLY))
     assert sse_events(_turn(client, _start_again(client, URL_ONLY)).text) == [OK, *QUESTION]
@@ -251,6 +264,7 @@ FAILED_POSTING_TEXT = (
 
 
 def test_failed_posting_read_is_not_cached(client, fake_claude, fake_collector, settings):
+    _posting_read(fake_collector)  # 본문은 읽었어도 요약이 "확인하지 못함"이면 캐시하지 않는다
     fake_claude.complete_results = [FAILED_POSTING_TEXT]
     iid = start_ben(client, URL_ONLY)
     assert sse_events(_turn(client, iid).text) == [RESEARCHING, OK, *QUESTION]
@@ -262,7 +276,26 @@ def test_failed_posting_read_is_not_cached(client, fake_claude, fake_collector, 
     assert len(fake_claude.complete_calls) == 2
 
 
+def test_unread_posting_is_not_cached_even_if_the_summary_hides_it(
+    client, fake_claude, fake_collector, settings
+):
+    from app.llm.briefing import Material
+
+    # 공고 링크는 있었지만 공고를 못 읽었다. 요약이 "확인하지 못함"을 빼먹어도 캐시하지 않는다
+    fake_collector.material = Material(
+        posting=None, found=fake_collector.material.found, posting_url=POSTING
+    )
+    assert prompts.POSTING_MISSING_STEM not in DEFAULT_BRIEFING
+    iid = start_ben(client, URL_ONLY)
+    assert sse_events(_turn(client, iid).text) == [RESEARCHING, OK, *QUESTION]
+    _join_workers()
+    assert _row(settings, iid)["briefing"] == DEFAULT_BRIEFING
+    assert sse_events(_turn(client, _start_again(client, URL_ONLY)).text)[0] == RESEARCHING
+    assert len(fake_collector.calls) == 2
+
+
 def test_name_and_posting_url_are_both_researched_and_keyed(client, fake_claude, fake_collector):
+    _posting_read(fake_collector)
     both = {
         **URL_ONLY,
         "company": {**URL_ONLY["company"], "name": "토스(비바리퍼블리카)"},

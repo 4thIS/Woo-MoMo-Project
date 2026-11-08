@@ -23,7 +23,9 @@ log = logging.getLogger(__name__)
 BRIEFING_MIN = 200
 BRIEFING_MAX = 2800
 MAX_SOURCES = 10
-SUMMARY_TIMEOUT = 7.0
+# 요약 기한 = 9.5초 - 모으기에 쓴 시간(최소 1초). 라우터 기한 10초 ≥ 모으기(≤3초) + 요약
+SUMMARY_BUDGET = 9.5
+SUMMARY_MIN_TIMEOUT = 1.0
 SUMMARY_MAX_TOKENS = 2000
 STEP_TIMEOUT = 3.0
 
@@ -35,7 +37,7 @@ SUMMARY_SYSTEM = "\n".join(
         "2. 최근 소식은 자료에 날짜가 있으면 날짜와 함께 씁니다.",
         "3. 지원 직무와 관련 있는 내용을 우선합니다.",
         "4. 자료에 없는 내용은 지어내지 말고 '확인되지 않음'이라고 씁니다.",
-        "5. 전체 1,000자 안팎(모집공고가 있으면 1,500자 안팎)으로 씁니다. URL, 링크, 머리말, 맺음말은 쓰지 않습니다.",
+        "5. 전체 1,000자 안팎(모집공고가 있으면 1,200자 안팎)으로 씁니다. URL, 링크, 머리말, 맺음말은 쓰지 않습니다.",
         "6. 자료에 이름이 같은 다른 회사가 섞여 있으면 지원 직무에 가장 맞는 회사만 쓰고, "
         "첫 줄에 어떤 회사인지 한 문장으로 밝힙니다.",
         '7. 메시지에 "모집공고: 있음"이면 다섯 번째 소제목 "모집공고 요구사항"에 담당 업무·필수 자격/기술 스택·'
@@ -135,6 +137,7 @@ class WebCollector:
 class Briefing:
     text: str
     sources: list[dict[str, str]]
+    posting_read: bool = False  # 공고 링크가 있었고 그 본문을 실제로 읽었는가(캐시 판단용)
 
 
 def _doc_line(d: Doc) -> str:
@@ -182,17 +185,19 @@ def make_briefing(
     collector: Collector,
 ) -> Briefing | None:
     """모으기 1회 + 요약 1회. 실패(자료 없음·오류·거절·너무 짧음)는 None — 면접은 브리핑 없이 이어 간다."""
+    collect_started = time.monotonic()
     m = collector.collect(company, job, posting_url)
     if m.empty:
         return None
     started = time.monotonic()
+    timeout = max(SUMMARY_MIN_TIMEOUT, SUMMARY_BUDGET - (started - collect_started))
     try:
         text = claude.complete(
             system=SUMMARY_SYSTEM,
             messages=summary_messages(company, job, m),
             model=BRIEFING_MODEL,
             max_tokens=SUMMARY_MAX_TOKENS,
-            timeout=SUMMARY_TIMEOUT,
+            timeout=timeout,
             on_usage=on_usage,
         ).strip()
     except ClaudeError:
@@ -202,4 +207,6 @@ def make_briefing(
     log.info("briefing summary ms=%d ok=%s", int((time.monotonic() - started) * 1000), ok)
     if not ok:
         return None
-    return Briefing(text=text[:BRIEFING_MAX], sources=_sources(m))
+    return Briefing(
+        text=text[:BRIEFING_MAX], sources=_sources(m), posting_read=m.posting is not None
+    )

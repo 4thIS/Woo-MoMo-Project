@@ -210,8 +210,11 @@ def _research_and_store(
         )
         if made is None:
             return None
-        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다
-        posting_failed = bool(posting_url) and prompts.POSTING_MISSING_STEM in made.text
+        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다.
+        # 요약이 "확인하지 못함"을 빼먹어도 모으기 결과(posting_read)로 판단한다
+        posting_failed = bool(posting_url) and (
+            not made.posting_read or prompts.POSTING_MISSING_STEM in made.text
+        )
         with db.connection(db_path) as c:
             if not posting_failed:
                 briefings.put(
