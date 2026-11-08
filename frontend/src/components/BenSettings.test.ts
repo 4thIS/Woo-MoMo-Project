@@ -70,3 +70,52 @@ describe('BEN_AXES', () => {
     ])
   })
 })
+
+describe('BenSettings — 화살표는 눌리는 것이다 (2026-11-08)', () => {
+  /* ◀ ▶를 장식(aria-hidden span)으로 두면 눌러도 아무 일이 없다.
+     보이면 눌려야 한다 — range는 키보드·낭독기 몫으로 그대로 둔다 */
+  const mid = { ...DEFAULT_BEN, warmth: 1 as const }
+  const atMid = () => mount(BenSettings, { props: { modelValue: mid, showCompany: true } })
+
+  it('▶를 누르면 한 칸 오른쪽으로', async () => {
+    const w = atMid()
+    await at(w, 0).get('[data-test=ben-next]').trigger('click')
+    expect(w.emitted('update:modelValue')![0][0]).toEqual({ ...mid, warmth: 2 })
+  })
+
+  it('◀를 누르면 한 칸 왼쪽으로', async () => {
+    const w = atMid()
+    await at(w, 0).get('[data-test=ben-prev]').trigger('click')
+    expect(w.emitted('update:modelValue')![0][0]).toEqual({ ...mid, warmth: 0 })
+  })
+
+  it('끝에서는 잠긴다 — 눌러도 아무 일이 없는 것과 눌릴 수 없는 것은 다르다', () => {
+    const w = mount(BenSettings, {
+      props: { modelValue: { ...DEFAULT_BEN, warmth: 0 }, showCompany: true },
+    })
+    const prev = at(w, 0).get('[data-test=ben-prev]').element as HTMLButtonElement
+    expect(prev.disabled).toBe(true)
+    expect((at(w, 0).get('[data-test=ben-next]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('잠긴 끝을 눌러도 값을 올려 보내지 않는다', async () => {
+    const w = mount(BenSettings, {
+      props: { modelValue: { ...DEFAULT_BEN, warmth: 2 }, showCompany: true },
+    })
+    await at(w, 0).get('[data-test=ben-next]').trigger('click')
+    expect(w.emitted('update:modelValue')).toBeFalsy()
+  })
+
+  it('Tab 차례에는 끼지 않는다 — 같은 조작이 range로 이미 있다', () => {
+    const w = atMid()
+    expect(at(w, 0).get('[data-test=ben-next]').attributes('tabindex')).toBe('-1')
+  })
+})
+
+describe('BenSettings — 전역 .arrow와 섞이지 않는다', () => {
+  const src = readFileSync(join(__dirname, 'BenSettings.vue'), 'utf8')
+
+  it('화살표에 .arrow를 쓰지 않는다 — base.css의 44x44 네모 버튼과 이름이 겹친다', () => {
+    expect(src).not.toMatch(/class="[^"]*\barrow\b/)
+  })
+})
