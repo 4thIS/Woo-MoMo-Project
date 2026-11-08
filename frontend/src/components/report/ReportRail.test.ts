@@ -3,22 +3,15 @@ import { join } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ReportRail from './ReportRail.vue'
-import type { ReportV2Summary } from '@/utils/reportV2'
 
 const items = [
   { id: 'q1', question: '자기소개', ms: 52_000, follow: false },
   { id: 'q2', question: '어려웠던 기술적 도전', ms: 78_000, follow: false },
   { id: 'q2-1', question: '팀 성과인가 본인 성과인가', ms: 95_000, follow: true },
 ]
-const summary: ReportV2Summary = {
-  strengths: [{ point: '수치로 성과를 말함', refs: ['q1', 'q2'] }],
-  improvements: [{ point: '본인 기여를 먼저', refs: ['q2-1'] }],
-  delivery: '숫자 앞에서 빨라지는 경향',
-  postingFit: { met: ['대용량 트래픽'], gaps: ['Kafka'] },
-}
 
 const rail = (over: Partial<Record<string, unknown>> = {}) =>
-  mount(ReportRail, { props: { items, summary, ...over } })
+  mount(ReportRail, { props: { items, ...over } })
 
 describe('ReportRail', () => {
   it('문항 목차를 진짜 링크로 만든다 — Tab 차례와 뒤로 가기가 거저 따라온다', () => {
@@ -49,21 +42,9 @@ describe('ReportRail', () => {
     expect(w.findAll('[data-test=toc-item]')[1].attributes('aria-current')).toBe('true')
   })
 
-  it('총평이 없으면 그 자리를 비운다 — 무료 리포트에는 총평이 없다', () => {
-    expect(rail({ summary: null }).find('[data-test=rail-summary]').exists()).toBe(false)
-  })
-
-  it('총평은 강점·개선점·전달력·공고 적합도를 담는다', () => {
-    const t = rail().get('[data-test=rail-summary]').text()
-    expect(t).toContain('수치로 성과를 말함')
-    expect(t).toContain('본인 기여를 먼저')
-    expect(t).toContain('숫자 앞에서 빨라지는 경향')
-    expect(t).toContain('Kafka')
-  })
-
   it('머리글과 액션은 슬롯이다 — 보관함 상세가 다른 것을 끼운다', () => {
     const w = mount(ReportRail, {
-      props: { items, summary: null },
+      props: { items },
       slots: {
         head: '<p data-test="x-head">보관함 면접</p>',
         actions: '<b data-test="x-act">지우기</b>',
@@ -221,5 +202,21 @@ describe('ReportRail — 목록이 지금 자리를 따라온다 (2026-11-08)', 
     await w.setProps({ current: undefined })
     await flushPromises()
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('ReportRail — 총평을 담지 않는다 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'ReportRail.vue'), 'utf8')
+  /** 그 선택자 블록의 본문. 묶음 선택자(`.head,
+.sum,`)는 `{`가 안 붙어 걸리지 않는다 */
+  const block = (sel: string) => src.match(new RegExp('[.]' + sel + ' [{][^}]*[}]'))?.[0] ?? ''
+
+  it('총평은 본문 맨 위에 이미 있다 — 레일에도 두면 같은 글이 두 번 나오고, 길어지면 목차를 밀어낸다', () => {
+    expect(rail().find('[data-test=rail-summary]').exists()).toBe(false)
+    expect(src).not.toMatch(/sum-body/)
+  })
+
+  it('목차는 바닥 아래로 깎이지 않는다 — 줄 몇 개와 앞뒤 버튼은 늘 보여야 한다', () => {
+    expect(block('toc')).toMatch(/min-height:\s*\d+px/)
   })
 })

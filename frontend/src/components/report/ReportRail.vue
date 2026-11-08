@@ -1,5 +1,9 @@
 <script setup lang="ts">
-/** 리포트 왼쪽 기둥 — 머리글 · 총평 · 문항 목차 · 액션 (2026-11-07).
+/** 리포트 왼쪽 기둥 — 머리글 · 문항 목차 · 액션 (2026-11-07).
+ *
+ * 총평은 **본문 맨 위에 이미 있다**(`ReportV2Cards`). 레일에도 두니 같은 글이 두 번
+ * 나왔고, 길어지면 레일 높이를 혼자 넘겨 목차를 27px로 찌그러뜨리고 액션을 화면 밖으로
+ * 밀어냈다. 중복을 걷으니 높이 다툼도 함께 사라졌다 (2026-11-08).
  *
  * 리포트 화면과 **보관함 상세가 같은 것**을 쓴다. 둘이 다른 것은 머리글과 액션뿐이라
  * 그 둘만 슬롯으로 열어 둔다.
@@ -12,7 +16,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { formatDuration, overBy } from '@/utils/timing'
 import { scrollToId } from '@/utils/anchorScroll'
-import type { ReportV2Summary } from '@/utils/reportV2'
 
 export interface TocItem {
   id: string
@@ -24,8 +27,6 @@ export interface TocItem {
 
 const props = defineProps<{
   items: TocItem[]
-  /** 무료 리포트에는 총평이 없다 */
-  summary: ReportV2Summary | null
   /** 지금 보고 있는 항목 */
   current?: string
 }>()
@@ -65,40 +66,6 @@ const overCount = computed(
     <div class="head">
       <slot name="head" />
     </div>
-
-    <!-- 긴 리포트에서는 접어 목차에 자리를 내준다 -->
-    <details v-if="summary" class="sum" open data-test="rail-summary">
-      <summary class="mono">총평</summary>
-      <div class="sum-body">
-        <template v-if="summary.strengths.length">
-          <span class="mono lbl ok">잘한 것</span>
-          <p v-for="(p, i) in summary.strengths" :key="`s${i}`" class="read">
-            {{ p.point }}
-            <span v-if="p.refs.length" class="mono refs">{{ p.refs.join(' ') }}</span>
-          </p>
-        </template>
-        <template v-if="summary.improvements.length">
-          <span class="mono lbl warn">고칠 것</span>
-          <p v-for="(p, i) in summary.improvements" :key="`i${i}`" class="read">
-            {{ p.point }}
-            <span v-if="p.refs.length" class="mono refs">{{ p.refs.join(' ') }}</span>
-          </p>
-        </template>
-        <template v-if="summary.delivery">
-          <span class="mono lbl">전달력</span>
-          <p class="read">{{ summary.delivery }}</p>
-        </template>
-        <template v-if="summary.postingFit">
-          <span class="mono lbl">공고 적합도</span>
-          <p class="read">
-            <span v-if="summary.postingFit.met.length" class="ok">충족</span>
-            {{ summary.postingFit.met.join(' · ') }}
-            <span v-if="summary.postingFit.gaps.length" class="warn">부족</span>
-            {{ summary.postingFit.gaps.join(' · ') }}
-          </p>
-        </template>
-      </div>
-    </details>
 
     <nav class="toc" aria-label="문항 목차">
       <div class="toc-head">
@@ -175,7 +142,6 @@ const overCount = computed(
   gap: var(--sp-3);
 }
 .head,
-.sum,
 .toc,
 .actions {
   border: var(--win-border);
@@ -185,45 +151,10 @@ const overCount = computed(
 .head {
   padding: var(--sp-4);
 }
-.sum {
-  padding: var(--sp-3) var(--sp-4);
-  border-color: var(--accent);
-}
-.sum > summary {
-  font-size: var(--fs-label);
-  color: var(--accent);
-  cursor: pointer;
-}
-.sum-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  padding-top: var(--sp-3);
-}
 .lbl {
   font-size: var(--fs-meta);
   letter-spacing: 0.1em;
   color: var(--text-3);
-}
-.lbl + .read {
-  margin-bottom: var(--sp-2);
-}
-.read {
-  margin: 0;
-  font-family: var(--font-read);
-  font-size: var(--fs-label);
-  line-height: var(--lh-read);
-  color: var(--text);
-}
-.refs {
-  font-size: var(--fs-meta);
-  color: var(--accent-2);
-}
-.ok {
-  color: var(--ok);
-}
-.warn {
-  color: var(--danger);
 }
 /* 본문을 읽다가 목차를 보지 않고도 옮겨 다니는 줄 */
 .steps {
@@ -255,8 +186,10 @@ const overCount = computed(
 /* 16줄이 넘치면 **목차 안에서만** 스크롤한다. 본문 스크롤과 분리된다.
    basis가 0이면 안 된다 — 높이가 내용에 맞는(auto) 기둥에서는 0으로 접혀 목록이 사라진다 */
 .toc {
-  flex: 0 1 auto;
-  min-height: 0;
+  /* 남는 자리를 받되, 줄 몇 개와 앞뒤 버튼이 들어갈 만큼은 지킨다 —
+     총평이 길다고 목차가 머리만 남으면 옮겨 다닐 수단이 사라진다 */
+  flex: 1 1 auto;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
   padding: var(--sp-3) 0;
@@ -377,8 +310,7 @@ const overCount = computed(
   .actions {
     display: none;
   }
-  .head,
-  .sum {
+  .head {
     box-shadow: none;
   }
 }

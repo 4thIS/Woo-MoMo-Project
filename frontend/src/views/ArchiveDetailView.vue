@@ -110,7 +110,7 @@ function printReport() {
 <template>
   <main class="report stars" data-test="archive-detail">
     <div class="cols">
-      <ReportRail :items="tocItems" :summary="reportV2?.summary ?? null" :current="current">
+      <ReportRail :items="tocItems" :current="current">
         <template #head>
           <button type="button" class="mono link" data-test="archive-back" @click="$emit('back')">
             ← 보관함으로

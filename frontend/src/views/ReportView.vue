@@ -104,7 +104,7 @@ function printReport() {
 <template>
   <main class="report stars rise">
     <div class="cols">
-      <ReportRail :items="tocItems" :summary="s.reportV2?.summary ?? null" :current="current">
+      <ReportRail :items="tocItems" :current="current">
         <template #head>
           <h1 class="display ttl">면접 리포트</h1>
           <p class="mono sub">
