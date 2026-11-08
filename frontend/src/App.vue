@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from 'vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useArchiveViewStore } from '@/stores/archiveView'
 import { useAccountStore } from '@/stores/account'
+import { useModalStore } from '@/stores/modal'
 import ArchiveDetailView from '@/views/ArchiveDetailView.vue'
 import LandingView from '@/views/LandingView.vue'
 import PrepareView from '@/views/PrepareView.vue'
@@ -30,9 +31,20 @@ function onPop(e: PopStateEvent) {
 onMounted(() => window.addEventListener('popstate', onPop))
 onBeforeUnmount(() => window.removeEventListener('popstate', onPop))
 
+/** 상세에서 목록으로. 셋을 같이 해야 한다 (2026-11-08) —
+ *  ① 상세를 닫고 ② 보관함 모달을 다시 열고 ③ 상세를 열며 민 히스토리 항목을 되감는다.
+ *  ③을 빼면 뒤로 가기가 한 번 헛돌고, ②를 빼면 사용자는 어디로 갔는지 모른 채
+ *  이전 페이지로 나가게 된다.
+ *  `history.back()`이 쏘는 popstate는 onPop에 닿지만, 그때 detail은 이미 null이다 */
+function backToArchive() {
+  archive.close()
+  useModalStore().show('archive')
+  if ((history.state as { momoArchive?: string } | null)?.momoArchive) history.back()
+}
+
 async function removeArchive() {
   const id = archive.detail?.id
-  archive.close()
+  backToArchive()
   if (id) await useAccountStore().deleteArchive(id)
 }
 const view = computed(
@@ -52,7 +64,7 @@ const view = computed(
   <ArchiveDetailView
     v-else-if="archive.detail"
     :entry="archive.detail"
-    @back="archive.close()"
+    @back="backToArchive()"
     @remove="removeArchive()"
   />
   <Transition v-else name="view" mode="out-in">

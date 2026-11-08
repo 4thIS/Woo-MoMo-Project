@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -154,5 +156,13 @@ describe('ArchiveDetailView — 녹음은 그 문항 카드 바닥에 (2026-11-0
     const w = view({ recordings: [{ turn: 1, url: 'u1', durationSec: 5 }] } as never)
     await w.get('[data-test=tab-transcript]').trigger('click')
     expect(w.find('[data-test=archive-clip]').exists()).toBe(false)
+  })
+})
+
+describe('ArchiveDetailView — 폭 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'ArchiveDetailView.vue'), 'utf8')
+
+  it('준비 화면과 같은 폭을 쓴다 — 레일 376px을 떼고 나면 본문에 남는 폭이 얼마 안 된다', () => {
+    expect(src).toMatch(/max-width:\s*1280px/)
   })
 })
