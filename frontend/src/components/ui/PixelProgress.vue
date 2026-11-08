@@ -41,10 +41,10 @@ const props = withDefaults(
 /** 표시용 정수 % (장면은 소수 progress를 그대로 쓴다) */
 const pct = computed(() => Math.round(props.progress))
 const caption = computed(() => {
-  // 초기화는 전체 진행률(모델+TTS)로는 88% 언저리 — 아직 길 위라 "자리에 앉는 중"이 아니다 (#26)
+  // 초기화는 전체 진행률(모델+TTS)로는 88% 언저리 — 아직 길 위라 "준비되었습니다"가 아니다 (#26)
   if (props.phase === 'init') return '잠깐 숨 고르는 중…'
   if (props.phase === 'voice') return '목소리 준비 중'
-  if (props.phase === 'ready') return '면접관이 자리에 앉았습니다'
+  if (props.phase === 'ready') return '면접관이 준비되었습니다'
   if (props.phase === 'error') return props.errorText
   return captionFor(pct.value)
 })

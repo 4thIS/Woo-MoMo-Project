@@ -87,7 +87,7 @@ describe('PrepareView', () => {
     const w = mountView()
     const btn = w.find('[data-test=start]')
     expect((btn.element as HTMLButtonElement).disabled).toBe(true)
-    expect(btn.text()).toContain('면접관이 자리에 앉으면 열립니다')
+    expect(btn.text()).toContain('면접관이 준비되면 열립니다')
   })
 
   it('분야 칩 + 직무 + PDF → 입력 완료 태그', async () => {
@@ -308,12 +308,12 @@ describe('PrepareView — 진행 창 제목은 단계를 따른다 (#24)', () =>
     m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
     expect(title(mountView())).toBe('면접관이 목소리를 가다듬는 중')
   })
-  it('준비 완료: 자리에 앉았습니다 — 아래 문구와 모순되지 않는다', () => {
+  it('준비 완료: 준비되었습니다 — 아래 문구와 모순되지 않는다', () => {
     const m = useModelStore()
     m.manifest = { ...manifestWithTts, tts: null }
     m.status = 'ready'
     m.ttsStatus = 'ready'
-    expect(title(mountView())).toBe('면접관이 자리에 앉았습니다')
+    expect(title(mountView())).toBe('면접관이 준비되었습니다')
   })
   it('오류: 오는 길에 문제', () => {
     useModelStore().status = 'error'

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import ReportRail from './ReportRail.vue'
 import type { ReportV2Summary } from '@/utils/reportV2'
 
@@ -96,5 +96,28 @@ describe('ReportRail — 인쇄', () => {
     expect(print).toMatch(/\.toc/)
     expect(print).toMatch(/\.actions/)
     expect(print).toMatch(/display:\s*none/)
+  })
+})
+
+describe('ReportRail — 목차는 해시를 쓰지 않는다 (2026-11-08)', () => {
+  /* 해시 이동은 popstate를 쏜다(state: null). 보관함 상세는 그것을 듣고 화면을 닫으므로
+     목차를 누를 때마다 상세가 통째로 닫혔다 */
+  it('눌러도 해시가 바뀌지 않고, 그 문항으로 굴러간다', async () => {
+    const w = rail()
+    const card = document.createElement('div')
+    card.id = 'q1'
+    card.scrollIntoView = vi.fn()
+    document.body.appendChild(card)
+    const before = location.hash
+
+    await w.get('[data-test=toc-item]').trigger('click')
+
+    expect(location.hash).toBe(before)
+    expect(card.scrollIntoView).toHaveBeenCalled()
+    card.remove()
+  })
+
+  it('링크는 여전히 진짜 href다 — Tab 차례와 우클릭이 거저 따라온다', () => {
+    expect(rail().get('[data-test=toc-item]').attributes('href')).toBe('#q1')
   })
 })

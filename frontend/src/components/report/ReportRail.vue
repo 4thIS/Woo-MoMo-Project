@@ -4,11 +4,14 @@
  * 리포트 화면과 **보관함 상세가 같은 것**을 쓴다. 둘이 다른 것은 머리글과 액션뿐이라
  * 그 둘만 슬롯으로 열어 둔다.
  *
- * 목차는 진짜 `<a href="#q4">`다 — Tab 차례와 브라우저 뒤로 가기가 거저 따라온다.
- * 직접 만든 클릭 핸들러로는 둘 다 안 된다. 부드러운 스크롤은 쓰지 않는다(16문항 거리에서 멀미).
+ * 목차는 진짜 `<a href="#q4">`다 — Tab 차례·우클릭·새 탭으로 열기가 거저 따라온다.
+ * 다만 **클릭은 가로챈다**: 해시 이동(fragment navigation)이 `popstate`를 쏘는데,
+ * 보관함 상세가 그것을 듣고 화면을 닫기 때문이다 (2026-11-08).
+ * 부드러운 스크롤은 쓰지 않는다(16문항 거리에서 멀미).
  */
 import { computed } from 'vue'
 import { formatDuration, overBy } from '@/utils/timing'
+import { scrollToId } from '@/utils/anchorScroll'
 import type { ReportV2Summary } from '@/utils/reportV2'
 
 export interface TocItem {
@@ -94,6 +97,7 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
             :href="`#${it.id}`"
             :aria-current="current === it.id ? 'true' : undefined"
             data-test="toc-item"
+            @click.prevent="scrollToId(it.id)"
           >
             <span class="mark" aria-hidden="true" />
             <!-- 꼬리줄은 제 카드와 같은 id라 번호를 숨긴다 — 두 번 적으면 같은 문항처럼 읽힌다 -->

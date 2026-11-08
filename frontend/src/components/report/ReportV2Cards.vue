@@ -4,6 +4,7 @@
  * 서버가 준 글은 전부 텍스트 바인딩으로만 그린다(`docs/API.md`: 보관함은 받은 그대로 돌려주므로
  * 클라이언트가 이스케이프한다). 강조는 `splitEmphasis`가 조각으로 갈라 준 것만 굵게 한다.
  */
+import { scrollToId } from '@/utils/anchorScroll'
 import { computed } from 'vue'
 import ProfileHex from './ProfileHex.vue'
 import { splitEmphasis } from '@/utils/reportParser'
@@ -101,7 +102,13 @@ function numbersLine(m: Measurements): string {
             <li v-for="(p, i) in sm.strengths" :key="i">
               {{ p.point }}
               <span v-if="p.refs.length" class="refs mono">
-                <a v-for="r in p.refs" :key="r" :href="`#item-${r}`">{{ r }}</a>
+                <a
+                  v-for="r in p.refs"
+                  :key="r"
+                  :href="`#item-${r}`"
+                  @click.prevent="scrollToId(`item-${r}`)"
+                  >{{ r }}</a
+                >
               </span>
             </li>
           </ul>
@@ -114,7 +121,13 @@ function numbersLine(m: Measurements): string {
             <li v-for="(p, i) in sm.improvements" :key="i">
               {{ p.point }}
               <span v-if="p.refs.length" class="refs mono">
-                <a v-for="r in p.refs" :key="r" :href="`#item-${r}`">{{ r }}</a>
+                <a
+                  v-for="r in p.refs"
+                  :key="r"
+                  :href="`#item-${r}`"
+                  @click.prevent="scrollToId(`item-${r}`)"
+                  >{{ r }}</a
+                >
               </span>
             </li>
           </ul>

@@ -20,8 +20,12 @@ const interview = useInterviewStore()
 /* 보관함 상세는 화면이다. 뒤로 가기로 목록에 돌아와야 하므로 popstate를 여기서 듣는다 —
    스토어가 전역 리스너를 달면 테스트마다 쌓인다 */
 const archive = useArchiveViewStore()
-function onPop() {
-  if (archive.detail) archive.close()
+/* 해시 이동도 popstate를 쏜다(state: null). 목차는 이제 해시를 쓰지 않지만,
+   남이 붙인 앵커 링크 하나에 화면이 닫히는 일이 다시 없도록 state로 가린다:
+   상세를 열며 민 항목에는 momoArchive가 있고, 그 항목을 빠져나오면 없다 (2026-11-08) */
+function onPop(e: PopStateEvent) {
+  const st = e.state as { momoArchive?: string } | null
+  if (archive.detail && !st?.momoArchive) archive.close()
 }
 onMounted(() => window.addEventListener('popstate', onPop))
 onBeforeUnmount(() => window.removeEventListener('popstate', onPop))

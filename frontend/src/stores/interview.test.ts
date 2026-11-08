@@ -136,10 +136,10 @@ describe('interview store', () => {
 
   it.each([
     ['ready', 'it', '백엔드', true, null],
-    ['downloaded', 'it', '백엔드', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', 'it', '백엔드', false, '면접관이 준비되면 열립니다'],
     ['ready', null, '백엔드', false, '위 항목을 채우면 열립니다'],
     ['ready', 'it', '', false, '위 항목을 채우면 열립니다'],
-    ['downloaded', null, '', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', null, '', false, '면접관이 준비되면 열립니다'],
   ] as const)(
     'canStart: model=%s field=%s job=%s → %s',
     async (status, field, job, expected, reason) => {
@@ -627,7 +627,7 @@ describe('canStart — TTS (멘토링 보완: 목소리를 기다리지 않는�
     const m = useModelStore()
     m.status = 'downloading'
     expect(s.canStart).toBe(false)
-    expect(s.startBlockReason).toBe('면접관이 자리에 앉으면 열립니다')
+    expect(s.startBlockReason).toBe('면접관이 준비되면 열립니다')
   })
 })
 

@@ -110,7 +110,7 @@ const TITLE: Record<'download' | 'init' | 'voice' | 'ready' | 'error', string> =
   download: '면접관이 출근하는 중',
   init: '면접관이 잠깐 숨 고르는 중',
   voice: '면접관이 목소리를 가다듬는 중',
-  ready: '면접관이 자리에 앉았습니다',
+  ready: '면접관이 준비되었습니다',
   error: '면접관이 오는 길에 문제가 생겼습니다',
 }
 const fileName = computed(() =>
