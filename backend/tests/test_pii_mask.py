@@ -141,6 +141,8 @@ def test_names_in_resume_labels():
         "가" * 20_000,
         "서울시강남구" * 3_000,
         "주소:" + "가" * 20_000,
+        "주소: x" + " " * 20_000 + "y",
+        "주소: " + "(010-1234-5678) " * 1_200,
     ],
     ids=[
         "dash",
@@ -154,9 +156,78 @@ def test_names_in_resume_labels():
         "hangul",
         "city-run",
         "address-run",
+        "address-spaces",
+        "address-phones",
     ],
 )
 def test_adversarial_long_text_is_fast(text):
     start = time.perf_counter()
     Masker(["홍길동", "Gildong Hong"]).mask(text)
     assert time.perf_counter() - start < 0.5
+
+
+# ── 보강 1차 ──
+
+
+def test_labelled_address_stops_before_phone_or_email():
+    m = Masker()
+    assert m.mask("주소: 마포구 망원동 123-4 (010-1234-5678)") == "주소: [주소1] ([전화1])"
+    assert m.mask("주소: 경기도 성남시 분당구 정자동 12 / gildong@ex.com") == (
+        "주소: [주소2] / [이메일1]"
+    )
+    assert m._values["[주소1]"] == "마포구 망원동 123-4"
+    assert m._values["[주소2]"] == "경기도 성남시 분당구 정자동 12"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "웹 주소: https://pay-demo.example.com",
+        "서비스 주소: https://www.toss.im",
+        "IP 주소: 192.168.0.1",
+        "Email address: none",
+    ],
+)
+def test_address_label_only_at_line_start(text):
+    assert Masker().mask(text) == text
+
+
+def test_address_label_after_bullet():
+    m = Masker()
+    assert m.mask("- 주소: 서울 마포구 망원동 1") == "- 주소: [주소1]"
+    assert m.mask("• 거주지: 부산 해운대구") == "• 거주지: [주소2]"
+    assert m.mask("학력\n  주소: 대구 수성구 1\n끝") == "학력\n  주소: [주소3]\n끝"
+
+
+def test_account_label_needs_account_word_or_bank_name():
+    m = Masker()
+    assert m.mask("은행 앱 개발: 거래 1234567890건") == "은행 앱 개발: 거래 1234567890건"
+    assert m.mask("신한은행 110-123-456789") == "신한은행 [계좌1]"
+    assert m.mask("입금 계좌: 국민은행 123456-01-234567") == "입금 계좌: 국민은행 [계좌2]"
+
+
+def test_plus82_rewrite_only_for_phones():
+    m = Masker()
+    # 82로 시작하는 계좌번호는 0으로 바꾸지 않는다(다른 계좌와 섞이지 않게)
+    assert m.mask("계좌 8212345678901") == "계좌 [계좌1]"
+    assert m.mask("계좌 012345678901") == "계좌 [계좌2]"
+    assert m._values["[계좌1]"] == "8212345678901"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "010 - 1234 - 5678",
+        "(010)1234-5678",
+        "(010) 1234-5678",
+        "+82 010-1234-5678",
+        "+82 10-1234-5678",
+        "+82-10-1234-5678",
+        "010.1234.5678",
+        "010 1234 5678",
+    ],
+)
+def test_phone_formats_share_one_placeholder(text):
+    m = Masker()
+    m.mask("010-1234-5678")
+    assert m.mask(f"연락처 {text} 입니다") == "연락처 [전화1] 입니다"

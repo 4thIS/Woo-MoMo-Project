@@ -12,9 +12,24 @@ HOLD_MAX = 10
 
 _RRN = re.compile(r"(?<!\d)\d{6}\s?-\s?[1-8]\d{6}(?!\d)")
 _CARD = re.compile(r"(?<!\d)\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}(?!\d)")
-_ACCOUNT_LABEL = re.compile(r"계좌|은행|입금")
+# "은행"만으로는 부족하다("은행 앱 개발"): 계좌·입금·account 또는 은행 이름이 있는 줄만
+_ACCOUNT_LABEL = re.compile(
+    r"계좌|입금|\baccount"
+    r"|(?:국민|신한|우리|하나|농협|기업|SC제일|씨티|우체국|새마을|신협|수협)은행"
+    r"|카카오뱅크|토스뱅크|케이뱅크",
+    re.I,
+)
 _ACCOUNT = re.compile(r"(?<![\d-])\d[\d-]{8,18}\d(?![\d-])")
-_MOBILE = re.compile(r"(?<![\d+])(?:\+82[ -]?|0)1[016789][ .-]?\d{3,4}[ .-]?\d{4}(?!\d)")
+# 휴대폰: 010-1234-5678, 010 - 1234 - 5678, (010)1234-5678, +82 10-…, +82 010-…
+_PHONE_SEP = r"(?:[ \t]?[.-][ \t]?|[ \t])?"
+_MOBILE = re.compile(
+    # 괄호는 앞 세 자리를 감쌀 때만 번호에 넣는다("(010-1234-5678)"의 괄호는 남긴다)
+    r"(?<![\d+])(?:\(01[016789]\)|(?:\+82[ \t-]?0?|0)1[016789])"
+    + _PHONE_SEP
+    + r"\d{3,4}"
+    + _PHONE_SEP
+    + r"\d{4}(?!\d)"
+)
 _LANDLINE = re.compile(r"(?<!\d)0(?:2|[3-6][1-5]|70)-\d{3,4}-\d{4}(?!\d)")
 # 앞에 같은 글자가 붙어 있으면 시작하지 않고 길이를 묶어, 긴 문자열에서도 한 번만 훑는다
 _EMAIL = re.compile(
@@ -42,7 +57,15 @@ _ROAD = re.compile(
     r"[가-힣0-9]{1,15}(?:로|길)[ \t]{0,3}\d{1,5}(?:-\d{1,5})?"
     r"(?:[ ,]{1,3}[^\n,]{0,20}?\d{1,4}동[ \t]{0,3}\d{1,5}호)?"
 )
-_ADDRESS_LABEL = re.compile(r"(?:주소|거주지|address)\s*[:：]\s*(\S[^\n]*?)\s*$", re.I | re.M)
+# 줄 머리의 라벨만("- "·"• " 글머리표 허용). "웹 주소:"·"IP 주소:"는 아니다.
+# 값은 줄 끝까지 탐욕으로 잡고 뒤 공백·구분자는 코드에서 자른다(게으른 반복 + $ 되풀이 방지)
+_ADDRESS_LABEL = re.compile(
+    r"^[ \t]*(?:[-•*·][ \t]*)?(?:주소|거주지|address)[ \t]*[:：][ \t]*(\S[^\n]*)",
+    re.I | re.M,
+)
+# 라벨 주소 끝에서 떼어 낼 것: 공백·여는 괄호·슬래시·쉼표 같은 구분자
+# (정규식 `[...]+$`는 긴 공백 덩어리에서 시간이 제곱으로 늘어 rstrip을 쓴다)
+_ADDRESS_TAIL = " \t\r\n([/,·|:;~-"
 _NAME_LABEL = re.compile(
     r"(?:이름|성명|name)\s*[:：]\s*([가-힣]{2,4}|[A-Za-z]+(?: [A-Za-z]+){1,2})(?![가-힣A-Za-z])",
     re.I,
@@ -79,8 +102,17 @@ def _name_patterns(name: str) -> list[re.Pattern[str]]:
 
 
 def _digits(value: str) -> str:
-    d = re.sub(r"\D", "", value)
-    return "0" + d[2:] if d.startswith("82") else d
+    return re.sub(r"\D", "", value)
+
+
+def _phone_key(value: str) -> str:
+    """전화번호 비교 키: 숫자만, 국가번호 +82는 앞자리 0으로."""
+    d = _digits(value)
+    if value.startswith("+82"):
+        d = d[2:]
+        if not d.startswith("0"):
+            d = "0" + d
+    return d
 
 
 def _link_key(value: str) -> str:
@@ -122,7 +154,7 @@ class Masker:
                         add(s, s + len(m.group()), "계좌", _digits(m.group()))
         for rx in (_MOBILE, _LANDLINE):
             for m in rx.finditer(text):
-                add(*m.span(), "전화", _digits(m.group()))
+                add(*m.span(), "전화", _phone_key(m.group()))
         for m in _EMAIL.finditer(text):
             add(*m.span(), "이메일", m.group().lower())
         for m in _LINK.finditer(text):
@@ -135,7 +167,12 @@ class Masker:
         for m in _ROAD.finditer(text):
             add(*m.span(), "주소", m.group())
         for m in _ADDRESS_LABEL.finditer(text):
-            add(*m.span(1), "주소", m.group(1))
+            start, end = m.span(1)
+            # 같은 줄에 먼저 잡힌 전화·이메일 등이 있으면 그 앞까지만 주소로 본다
+            end = min([s for s, _ in taken if start <= s < end], default=end)
+            value = text[start:end].rstrip(_ADDRESS_TAIL)
+            if value:
+                add(start, start + len(value), "주소", value)
         for name, pat in self._names:
             for m in pat.finditer(text):
                 add(*m.span(), "이름", name)
