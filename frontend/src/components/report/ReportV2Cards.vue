@@ -271,9 +271,10 @@ function numbersLine(m: Measurements): string {
   margin: 0;
   line-height: 1.8;
 }
-/* 꼬리질문은 부모 아래 한 칸 들어간다 — 번호만으로는 묶음이 보이지 않는다 */
+/* 꼬리질문은 부모에 딸린 것이다. 들여쓰면 **그 카드만 좁아져** 줄이 들쭉날쭉해지므로
+   폭은 그대로 두고 왼쪽 띠로 묶음을 보인다 (2026-11-08) */
 .follow {
-  margin-left: var(--sp-6);
+  border-left: 4px solid var(--accent-2);
 }
 .points {
   margin: 0;
