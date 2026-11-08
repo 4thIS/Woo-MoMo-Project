@@ -250,7 +250,10 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
     radial-gradient(130% 80% at 50% 22%, var(--room-lit) 0%, var(--bg) 62%),
     repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
 }
-/* 바닥 — 책상 아래가 바닥으로 읽히게 */
+/* 바닥 — 책상 아래가 바닥으로 읽히게.
+   **`.stage::before`는 이 하나뿐이어야 한다.** 무대가 창이던 시절(b4702c6) 제목 띠로 쓰던
+   24px짜리 `::before`가 같은 선택자로 뒤에 한 번 더 있어, 이 바닥을 통째로 덮고 맨 위에
+   의미 없는 띠만 남겼다. 창을 걷어낸(#86) 뒤로는 쓸모가 없어 지웠다 (2026-11-08) */
 .stage::before {
   content: '';
   position: absolute;
@@ -261,13 +264,9 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   background: linear-gradient(180deg, var(--floor-top) 0%, var(--floor-bottom) 100%);
   border-top: 2px solid var(--floor-line);
   pointer-events: none;
-}
-.stage::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 24px;
-  background: var(--bg);
+  /* 내용 **뒤**에 깐다. 절대 배치는 정적 요소보다 나중에 그려지므로, 이게 없으면
+     바닥이 책상과 지원자 정수리를 덮는다 (2026-11-08) */
+  z-index: -1;
 }
 .topbar {
   position: absolute;

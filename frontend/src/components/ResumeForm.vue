@@ -4,6 +4,10 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import CursorIcon from '@/components/ui/icons/CursorIcon.vue'
 
 import { RESUME_FIELDS as FIELDS, composeResume } from '@/utils/resumeForm'
+import { digitsOnly, plainName } from '@/utils/inputFilter'
+
+/** 칸마다 받아 줄 글자. 없는 칸은 그대로 — 경력·지원동기에 특수문자를 막으면 글을 못 쓴다 */
+const CLEAN: Record<string, (v: string) => string> = { name: plainName, age: digitsOnly }
 
 /** PDF 없이 한 항목씩 답해 나가는 간단 이력서. 마지막 항목을 넘기면 한 덩어리 텍스트로 emit */
 const emit = defineEmits<{ done: [text: string] }>()
@@ -16,7 +20,8 @@ const el = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
 const field = computed(() => FIELDS[idx.value])
 const value = computed({
   get: () => values.value[field.value.key],
-  set: (v: string) => (values.value[field.value.key] = v),
+  // 붙여넣기·끌어다 놓기·자동 완성도 여기를 지나므로 받아 줄 글자만 남겨 넣는다
+  set: (v: string) => (values.value[field.value.key] = (CLEAN[field.value.key] ?? ((s) => s))(v)),
 })
 const filled = computed(() => field.value.optional || value.value.trim().length > 0)
 const last = computed(() => idx.value === FIELDS.length - 1)
@@ -55,16 +60,6 @@ function prev() {
 <template>
   <div class="form" data-test="resume-form">
     <div class="nav">
-      <button
-        type="button"
-        class="arrow press"
-        data-test="form-prev"
-        aria-label="이전 항목"
-        :disabled="idx === 0"
-        @click="prev"
-      >
-        <CursorIcon class="flip" />
-      </button>
       <span class="mono num">{{ idx + 1 }} / {{ FIELDS.length }}</span>
       <span class="mono label" :class="{ optional: field.optional }">{{ field.label }}</span>
     </div>
@@ -104,9 +99,18 @@ function prev() {
         >
         <template v-else>Enter로 다음{{ field.optional ? ' · 건너뛰어도 됩니다' : '' }}</template>
       </span>
-      <PixelButton data-test="form-next" variant="secondary" @click="next">
-        {{ last ? '이력서 완성' : '다음' }}
-      </PixelButton>
+      <!-- 오가는 두 버튼은 **한 쌍으로 같은 줄**에 둔다 (2026-11-08) — 이전이 위 구석의
+           아이콘 하나였을 때는 눈에 띄지 않아 쓸 수 있는 버튼이 '다음' 하나로 느껴졌다 -->
+      <div class="go">
+        <PixelButton data-test="form-prev" variant="secondary" :disabled="idx === 0" @click="prev">
+          <CursorIcon class="flip" /> 이전
+        </PixelButton>
+        <!-- 노랑(primary)은 '면접 시작'의 것이다 — 한 화면에 노란 버튼이 둘이면
+             어디를 눌러야 할지 흐려진다. 둘을 가르는 것은 색이 아니라 화살표 방향이다 -->
+        <PixelButton data-test="form-next" variant="secondary" @click="next">
+          {{ last ? '이력서 완성' : '다음' }} <CursorIcon />
+        </PixelButton>
+      </div>
     </div>
   </div>
 </template>
@@ -145,6 +149,13 @@ function prev() {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
+}
+/* 오가는 두 버튼은 오른쪽에 나란히 — 눈이 한 곳만 보면 된다 */
+.go {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
 }
 .hint {
   font-size: var(--fs-meta);

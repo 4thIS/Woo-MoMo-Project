@@ -22,6 +22,7 @@ import PixelButton from '@/components/ui/PixelButton.vue'
 import ChoiceMenu from '@/components/ui/ChoiceMenu.vue'
 import PixelProgress from '@/components/ui/PixelProgress.vue'
 import { formatEta } from '@/utils/progressStages'
+import { digitsOnly, plainName } from '@/utils/inputFilter'
 import { normalizePostingUrl } from '@/utils/postingUrl'
 import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
@@ -37,10 +38,19 @@ const modal = useModalStore()
 
 /** 대입 입력 — 트랙이 대입일 때만 쓴다 */
 type AdField = 'name' | 'university' | 'department'
-const setAd = (k: AdField, v: string) => interview.setAdmission({ [k]: v })
-const setAge = (v: string) => {
-  const n = Number(v)
-  interview.setAdmission({ age: v.trim() && Number.isFinite(n) ? n : null })
+/** 받아 줄 글자만 남겨 돌려준다. **걸러 낸 것이 있을 때만** 칸에 되쓴다 —
+ *  조합 중에 되쓰면 한글이 깨진다. 막는 자리를 keydown이 아니라 여기로 둬야
+ *  붙여넣기·끌어다 놓기·자동 완성도 같이 걸린다 (2026-11-08) */
+function filtered(e: Event, clean: (v: string) => string): string {
+  const el = e.target as HTMLInputElement
+  const v = clean(el.value)
+  if (v !== el.value) el.value = v
+  return v
+}
+const setAd = (e: Event, k: AdField) => interview.setAdmission({ [k]: filtered(e, plainName) })
+const setAge = (e: Event) => {
+  const v = filtered(e, digitsOnly)
+  interview.setAdmission({ age: v ? Number(v) : null })
 }
 /** 2단계에서 받는 긴 글의 이름 — 트랙에 따라 다르다 */
 const longDocLabel = computed(() => (interview.track === 'admission' ? '자기소개서' : '이력서'))
@@ -575,7 +585,7 @@ async function clearAndRetry() {
                     maxlength="20"
                     :value="interview.profile.name"
                     placeholder="예: 홍길동"
-                    @input="setAd('name', ($event.target as HTMLInputElement).value)"
+                    @input="setAd($event, 'name')"
                   />
                 </div>
                 <div class="field">
@@ -584,12 +594,11 @@ async function clearAndRetry() {
                     id="ad-age"
                     data-test="ad-age"
                     class="input"
-                    type="number"
-                    min="10"
-                    max="99"
+                    inputmode="numeric"
+                    maxlength="3"
                     :value="interview.profile.age ?? ''"
                     placeholder="예: 19"
-                    @input="setAge(($event.target as HTMLInputElement).value)"
+                    @input="setAge($event)"
                   />
                 </div>
               </div>
@@ -602,7 +611,7 @@ async function clearAndRetry() {
                   maxlength="40"
                   :value="interview.profile.university"
                   placeholder="예: 한국대학교"
-                  @input="setAd('university', ($event.target as HTMLInputElement).value)"
+                  @input="setAd($event, 'university')"
                 />
               </div>
               <div class="field">
@@ -614,7 +623,7 @@ async function clearAndRetry() {
                   maxlength="40"
                   :value="interview.profile.department"
                   placeholder="예: 컴퓨터공학과"
-                  @input="setAd('department', ($event.target as HTMLInputElement).value)"
+                  @input="setAd($event, 'department')"
                 />
                 <span class="mono hint"
                   >면접관이 질문의 방향을 잡는 데 씁니다 — 입력을 마치면 자기소개서 단계로
