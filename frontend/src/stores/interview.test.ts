@@ -375,6 +375,43 @@ describe('interview flow', () => {
     expect(s.profile.job).toBe('')
   })
 
+  it('reset(true)는 적어 둔 것을 남긴다 — 같은 조건으로 한 번 더 보려는 것이다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    s.setResume('이력서.pdf', '경력 10년')
+    s.setCompanyName('모모')
+    s.setPostingUrl('https://example.com/jobs/1')
+    s.setAdmission({ name: '이우진', age: 27, university: '모모대', department: '컴공' })
+    const field = s.profile.field
+    const job = s.profile.job
+    await s.start()
+    await s.reset(true)
+    expect(s.phase).toBe('prepare')
+    expect(s.profile.field).toBe(field)
+    expect(s.profile.job).toBe(job)
+    expect(s.profile.companyName).toBe('모모')
+    expect(s.profile.postingUrl).toBe('https://example.com/jobs/1')
+    expect(s.profile.name).toBe('이우진')
+    expect(s.profile.age).toBe(27)
+    expect(s.profile.university).toBe('모모대')
+    expect(s.profile.department).toBe('컴공')
+    expect(s.resumeName).toBe('이력서.pdf')
+    expect(s.resumeText).toBe('경력 10년')
+  })
+
+  it('reset(true)여도 지난 면접은 비운다 — 남기는 것은 입력뿐이다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    await s.reset(true)
+    expect(s.messages).toEqual([])
+    expect(s.report).toBeNull()
+    expect(s.reportV2).toBeNull()
+    expect(s.ended).toBe(false)
+    expect(s.archiveSaved).toBe(false)
+    expect(s.interviewerId).toBeNull()
+  })
+
   it('start·send·종료 시각을 기록한다', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000_000)
