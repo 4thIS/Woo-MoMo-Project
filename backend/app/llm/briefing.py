@@ -103,8 +103,10 @@ class WebCollector:
             try:
                 got[key] = fut.result(timeout=max(0.0, deadline - time.monotonic()))
             except FutureTimeout:
+                log.info("briefing step=%s timeout", key)
                 got[key] = None
-            except Exception:  # 예상 못 한 오류도 그 단계만 버린다
+            except Exception as exc:  # 예상 못 한 오류도 그 단계만 버린다 (종류만 남긴다)
+                log.info("briefing step=%s err=%s", key, type(exc).__name__)
                 got[key] = None
         log.info(
             "briefing collect ms=%d posting=%s news=%d web=%d",
@@ -142,7 +144,11 @@ def summary_messages(company: str, job: str, m: Material) -> list[dict[str, str]
         lines.append("모집공고: 있음 (아래 [공고])" if m.posting else "모집공고: 읽지 못함")
     lines.append("[자료]")
     if m.posting:
-        lines += ["[공고]", m.posting.text[: posting_text.MAX_CHARS], "[공고 끝]"]
+        lines += [
+            "[공고]",
+            m.posting.text[: posting_text.MAX_CHARS].replace("[", "(").replace("]", ")"),
+            "[공고 끝]",
+        ]
     lines += [_doc_line(d) for d in m.found]
     lines += ["[자료 끝]", "이 기업의 면접 준비용 브리핑을 작성해 주세요."]
     return [{"role": "user", "content": "\n".join(lines)}]
