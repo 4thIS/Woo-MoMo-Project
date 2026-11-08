@@ -87,7 +87,7 @@ describe('PrepareView', () => {
     const w = mountView()
     const btn = w.find('[data-test=start]')
     expect((btn.element as HTMLButtonElement).disabled).toBe(true)
-    expect(btn.text()).toContain('면접관이 자리에 앉으면 열립니다')
+    expect(btn.text()).toContain('면접관이 준비되면 열립니다')
   })
 
   it('분야 칩 + 직무 + PDF → 입력 완료 태그', async () => {
@@ -308,12 +308,12 @@ describe('PrepareView — 진행 창 제목은 단계를 따른다 (#24)', () =>
     m.$patch({ ttsStatus: 'downloading', ttsReceived: 40, ttsTotal: 100 })
     expect(title(mountView())).toBe('면접관이 목소리를 가다듬는 중')
   })
-  it('준비 완료: 자리에 앉았습니다 — 아래 문구와 모순되지 않는다', () => {
+  it('준비 완료: 준비되었습니다 — 아래 문구와 모순되지 않는다', () => {
     const m = useModelStore()
     m.manifest = { ...manifestWithTts, tts: null }
     m.status = 'ready'
     m.ttsStatus = 'ready'
-    expect(title(mountView())).toBe('면접관이 자리에 앉았습니다')
+    expect(title(mountView())).toBe('면접관이 준비되었습니다')
   })
   it('오류: 오는 길에 문제', () => {
     useModelStore().status = 'error'
@@ -1110,5 +1110,39 @@ describe('PrepareView — 탭은 떠오르지 않는다 (2026-11-08)', () => {
 
   it('탭에 .press를 붙이지 않는다 — 기본 그림자가 없어 hover에서만 튀어나와 옆 탭을 덮는다', () => {
     expect(src).not.toMatch(/class="mono tab press"/)
+  })
+})
+
+describe('PrepareView — 벤 트랙을 패널 밖에서도 고른다 (2026-11-08)', () => {
+  const benReady = async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    useInterviewerStore().select('m2')
+    useInterviewStore().setTrack(null)
+    const w = mountView()
+    await flushPromises()
+    return w
+  }
+
+  it('고르기 패널을 닫아도 트랙 고르기가 보인다 — 닫는 순간 길이 사라지면 막다른 길이다', async () => {
+    const w = await benReady()
+    expect(w.find('[data-test=picker-row]').exists()).toBe(false) // 패널은 닫혀 있다
+    expect(w.find('[data-test=track-pick]').exists()).toBe(true)
+  })
+
+  it('트랙을 고르면 그 자리는 사라지고 회사 정보 칸이 나온다', async () => {
+    const w = await benReady()
+    await w.get('[data-test=track-company]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test=track-pick]').exists()).toBe(false)
+    expect(w.find('[data-test=company-name]').exists()).toBe(true)
+  })
+
+  it('트랙이 정해진 면접관(데이빗)에게는 묻지 않는다', async () => {
+    useInterviewerStore().select('m1')
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('[data-test=track-pick]').exists()).toBe(false)
   })
 })

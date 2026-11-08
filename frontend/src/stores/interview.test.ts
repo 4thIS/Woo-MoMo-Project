@@ -136,10 +136,10 @@ describe('interview store', () => {
 
   it.each([
     ['ready', 'it', '백엔드', true, null],
-    ['downloaded', 'it', '백엔드', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', 'it', '백엔드', false, '면접관이 준비되면 열립니다'],
     ['ready', null, '백엔드', false, '위 항목을 채우면 열립니다'],
     ['ready', 'it', '', false, '위 항목을 채우면 열립니다'],
-    ['downloaded', null, '', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', null, '', false, '면접관이 준비되면 열립니다'],
   ] as const)(
     'canStart: model=%s field=%s job=%s → %s',
     async (status, field, job, expected, reason) => {
@@ -627,7 +627,7 @@ describe('canStart — TTS (멘토링 보완: 목소리를 기다리지 않는�
     const m = useModelStore()
     m.status = 'downloading'
     expect(s.canStart).toBe(false)
-    expect(s.startBlockReason).toBe('면접관이 자리에 앉으면 열립니다')
+    expect(s.startBlockReason).toBe('면접관이 준비되면 열립니다')
   })
 })
 
@@ -1925,5 +1925,32 @@ describe('benRequest — 성향 싣기', () => {
     const s = company()
     s.benSettings = { ...DEFAULT_BEN, warmth: 2 }
     expect(s.benRequest()).toMatchObject({ benSettings: { warmth: 'high' } })
+  })
+})
+
+describe('벤으로 바꿀 때 트랙 (2026-11-08)', () => {
+  it('트랙을 아직 안 골랐으면 그것을 사유로 말한다 — "위 항목을 채우면"은 어느 항목인지 알려 주지 않는다', () => {
+    const s = useInterviewStore()
+    const m = useModelStore()
+    m.$patch({ status: 'ready' })
+    useInterviewerStore().select('m2') // 벤 — 트랙을 사용자가 고른다
+    s.setTrack(null)
+    expect(s.track).toBe(null)
+    expect(s.startBlockReason).toBe('어느 면접으로 볼지 고르면 열립니다')
+  })
+
+  it('트랙을 고른 뒤에는 그 사유가 사라진다', () => {
+    const s = useInterviewStore()
+    useModelStore().$patch({ status: 'ready' })
+    useInterviewerStore().select('m2')
+    s.setTrack('company')
+    expect(s.startBlockReason).not.toBe('어느 면접으로 볼지 고르면 열립니다')
+  })
+
+  it('모델이 아직이면 모델 얘기가 먼저다 — 둘 다 모자라도 손댈 수 있는 것부터', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    s.setTrack(null)
+    expect(s.startBlockReason).toBe('면접관이 준비되면 열립니다')
   })
 })

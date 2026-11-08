@@ -373,3 +373,47 @@ describe('MeModal — 이력서 칸 (2026-11-07)', () => {
     expect(document.querySelector('[data-test=slot-delete]')).toBeNull()
   })
 })
+
+describe('MeModal — 이력서를 파일로 채우기 (2026-11-08)', () => {
+  /** 편집기를 연 상태의 모달과, 그 안의 드롭 컴포넌트 */
+  const editor = async () => {
+    const w = modal()
+    await settle()
+    await click('slot-empty')
+    return w
+  }
+  const dropIn = (w: ReturnType<typeof modal>) => w.findComponent({ name: 'ResumeFileDrop' })
+
+  it('편집기에 PDF를 넣는 길이 있다 — 손으로만 쓰게 두지 않는다', async () => {
+    await editor()
+    expect(document.querySelector('[data-test=slot-drop]')).not.toBeNull()
+  })
+
+  it('읽은 글이 본문 칸에 들어가고, 비어 있던 제목은 파일명이 된다', async () => {
+    const w = await editor()
+    dropIn(w).vm.$emit('read', { name: '내 이력서.pdf', text: '뽑아낸 글' })
+    await settle()
+    expect(q<HTMLTextAreaElement>('slot-text').value).toBe('뽑아낸 글')
+    expect(q<HTMLInputElement>('slot-title').value).toBe('내 이력서')
+  })
+
+  it('써 둔 제목은 파일명으로 덮지 않는다', async () => {
+    const w = await editor()
+    await set('slot-title', '내가 정한 제목')
+    dropIn(w).vm.$emit('read', { name: '내 이력서.pdf', text: '뽑아낸 글' })
+    await settle()
+    expect(q<HTMLInputElement>('slot-title').value).toBe('내가 정한 제목')
+    expect(q<HTMLTextAreaElement>('slot-text').value).toBe('뽑아낸 글')
+  })
+
+  it('파일로 채운 뒤 저장하면 그 글이 남는다', async () => {
+    const w = await editor()
+    dropIn(w).vm.$emit('read', { name: '내 이력서.pdf', text: 'x'.repeat(120) })
+    await settle()
+    await click('slot-save')
+    const saved = useAccountStore().slotsOf('admission')
+    expect(saved).toHaveLength(1)
+    expect(saved[0].title).toBe('내 이력서')
+    expect(saved[0].text).toBe('x'.repeat(120))
+  })
+})

@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted } from 'vue'
 import { useInterviewStore } from '@/stores/interview'
 import { useArchiveViewStore } from '@/stores/archiveView'
 import { useAccountStore } from '@/stores/account'
+import { useModalStore } from '@/stores/modal'
 import ArchiveDetailView from '@/views/ArchiveDetailView.vue'
 import LandingView from '@/views/LandingView.vue'
 import PrepareView from '@/views/PrepareView.vue'
@@ -20,15 +21,30 @@ const interview = useInterviewStore()
 /* 보관함 상세는 화면이다. 뒤로 가기로 목록에 돌아와야 하므로 popstate를 여기서 듣는다 —
    스토어가 전역 리스너를 달면 테스트마다 쌓인다 */
 const archive = useArchiveViewStore()
-function onPop() {
-  if (archive.detail) archive.close()
+/* 해시 이동도 popstate를 쏜다(state: null). 목차는 이제 해시를 쓰지 않지만,
+   남이 붙인 앵커 링크 하나에 화면이 닫히는 일이 다시 없도록 state로 가린다:
+   상세를 열며 민 항목에는 momoArchive가 있고, 그 항목을 빠져나오면 없다 (2026-11-08) */
+function onPop(e: PopStateEvent) {
+  const st = e.state as { momoArchive?: string } | null
+  if (archive.detail && !st?.momoArchive) archive.close()
 }
 onMounted(() => window.addEventListener('popstate', onPop))
 onBeforeUnmount(() => window.removeEventListener('popstate', onPop))
 
+/** 상세에서 목록으로. 셋을 같이 해야 한다 (2026-11-08) —
+ *  ① 상세를 닫고 ② 보관함 모달을 다시 열고 ③ 상세를 열며 민 히스토리 항목을 되감는다.
+ *  ③을 빼면 뒤로 가기가 한 번 헛돌고, ②를 빼면 사용자는 어디로 갔는지 모른 채
+ *  이전 페이지로 나가게 된다.
+ *  `history.back()`이 쏘는 popstate는 onPop에 닿지만, 그때 detail은 이미 null이다 */
+function backToArchive() {
+  archive.close()
+  useModalStore().show('archive')
+  if ((history.state as { momoArchive?: string } | null)?.momoArchive) history.back()
+}
+
 async function removeArchive() {
   const id = archive.detail?.id
-  archive.close()
+  backToArchive()
   if (id) await useAccountStore().deleteArchive(id)
 }
 const view = computed(
@@ -48,7 +64,7 @@ const view = computed(
   <ArchiveDetailView
     v-else-if="archive.detail"
     :entry="archive.detail"
-    @back="archive.close()"
+    @back="backToArchive()"
     @remove="removeArchive()"
   />
   <Transition v-else name="view" mode="out-in">

@@ -10,6 +10,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useModalStore } from '@/stores/modal'
+import { useArchiveViewStore } from '@/stores/archiveView'
 import { isAdminPath } from '@/services/route'
 import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
@@ -22,6 +23,7 @@ import MeIcon from '@/components/ui/icons/MeIcon.vue'
 const account = useAccountStore()
 const interview = useInterviewStore()
 const modal = useModalStore()
+const archive = useArchiveViewStore()
 const onAdmin = isAdminPath()
 const shown = computed(() => interview.phase !== 'interview')
 
@@ -31,7 +33,8 @@ const shown = computed(() => interview.phase !== 'interview')
 const docked = ref(false)
 const sentinel = ref<HTMLElement | null>(null)
 let io: IntersectionObserver | null = null
-/** 판이 깔렸을 때 왼쪽에 적는 지금 단계 */
+/** 왼쪽에 적는 지금 단계. 보관함 상세는 면접 단계와 무관한 화면이라 따로 센다 */
+const step = computed(() => (archive.detail ? '보관함' : STEP[interview.phase]))
 const STEP: Record<string, string> = {
   landing: '고르기',
   prepare: '준비',
@@ -43,6 +46,19 @@ const STEP: Record<string, string> = {
 watch(shown, (on) => {
   if (!on) modal.close()
 })
+
+/** 처음 화면으로. `reset()`을 부르지 않는다 — 적어 둔 분야·직무·이력서를 버리지 않고
+ *  화면만 돌린다. 돌아오면 그대로 있다 (2026-11-08) */
+function goHome() {
+  // 관리자 화면은 주소로 갈린다 — phase만 바꿔 봐야 그대로다
+  if (onAdmin) {
+    location.href = '/'
+    return
+  }
+  if (interview.phase !== 'landing') interview.phase = 'landing'
+  // 화면만 바꾸면 이전 스크롤 자리가 남아 히어로 중간이 보인다. 맨 위에서 시작한다
+  window.scrollTo(0, 0)
+}
 
 onMounted(() => {
   void account.load()
@@ -59,14 +75,13 @@ onBeforeUnmount(() => io?.disconnect())
   <div ref="sentinel" class="sentinel" aria-hidden="true" />
 
   <header v-if="shown" class="topbar" :class="{ docked }" data-test="topbar">
-    <!-- 맨 위에서는 비워 둔다 — 히어로 가운데에 이미 큰 이름이 있다. 판이 깔린 뒤에만
-         작은 이름과 지금 단계가 들어온다 (2026-11-07) -->
-    <div v-if="docked" class="brand" data-test="top-brand">
+    <!-- 처음으로 돌아가는 길. **맨 위에서도 보인다** — 바 배경만 투명해지고
+         이름은 제 하드 그림자로 별 위에서 읽힌다 (2026-11-08) -->
+    <button type="button" class="brand" data-test="top-brand" @click="goHome">
       <span class="mark" aria-hidden="true" />
       <span class="display name">모두의 모의면접</span>
-      <span class="mono step">{{ STEP[interview.phase] }}</span>
-    </div>
-    <div v-else class="brand" aria-hidden="true" />
+      <span class="mono step">{{ step }}</span>
+    </button>
     <div class="side">
       <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>
       <template v-if="account.signedIn">
@@ -188,13 +203,24 @@ onBeforeUnmount(() => io?.disconnect())
 .topbar.docked .brand .step {
   text-shadow: none;
 }
-/* 왼쪽 묶음 — 판이 깔렸을 때만 내용이 찬다. 비어 있어도 자리를 잡아 오른쪽이 끝에 붙는다 */
+/* 왼쪽 묶음 — 처음으로 돌아가는 버튼이다. 두 상태 모두에서 보인다 */
 .brand {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   min-width: 0;
   pointer-events: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.brand:hover .name,
+.brand:focus-visible .name {
+  color: var(--accent);
 }
 .brand .mark {
   width: 20px;

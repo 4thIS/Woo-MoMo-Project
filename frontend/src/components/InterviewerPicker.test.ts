@@ -337,3 +337,56 @@ describe('InterviewerPicker — 열 수는 칸을 본다', () => {
     expect(PickerSource).toMatch(/@container \(min-width: 620px\)/)
   })
 })
+
+describe('InterviewerPicker — 면접관을 바꿀 때 트랙 (2026-11-08)', () => {
+  const pick = async (id: string) => {
+    const w = mount(InterviewerPicker)
+    await flushPromises()
+    await w.find(`[data-test="interviewer-${id}"]`).trigger('click')
+    await flushPromises()
+    return w
+  }
+
+  it('벤으로 바꾸면 보던 트랙을 물려받는다 — 쥴리(회사)로 보던 중이면 회사다', async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    await pick('f2') // 쥴리 — 회사 전용
+    expect(useInterviewStore().track).toBe('company')
+    await pick('m2') // 벤 — 둘 다 본다
+    expect(useInterviewStore().track).toBe('company')
+  })
+
+  it('올리비아(대입)로 보던 중이면 벤도 대입이다', async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    await pick('f3') // 올리비아 — 대입 전용
+    await pick('m2')
+    expect(useInterviewStore().track).toBe('admission')
+  })
+
+  it('벤에서 무료 면접관으로 가면 고른 트랙은 버린다 — 그 면접관의 트랙이 이긴다', async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    await pick('m2')
+    useInterviewStore().setTrack('admission')
+    await pick('m1') // 데이빗 — 회사 전용
+    expect(useInterviewStore().chosenTrack).toBe(null)
+    expect(useInterviewStore().track).toBe('company')
+  })
+})
+
+describe('InterviewerPicker — 아무도 안 골랐을 때 (2026-11-08)', () => {
+  it('첫 선택이 벤이면 트랙은 비어 있다 — 기본 면접관의 트랙은 사용자가 고른 것이 아니다', async () => {
+    const acc = useAccountStore()
+    await acc.signUp('a@b.com', 'pw123456', '나')
+    await acc.purchasePremium()
+    const w = mount(InterviewerPicker)
+    await flushPromises()
+    await w.find('[data-test="interviewer-m2"]').trigger('click')
+    await flushPromises()
+    expect(useInterviewStore().chosenTrack).toBe(null)
+  })
+})

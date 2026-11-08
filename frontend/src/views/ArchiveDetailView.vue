@@ -222,9 +222,11 @@ function printReport() {
 </template>
 
 <style scoped>
-/* 리포트 화면과 **같은 값**을 쓴다 — 여기가 어긋나면 "같은 화면"이 아니게 된다 */
+/* 레일·기둥 어법은 리포트 화면과 **같은 값**을 쓴다 — 어긋나면 "같은 화면"이 아니게 된다.
+   폭만 다르다: 준비 화면과 같은 1280px이다(2026-11-08). 여기는 대화 전문 탭이 있어
+   넓은 폭이 실제로 일하고, 리포트는 읽는 화면이라 --read-w가 본문 줄을 어차피 묶는다 */
 .report {
-  max-width: var(--content-w);
+  max-width: 1280px;
   margin: 0 auto;
   padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReportV2Cards from './ReportV2Cards.vue'
@@ -322,5 +324,15 @@ describe('ReportV2Cards — 카드 바닥 (2026-11-07)', () => {
       slots: { foot: '<b data-test="x-foot">끼운 것</b>' },
     })
     expect(w.findAll('[data-test=x-foot]').length).toBe(w.findAll('[data-test=v2-card]').length)
+  })
+})
+
+describe('ReportV2Cards — 총평의 문항 참조 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'ReportV2Cards.vue'), 'utf8')
+
+  it('참조 링크도 해시를 바꾸지 않는다 — 레일만 고치면 벤 리포트에서 같은 병이 남는다', () => {
+    const refs = src.match(/<a[\s\S]{0,200}?#item-\$\{r\}[\s\S]{0,200}?>/g) ?? []
+    expect(refs.length).toBe(2) // 강점·개선점 둘
+    for (const a of refs) expect(a).toMatch(/@click\.prevent/)
   })
 })
