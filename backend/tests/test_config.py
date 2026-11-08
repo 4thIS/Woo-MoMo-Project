@@ -107,3 +107,9 @@ def test_voice_provider_invalid_fails():
 
 def test_repr_hides_gemini_keys():
     assert "AIza-secret" not in repr(Settings.from_env({"GEMINI_API_KEYS": "AIza-secret"}))
+
+
+def test_naver_keys_from_env():
+    s = Settings.from_env({"NAVER_CLIENT_ID": " a ", "NAVER_CLIENT_SECRET": "b"})
+    assert (s.naver_client_id, s.naver_client_secret) == ("a", "b")
+    assert Settings.from_env({}).naver_client_id is None

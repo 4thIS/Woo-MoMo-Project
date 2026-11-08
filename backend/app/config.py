@@ -72,6 +72,8 @@ class Settings:
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
     cookie_secure: bool = True
     anthropic_api_key: str | None = field(default=None, repr=False)
+    naver_client_id: str | None = field(default=None, repr=False)
+    naver_client_secret: str | None = field(default=None, repr=False)
     admin_login: str | None = None
     admin_password: str | None = field(default=None, repr=False)
     ben_daily_limit: int = DEFAULT_BEN_DAILY_LIMIT
@@ -118,6 +120,8 @@ class Settings:
             cors_origins=_parse_origins(e.get("CORS_ORIGINS")),
             cookie_secure=_parse_bool(e.get("COOKIE_SECURE"), default=True),
             anthropic_api_key=_stripped(e.get("ANTHROPIC_API_KEY")),
+            naver_client_id=_stripped(e.get("NAVER_CLIENT_ID")),
+            naver_client_secret=_stripped(e.get("NAVER_CLIENT_SECRET")),
             admin_login=_stripped(e.get("ADMIN_LOGIN")),
             # 비밀번호는 공백도 값이다 — 비어 있을 때만 없음으로 본다
             admin_password=e.get("ADMIN_PASSWORD") or None,
