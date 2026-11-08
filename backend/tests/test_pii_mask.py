@@ -80,7 +80,8 @@ def test_rrn_card_account():
     assert m.mask("주민번호 990315-1234567") == "주민번호 [주민번호1]"
     assert m.mask("카드 1234-5678-9012-3456") == "카드 [계좌1]"
     assert m.mask("입금 계좌: 국민은행 123456-01-234567") == "입금 계좌: 국민은행 [계좌2]"
-    assert m.mask("학번 123456-01-234567") == "학번 123456-01-234567"
+    # 이미 계좌로 가린 값은 라벨 없이도 다시 가린다 — 라벨 규칙은 새 Masker로 본다
+    assert Masker().mask("학번 123456-01-234567") == "학번 123456-01-234567"
 
 
 def test_landline_needs_hyphens():
@@ -307,3 +308,65 @@ def test_any_bank_name_right_before_number():
     m = Masker()
     assert m.mask("부산은행 123-45-678901") == "부산은행 [계좌1]"
     assert m.mask("환불은 대구은행: 1234567890 으로") == "환불은 대구은행: [계좌2] 으로"
+
+
+# ── 최종 검토 ──
+
+LEAK_RESUME = (
+    "이름: 홍길동\n생년월일: 1999.01.02\n주소: 서울 강남구 역삼동 123-4\n신한은행 110-123-456789\n"
+)
+
+
+def test_known_values_are_masked_again_without_labels():
+    # 되돌린 값이 라벨 없이 다음 요청에 다시 나와도 같은 표시로 가린다
+    m = Masker(["홍길동"])
+    assert m.mask(LEAK_RESUME).splitlines() == [
+        "이름: [이름1]",
+        "생년월일: [생년월일1]",
+        "주소: [주소1]",
+        "신한은행 [계좌1]",
+    ]
+    got = m.mask("서울 강남구 역삼동 123-4에서 다니셨군요. 1999.01.02생이고 110-123-456789로")
+    assert got == "[주소1]에서 다니셨군요. [생년월일1]생이고 [계좌1]로"
+
+
+def test_known_values_inside_same_text_are_masked():
+    m = Masker()
+    got = m.mask("주소: 서울 강남구 역삼동 123-4\n집은 서울 강남구 역삼동 123-4입니다")
+    assert got == "주소: [주소1]\n집은 [주소1]입니다"
+
+
+def test_known_value_needs_digit_boundary():
+    m = Masker()
+    m.mask("생년월일: 1999.01.02")
+    assert m.mask("21999.01.023") == "21999.01.023"
+
+
+def test_known_values_long_text_is_fast():
+    m = Masker(["홍길동"])
+    m.mask(LEAK_RESUME)
+    text = "서울 강남구 역삼동 123-4 1999.01.02 " * 2_000
+    start = time.perf_counter()
+    m.mask(text)
+    assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "want"),
+    [
+        ("남궁민수아", "지원자는 남궁민수아", "지원자는 [이름1]"),
+        ("남궁민수아", "남궁민수아님", "[이름1]님"),
+        ("남궁민수아", "김남궁민수아", "김남궁민수아"),
+        ("Alex", "지원자는 Alex", "지원자는 [이름1]"),
+        ("Alex", "ALEX입니다", "[이름1]입니다"),
+        ("Alex", "Alexander", "Alexander"),
+        ("홍 길동", "지원자는 홍 길동", "지원자는 [이름1]"),
+        ("Kim 민수", "Kim 민수입니다", "[이름1]입니다"),
+    ],
+)
+def test_other_known_names_match_literally(name, text, want):
+    assert Masker([name]).mask(text) == want
+
+
+def test_one_letter_names_are_ignored():
+    assert Masker(["A", "김"]).mask("A 김") == "A 김"

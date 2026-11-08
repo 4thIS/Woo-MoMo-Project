@@ -93,6 +93,9 @@ _AFTER_SHORT_NAME = (
     r"|[ \t]*(?:[^가-힣 \t]|$))"
 )
 
+# 다시 찾을 값의 최소 길이(짧은 값은 흔한 글자와 겹친다)
+_KNOWN_MIN = 4
+
 Span = tuple[int, int, str, str, str]  # 시작, 끝, 종류, 비교 키, 원래 값
 
 
@@ -113,7 +116,23 @@ def _name_patterns(name: str) -> list[re.Pattern[str]]:
         return pats
     if re.fullmatch(r"[A-Za-z]+(?: [A-Za-z]+){1,2}", name):
         return [re.compile(r"(?<![A-Za-z])" + re.escape(name) + r"(?![A-Za-z])", re.I)]
-    return []
+    if len(name) < 2:
+        return []
+    # 그 밖의 이름(5글자 이상 한글, 한 낱말 영어, 띄어 쓴 이름, 한글·영어 섞인 이름)은
+    # 글자 그대로 찾는다: 한글로 시작하면 앞에 한글이 없을 때, 영어 끝은 영어가 붙지 않을 때만
+    before = r"(?<![가-힣])" if _is_hangul(name[0]) else ""
+    if _is_latin(name[0]):
+        before = r"(?<![A-Za-z])"
+    after = r"(?![A-Za-z])" if _is_latin(name[-1]) else ""
+    return [re.compile(before + re.escape(name) + after, re.I)]
+
+
+def _is_hangul(c: str) -> bool:
+    return "가" <= c <= "힣"
+
+
+def _is_latin(c: str) -> bool:
+    return c.isascii() and c.isalpha()
 
 
 def _digits(value: str) -> str:
@@ -142,20 +161,38 @@ class Masker:
         self._names = [(n, p) for n in clean for p in _name_patterns(n)]
         self._placeholders: dict[tuple[str, str], str] = {}
         self._values: dict[str, str] = {}
+        # 이미 가린 원래 값 → (종류, 키). 되돌린 값이 라벨 없이 다시 나와도 같은 표시로 가린다
+        self._known: dict[str, tuple[str, str]] = {}
         self._next: Counter[str] = Counter()
         self.counts: Counter[str] = Counter()
 
     # ── 찾기 ──
 
     def _spans(self, text: str) -> list[Span]:
-        taken: list[tuple[int, int]] = [m.span() for m in PLACEHOLDER.finditer(text)]
+        # 잡힌 구간은 서로 겹치지 않으므로 시작 순으로 정렬해 두고 이분 탐색으로 겹침을 본다
+        starts: list[int] = []
+        ends: list[int] = []
         out: list[Span] = []
 
+        def free(start: int, end: int) -> bool:
+            i = bisect.bisect_right(starts, start)
+            if i > 0 and ends[i - 1] > start:
+                return False
+            return not (i < len(starts) and starts[i] < end)
+
+        def take(start: int, end: int) -> None:
+            i = bisect.bisect_right(starts, start)
+            starts.insert(i, start)
+            ends.insert(i, end)
+
         def add(start: int, end: int, kind: str, key: str) -> None:
-            if any(start < e and s < end for s, e in taken):
+            if start >= end or not free(start, end):
                 return
-            taken.append((start, end))
+            take(start, end)
             out.append((start, end, kind, key, text[start:end]))
+
+        for m in PLACEHOLDER.finditer(text):
+            take(*m.span())
 
         for m in _RRN.finditer(text):
             add(*m.span(), "주민번호", _digits(m.group()))
@@ -186,8 +223,8 @@ class Masker:
             add(*m.span(), "주소", m.group())
         # 라벨 값끼리는 겹치지 않는다(값은 다음 필드 경계에서 끝난다): 이 고리 앞의 구간을
         # 한 번 정렬해 두고 라벨마다 이분 탐색으로 겹치는 구간만 꺼낸다
-        before = sorted(taken)
-        ends = [e for _, e in before]
+        before = list(zip(starts, ends, strict=True))
+        before_ends = list(ends)
         for m in _ADDRESS_LABEL.finditer(text):
             start = m.end()
             line_end = text.find("\n", start)
@@ -197,13 +234,14 @@ class Masker:
                 end = boundary.start()
             # 먼저 잡힌 전화·이메일 등을 피해, 그 사이 조각을 하나씩 주소로 가린다
             inside = []
-            for i in range(bisect.bisect_right(ends, start), len(before)):
+            for i in range(bisect.bisect_right(before_ends, start), len(before)):
                 if before[i][0] >= end:
                     break
                 inside.append(before[i])
             cuts = [(start, start), *inside, (end, end)]
             for (_, seg_start), (seg_end, _) in pairwise(cuts):
                 self._add_address(text, seg_start, seg_end, add)
+        self._add_known(text, out, add)
         for name, pat in self._names:
             for m in pat.finditer(text):
                 add(*m.span(), "이름", name)
@@ -221,6 +259,32 @@ class Masker:
         value = seg[head:].rstrip(_ADDRESS_TAIL)
         if any(c.isalnum() for c in value):
             add(start + head, start + head + len(value), "주소", value)
+
+    def _add_known(
+        self, text: str, out: list[Span], add: Callable[[int, int, str, str], None]
+    ) -> None:
+        """이미 가린 값(앞선 요청·앞선 블록·이 글의 앞선 규칙)을 글자 그대로 다시 찾는다.
+
+        라벨이 있어야 잡히는 주소·생년월일·계좌가 Claude 응답에서 되돌아와 라벨 없이
+        다음 요청에 실려도 새지 않게 한다. 긴 값부터, str.find로만 훑는다."""
+        known = dict(self._known)
+        for _, _, kind, key, value in out:
+            if kind != "이름":
+                known.setdefault(value, (kind, key))
+        for value in sorted(known, key=len, reverse=True):
+            if len(value) < _KNOWN_MIN:
+                continue
+            kind, key = known[value]
+            # 숫자로 시작·끝나는 값은 더 긴 숫자열의 일부면 건너뛴다
+            lead, trail = value[0].isdigit(), value[-1].isdigit()
+            i = text.find(value)
+            while i >= 0:
+                j = i + len(value)
+                if not (lead and i > 0 and text[i - 1].isdigit()) and not (
+                    trail and j < len(text) and text[j].isdigit()
+                ):
+                    add(i, j, kind, key)
+                i = text.find(value, j)
 
     def _placeholder(self, kind: str, key: str, value: str) -> str:
         found = self._placeholders.get((kind, key))
@@ -240,6 +304,8 @@ class Masker:
         for start, end, kind, key, value in self._spans(text):
             parts.append(text[last:start])
             parts.append(self._placeholder(kind, key, value))
+            if kind != "이름":
+                self._known.setdefault(value, (kind, key))
             self.counts[kind] += 1
             last = end
         parts.append(text[last:])
