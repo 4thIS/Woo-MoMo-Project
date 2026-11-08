@@ -26,7 +26,8 @@ describe('주소 분기', () => {
     const w = mount(App, { global: { plugins: [createPinia()] } })
     await vi.waitFor(() => expect(w.find('main.admin').exists()).toBe(true))
     await flushPromises()
-    expect(w.text()).not.toContain('모의면접')
+    // 상단바의 이름은 이제 늘 있다(2026-11-08) — 랜딩 화면 자체가 없는지로 본다
+    expect(w.find('[data-test=spec-line]').exists()).toBe(false)
     expect(w.find('[data-test=topbar]').exists()).toBe(true)
   })
 })
