@@ -144,6 +144,8 @@ def test_names_in_resume_labels():
         "주소: x" + " " * 20_000 + "y",
         "주소: " + "(010-1234-5678) " * 1_200,
         "주소: a@b.co 서울 1\n" * 1_200,
+        "| 주소: x " * 2_500,
+        "가은행" * 6_000,
     ],
     ids=[
         "dash",
@@ -160,6 +162,8 @@ def test_names_in_resume_labels():
         "address-spaces",
         "address-phones",
         "address-lines",
+        "address-fields",
+        "bank-run",
     ],
 )
 def test_adversarial_long_text_is_fast(text):
@@ -243,3 +247,63 @@ def test_labelled_address_masks_every_segment_between_taken_spans():
         "주소: [주소2] ([전화1]) [주소3] / [이메일1]"
     )
     assert m.mask("주소: 010-1234-5678 / a@b.co") == "주소: [전화1] / [이메일1]"
+
+
+# ── 보강 3차 ──
+
+
+def test_address_label_after_field_separator_or_numbered_bullet():
+    m = Masker()
+    assert m.mask("생년월일: 1999.03.15 | 주소: 서울 강남구 역삼동 123-4") == (
+        "생년월일: [생년월일1] | 주소: [주소1]"
+    )
+    assert m.mask("1. 주소: 서울 마포구 망원동 1") == "1. 주소: [주소2]"
+    assert m.mask("2) 주소: 부산 해운대구 우동 1") == "2) 주소: [주소3]"
+    assert m.mask("주소지: 대구 수성구 범어동 1") == "주소지: [주소4]"
+    assert m.mask("현 주소: 광주 북구 1") == "현 주소: [주소5]"
+    assert m.mask("현주소: 광주 남구 2") == "현주소: [주소6]"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "웹 주소: https://pay-demo.example.com",
+        "IP 주소: 192.168.0.1",
+        "프로젝트 주소: https://pay-demo.example.com",
+        "주소록 앱 개발",
+        "- 주소 검색 API 연동",
+        "Email address: none",
+    ],
+)
+def test_address_label_still_not_mid_sentence(text):
+    assert Masker().mask(text) == text
+
+
+def test_address_label_value_ends_at_next_field():
+    m = Masker()
+    assert m.mask("주소: 서울 마포구 망원동 1 | 연락처: 010-1234-5678 | 이메일: a@b.co") == (
+        "주소: [주소1] | 연락처: [전화1] | 이메일: [이메일1]"
+    )
+    assert m._values["[주소1]"] == "서울 마포구 망원동 1"
+    assert m.mask("Address: 서울 마포구 / Tel: 010 1234 5678") == "Address: [주소2] / Tel: [전화1]"
+    assert m.mask("이름: x | 주소: 부산 해운대구 | 거주지: 대구 수성구") == (
+        "이름: x | 주소: [주소3] | 거주지: [주소4]"
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Accountability 리포트 1234567890 건",
+        "AWS account 123456789012",
+        "은행 앱 개발: 거래 1234567890건",
+    ],
+)
+def test_account_context_must_be_korean_label_or_bank(text):
+    assert Masker().mask(text) == text
+
+
+def test_any_bank_name_right_before_number():
+    m = Masker()
+    assert m.mask("부산은행 123-45-678901") == "부산은행 [계좌1]"
+    assert m.mask("환불은 대구은행: 1234567890 으로") == "환불은 대구은행: [계좌2] 으로"

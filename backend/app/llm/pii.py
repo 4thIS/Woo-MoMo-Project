@@ -14,14 +14,20 @@ HOLD_MAX = 10
 
 _RRN = re.compile(r"(?<!\d)\d{6}\s?-\s?[1-8]\d{6}(?!\d)")
 _CARD = re.compile(r"(?<!\d)\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}(?!\d)")
-# "은행"만으로는 부족하다("은행 앱 개발"): 계좌·입금·account 또는 은행 이름이 있는 줄만
+# "은행"만으로는 부족하다("은행 앱 개발"): 계좌·입금 또는 은행 이름이 있는 줄만.
+# 영어 account는 쓰지 않는다("AWS account 123456789012", "Accountability")
 _ACCOUNT_LABEL = re.compile(
-    r"계좌|입금|\baccount"
+    r"계좌|입금"
     r"|(?:국민|신한|우리|하나|농협|기업|SC제일|씨티|우체국|새마을|신협|수협)은행"
     r"|카카오뱅크|토스뱅크|케이뱅크",
     re.I,
 )
 _ACCOUNT = re.compile(r"(?<![\d-])\d[\d-]{8,18}\d(?![\d-])")
+# 목록에 없는 은행도 "○○은행" 바로 뒤(공백·쌍점만 사이에)의 숫자열이면 계좌로 본다
+_BANK_ACCOUNT = re.compile(
+    r"(?<![가-힣A-Za-z])[가-힣A-Za-z]{1,6}은행[ \t]{0,3}[:：]?[ \t]{0,3}"
+    r"(\d[\d-]{8,18}\d)(?![\d-])"
+)
 # 휴대폰: 010-1234-5678, 010 - 1234 - 5678, (010)1234-5678, +82 10-…, +82 010-…
 _PHONE_SEP = r"(?:[ \t]?[.-][ \t]?|[ \t])?"
 _MOBILE = re.compile(
@@ -59,12 +65,15 @@ _ROAD = re.compile(
     r"[가-힣0-9]{1,15}(?:로|길)[ \t]{0,3}\d{1,5}(?:-\d{1,5})?"
     r"(?:[ ,]{1,3}[^\n,]{0,20}?\d{1,4}동[ \t]{0,3}\d{1,5}호)?"
 )
-# 줄 머리의 라벨만("- "·"• " 글머리표 허용). "웹 주소:"·"IP 주소:"는 아니다.
-# 값은 줄 끝까지 탐욕으로 잡고 뒤 공백·구분자는 코드에서 자른다(게으른 반복 + $ 되풀이 방지)
+# 주소 라벨은 줄 머리(글머리표 "- "·"• "·"1. "·"2) " 허용) 또는 필드 구분자 "|"·"/"·"·" 뒤에서만.
+# "웹 주소:"·"IP 주소:"·"프로젝트 주소:"는 아니다. 라벨만 잡고 값의 끝은 코드에서 정한다
 _ADDRESS_LABEL = re.compile(
-    r"^[ \t]*(?:[-•*·][ \t]*)?(?:주소|거주지|address)[ \t]*[:：][ \t]*(\S[^\n]*)",
+    r"(?:^[ \t]*(?:(?:[-•*·]|\d{1,2}[.)])[ \t]*)?|[|/·][ \t]*)"
+    r"(?:주소지|현[ \t]?주소|주소|거주지|address)[ \t]*[:：][ \t]*",
     re.I | re.M,
 )
+# 다음 필드의 시작: "| 연락처:", "/ Tel:" (구분자 + 1~10글자 + 쌍점)
+_FIELD_BOUNDARY = re.compile(r"[|/][ \t]*[가-힣A-Za-z]{1,10}[ \t]*[:：]")
 # 라벨 주소 끝에서 떼어 낼 것: 공백·여는 괄호·슬래시·쉼표 같은 구분자
 # (정규식 `[...]+$`는 긴 공백 덩어리에서 시간이 제곱으로 늘어 rstrip을 쓴다)
 _ADDRESS_TAIL = " \t\r\n([{/,·|:;~-"
@@ -156,6 +165,9 @@ class Masker:
                     if 10 <= len(_digits(m.group())) <= 16:
                         s = line.start() + m.start()
                         add(s, s + len(m.group()), "계좌", _digits(m.group()))
+        for m in _BANK_ACCOUNT.finditer(text):
+            if 10 <= len(_digits(m.group(1))) <= 16:
+                add(*m.span(1), "계좌", _digits(m.group(1)))
         for rx in (_MOBILE, _LANDLINE):
             for m in rx.finditer(text):
                 add(*m.span(), "전화", _phone_key(m.group()))
@@ -170,12 +182,17 @@ class Masker:
                     add(s, s + len(m.group()), "생년월일", re.sub(r"\D", "", m.group()))
         for m in _ROAD.finditer(text):
             add(*m.span(), "주소", m.group())
-        # 라벨은 줄마다 하나라 이 고리에서 더해지는 구간은 다른 라벨 줄과 겹치지 않는다:
-        # 미리 한 번 정렬해 두고 줄마다 이분 탐색으로 겹치는 구간만 꺼낸다
+        # 라벨 값끼리는 겹치지 않는다(값은 다음 필드 경계에서 끝난다): 이 고리 앞의 구간을
+        # 한 번 정렬해 두고 라벨마다 이분 탐색으로 겹치는 구간만 꺼낸다
         before = sorted(taken)
         ends = [e for _, e in before]
         for m in _ADDRESS_LABEL.finditer(text):
-            start, end = m.span(1)
+            start = m.end()
+            line_end = text.find("\n", start)
+            end = len(text) if line_end < 0 else line_end
+            boundary = _FIELD_BOUNDARY.search(text, start, end)
+            if boundary:
+                end = boundary.start()
             # 먼저 잡힌 전화·이메일 등을 피해, 그 사이 조각을 하나씩 주소로 가린다
             inside = []
             for i in range(bisect.bisect_right(ends, start), len(before)):
