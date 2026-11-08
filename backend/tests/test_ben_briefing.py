@@ -298,3 +298,23 @@ def test_empty_material_skips_claude_and_continues(client, fake_claude, fake_col
     iid = start_ben(client, NAMED)
     assert sse_events(_turn(client, iid).text) == [RESEARCHING, FAILED, *QUESTION]
     assert fake_claude.complete_calls == []
+
+
+def test_deadline_is_enforced_before_the_first_ping(client, fake_claude, monkeypatch):
+    # ping 간격이 기한보다 길어도 기한에서 바로 포기한다(예전엔 ping 간격만큼 더 기다렸다)
+    monkeypatch.setattr(premium_router, "PING_EVERY", 1.0)
+    monkeypatch.setattr(premium_router, "RESEARCH_DEADLINE", 0.1)
+    original = fake_claude.complete
+
+    def stuck(**kwargs):
+        time.sleep(0.5)
+        return original(**kwargs)
+
+    fake_claude.complete = stuck
+    iid = start_ben(client, NAMED)
+    started = time.monotonic()
+    text = _turn(client, iid).text
+    elapsed = time.monotonic() - started
+    assert sse_events(text)[:2] == [RESEARCHING, FAILED]
+    assert elapsed < 0.45
+    _join_workers()

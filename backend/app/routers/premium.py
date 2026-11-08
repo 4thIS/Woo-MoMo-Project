@@ -54,7 +54,8 @@ router = APIRouter()
 ANSWER_MAX = 2000
 # 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
 BEN_PER_MINUTE = 6
-# 회사 브리핑 조사: 15초마다 ping(Cloudflare 무응답 끊김 대비), 10초 넘으면 실패로 친다
+# 회사 브리핑 조사: 기한 안에서 PING_EVERY마다 ping(Cloudflare 무응답 끊김 대비).
+# 기다림은 ping 간격과 남은 기한 중 짧은 쪽이라 기한이 ping 간격보다 짧아도 제때 포기한다
 PING_EVERY = 15.0
 # 시작 → 첫 질문 15초 안에 들도록 조사는 10초까지만 기다린다(spec 2026-11-08)
 RESEARCH_DEADLINE = 10.0
@@ -259,11 +260,11 @@ def _research_with_pings(
     deadline = time.monotonic() + RESEARCH_DEADLINE
     while True:
         try:
-            return future.result(timeout=PING_EVERY)
+            return future.result(timeout=max(0.0, min(PING_EVERY, deadline - time.monotonic())))
         except TimeoutError:
             if time.monotonic() >= deadline:
                 return None
-            yield PING
+            yield PING  # 기한 전에 ping 간격이 꽉 찼다
 
 
 def _resolve_briefing(
