@@ -334,6 +334,21 @@ def _masker(settings: Settings, user: User, interview: PremiumInterview) -> pii.
     return pii.Masker(names)
 
 
+# 로그 키는 영문(spec 5절): 값은 남기지 않고 종류별 개수만
+_LOG_KEYS = {
+    "이름": "name",
+    "전화": "phone",
+    "이메일": "email",
+    "주소": "address",
+    "생년월일": "birth",
+    "주민번호": "rrn",
+    "계좌": "account",
+    "링크": "link",
+}
+
+Masked = tuple[pii.Masker | None, list[dict[str, Any]], list[prompts.Message]]
+
+
 def _masked(
     masker: pii.Masker | None,
     system: list[dict[str, Any]],
@@ -343,19 +358,21 @@ def _masked(
     if masker is None:
         return system, messages
     out = masker.mask_system(system), masker.mask_messages(messages)
-    counts = " ".join(f"{k}={v}" for k, v in sorted(masker.counts.items()))
+    counts = " ".join(sorted(f"{_LOG_KEYS.get(k, 'other')}={v}" for k, v in masker.counts.items()))
     log.info("pii masked %s", counts or "none")
     return out
 
 
 def _mask_or_fail(
-    masker: pii.Masker | None,
+    build: Callable[[], pii.Masker | None],
     system: list[dict[str, Any]],
     messages: list[prompts.Message],
-) -> Generator[str, None, tuple[list[dict[str, Any]], list[prompts.Message]] | None]:
-    """가리기에 실패하면 원문을 보내지 않고 claude_error로 끝낸다(spec 5절). 실패면 None."""
+) -> Generator[str, None, Masked | None]:
+    """Masker를 만들고 가린다. 어느 쪽이든 실패하면 원문을 보내지 않고 claude_error로
+    끝낸다(spec 5절). 성공이면 (masker, 시스템, 메시지), 실패면 None."""
     try:
-        return _masked(masker, system, messages)
+        masker = build()
+        return (masker, *_masked(masker, system, messages))
     except Exception as exc:
         log.warning("pii mask failed: %s", type(exc).__name__)
         yield sse("error", {"code": "claude_error"})
@@ -454,7 +471,8 @@ def take_turn(
     turn_sink = _usage_sink(db_path, clock, user.id, interview.id, "turn")
     # 브리핑 요약은 Haiku로 한다 — 사용량도 그 모델로 남긴다
     research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research", BRIEFING_MODEL)
-    masker = _masker(request.app.state.settings, user, interview)
+    settings = request.app.state.settings
+    mask_on = settings.ben_pii_mask
 
     def events() -> Iterator[str]:
         brief = interview.briefing
@@ -462,13 +480,14 @@ def take_turn(
             brief = yield from _resolve_briefing(
                 claude, collector, db_path, interview, now, research_sink
             )
-        system = prompts.build_system(
-            interview.track, interview.inputs, brief, masked=masker is not None
+        system = prompts.build_system(interview.track, interview.inputs, brief, masked=mask_on)
+        # Masker도 실패 경로 안에서 만든다 — 만들다 실패해도 원문을 보내지 않는다
+        masked = yield from _mask_or_fail(
+            lambda: _masker(settings, user, interview), system, messages
         )
-        masked = yield from _mask_or_fail(masker, system, messages)
         if masked is None:
             return
-        out_system, out_messages = masked
+        masker, out_system, out_messages = masked
         chunks: list[str] = []
         try:
             for text in _unmasked(
@@ -609,7 +628,7 @@ def _report_v2_events(
     sink: UsageSink,
     *,
     voice_wait: bool,
-    masker: pii.Masker | None = None,
+    build_masker: Callable[[], pii.Masker | None] = lambda: None,
 ) -> Iterator[str]:
     """버전 2 리포트: 구조화 출력을 검증하고 실패하면 한 번 더 만든다(원문·측정값은 로그 금지)."""
     voices = None
@@ -628,10 +647,10 @@ def _report_v2_events(
     )
     n = report_v2.answer_count(interview.messages)
     # 재생성도 같은 가린 요청을 보낸다(번호가 그대로라 되돌리기도 같다)
-    masked = yield from _mask_or_fail(masker, system, msgs)
+    masked = yield from _mask_or_fail(build_masker, system, msgs)
     if masked is None:
         return
-    out_system, out_msgs = masked
+    masker, out_system, out_msgs = masked
     for attempt in (1, 2):
         if attempt == 2:
             try:
@@ -708,13 +727,15 @@ def make_report(
         raise ApiError(409, "no_answers")  # 시도를 세기 전에 거절 — Claude를 부르지 않는다
     claude = _claude(request)
     _count_attempt(conn, interview)
-    masker = _masker(settings, user, interview)
+    mask_on = settings.ben_pii_mask
+
+    def build_masker() -> pii.Masker | None:
+        return _masker(settings, user, interview)
+
     system = (
-        prompts.report_system(
-            interview.track, interview.inputs, interview.briefing, masked=masker is not None
-        )
+        prompts.report_system(interview.track, interview.inputs, interview.briefing, masked=mask_on)
         if v2
-        else prompts.build_system(interview.track, interview.inputs, masked=masker is not None)
+        else prompts.build_system(interview.track, interview.inputs, masked=mask_on)
     )
     db_path = settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
@@ -729,7 +750,7 @@ def make_report(
                 db_path,
                 report_sink,
                 voice_wait=with_voice,
-                masker=masker,
+                build_masker=build_masker,
             )
         )
 
@@ -744,10 +765,10 @@ def make_report(
                 voice=delivery.voice_used(merged),
                 warmth=warmth,
             )
-        masked = yield from _mask_or_fail(masker, system, msgs)
+        masked = yield from _mask_or_fail(build_masker, system, msgs)
         if masked is None:
             return
-        out_system, out_msgs = masked
+        masker, out_system, out_msgs = masked
         chunks: list[str] = []
         try:
             for text in _unmasked(
