@@ -37,17 +37,28 @@ def _audit_rows(settings):
         return conn.execute("SELECT COUNT(*) FROM admin_audit").fetchone()[0]
 
 
-def _usage(conn, *, at, user_id, interview_id="pi_1", kind="turn", outcome="ok", **tokens):
+def _usage(
+    conn,
+    *,
+    at,
+    user_id,
+    interview_id="pi_1",
+    kind="turn",
+    outcome="ok",
+    model="claude-sonnet-5-5",
+    **tokens,
+):
     conn.execute(
         "INSERT INTO claude_usage (id, at, user_id, interview_id, kind, model, input_tokens,"
         " output_tokens, cache_read_tokens, cache_write_tokens, web_searches, outcome)"
-        " VALUES (?, ?, ?, ?, ?, 'claude-sonnet-5-5', ?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             new_id("cu"),
             at,
             user_id,
             interview_id,
             kind,
+            model,
             tokens.get("input_tokens", 0),
             tokens.get("output_tokens", 0),
             tokens.get("cache_read_tokens", 0),
@@ -448,3 +459,21 @@ def test_usage_cost_totals_round_once(client, settings, clock):
     assert body["byDay"][-1]["costUsd"] == 4.938
     assert body["byKind"][0]["costUsd"] == 4.938
     assert body["topInterviews"][0]["costUsd"] == 4.938
+
+
+def test_usage_cost_uses_each_rows_model(client, settings, clock):
+    # 브리핑 요약(Haiku) 행은 Haiku 요금으로 센다 — 같은 토큰이면 Sonnet보다 싸다
+    login_admin(client)
+    now = clock.now
+    with open_db(settings) as conn:
+        admin = _uid(settings, "admin")
+        tokens = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+        _usage(conn, at=iso(now), user_id=admin, kind="turn", **tokens)
+        _usage(
+            conn, at=iso(now), user_id=admin, kind="research", model="claude-haiku-5-5", **tokens
+        )
+    body = client.get("/api/admin/usage", params={"days": 1}).json()
+    kinds = {k["kind"]: k["costUsd"] for k in body["byKind"]}
+    assert kinds == {"research": 0.6, "turn": 12.0}
+    assert body["byDay"][-1]["costUsd"] == 12.6
+    assert body["pricing"]["model"] == "claude-sonnet-5-5"  # 응답 형태는 그대로

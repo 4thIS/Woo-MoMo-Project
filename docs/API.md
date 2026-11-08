@@ -551,7 +551,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
   "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…" | null, "calls": 12, "costUsd": 0.31 }] }  // 비용 상위 10 (면접 id 없는 행 제외)
 ```
 
-비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
+비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. `pricing`은 면접(턴·리포트) 모델 요금이고, 다른 모델로 기록된 행(브리핑 요약 `claude-haiku-5-5`: 입력 0.10·출력 0.50·캐시읽기 0.01·캐시쓰기 0.125)은 그 모델 요금으로, 모르는 모델은 `pricing` 요금으로 센다. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
 
 ### GET /api/admin/audit?page=
 
