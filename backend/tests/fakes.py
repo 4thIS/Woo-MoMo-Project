@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.llm.baze import VoiceOutcome, VoiceResult
-from app.llm.claude import ClaudeError, ResearchResult, Usage, UsageSink
+from app.llm.claude import ClaudeError, Usage, UsageSink
 from app.mail import MailError
 
 DEFAULT_REPLY = ["자기소개를 ", "해 주세요."]
@@ -15,7 +15,6 @@ DEFAULT_BRIEFING = (
     "인재상: 높은 자율과 책임, 빠른 실행, 사용자 문제를 숫자로 확인하는 사람을 찾는다. "
     "백엔드 직무는 결제 안정성과 장애 대응 경험을 중요하게 본다."
 )
-DEFAULT_SOURCES = [{"title": "토스 기술 블로그", "url": "https://toss.tech"}]
 
 
 class FakeClock:
@@ -51,8 +50,6 @@ class FakeClaude:
         self.usage = usage or Usage(input_tokens=100, output_tokens=20)
         self.replies: list[list[Any]] = []
         self.calls: list[dict[str, Any]] = []
-        self.research_results: list[Any] = []
-        self.research_calls: list[dict[str, Any]] = []
         self.complete_results: list[Any] = []
         self.complete_calls: list[dict[str, Any]] = []
 
@@ -88,35 +85,6 @@ class FakeClaude:
         if on_usage is not None:
             refused = isinstance(error, ClaudeError) and error.code == "refused"
             on_usage(Usage(), "refused" if refused else "error")
-
-    def research(
-        self,
-        *,
-        system: str,
-        messages: list[dict[str, Any]],
-        max_tokens: int,
-        on_usage: UsageSink | None = None,
-        fetch_domains: list[str] | None = None,
-    ) -> ResearchResult:
-        self.research_calls.append(
-            {
-                "system": system,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "fetch_domains": fetch_domains,
-            }
-        )
-        item = (
-            self.research_results.pop(0)
-            if self.research_results
-            else ResearchResult(text=DEFAULT_BRIEFING, sources=list(DEFAULT_SOURCES))
-        )
-        if isinstance(item, Exception):
-            self._report(on_usage, item)
-            raise item
-        if on_usage is not None:
-            on_usage(self.usage, "ok")
-        return item
 
     def complete(
         self,

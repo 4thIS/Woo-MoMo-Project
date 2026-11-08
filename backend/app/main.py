@@ -18,8 +18,10 @@ from app.data import (
 )
 from app.errors import install_error_handlers
 from app.llm.baze import BazeClient
+from app.llm.briefing import Collector, WebCollector
 from app.llm.claude import AnthropicClaude, ClaudeClient
 from app.llm.gemini import GeminiClient
+from app.llm.naver import NaverSearch
 from app.llm.voice_common import VoiceAnalyzer
 from app.mail import HttpMailer, Mailer
 from app.middleware import OriginGuard
@@ -44,6 +46,16 @@ def _default_claude(cfg: Settings) -> ClaudeClient | None:
     return AnthropicClaude(cfg.anthropic_api_key) if cfg.anthropic_api_key else None
 
 
+def _default_collector(cfg: Settings) -> Collector:
+    # 네이버 키가 둘 다 있을 때만 검색한다. 없으면 공고만으로 쓴다(spec 2026-11-08 4절)
+    naver = (
+        NaverSearch(cfg.naver_client_id, cfg.naver_client_secret)
+        if cfg.naver_client_id and cfg.naver_client_secret
+        else None
+    )
+    return WebCollector(naver)
+
+
 CREDIT_REFRESH_SECONDS = 30 * 60
 
 
@@ -64,6 +76,7 @@ def create_app(
     claude: ClaudeClient | None = None,
     baze: VoiceAnalyzer | None = None,
     mailer: Mailer | None = None,
+    collector: Collector | None = None,
 ) -> FastAPI:
     base = data_dir or DATA_DIR
     cfg = settings or Settings.from_env()
@@ -100,6 +113,8 @@ def create_app(
     app.state.clock = clock
     app.state.limiter = RateLimiter(clock)
     app.state.claude = claude if claude is not None else _default_claude(cfg)
+    # 브리핑 자료 모으기: 주입한 대역이 우선(테스트), 없으면 공고·네이버 실물
+    app.state.collector = collector if collector is not None else _default_collector(cfg)
     app.state.baze = baze if baze is not None else (own_baze or own_gemini)
     # 주입한 발송기가 우선. 없으면 키가 있을 때만 실물, 둘 다 없으면 None(PIN 요청은 503)
     if mailer is None and cfg.mail_api_key:
