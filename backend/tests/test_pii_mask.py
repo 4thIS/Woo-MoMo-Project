@@ -143,6 +143,7 @@ def test_names_in_resume_labels():
         "주소:" + "가" * 20_000,
         "주소: x" + " " * 20_000 + "y",
         "주소: " + "(010-1234-5678) " * 1_200,
+        "주소: a@b.co 서울 1\n" * 1_200,
     ],
     ids=[
         "dash",
@@ -158,6 +159,7 @@ def test_names_in_resume_labels():
         "address-run",
         "address-spaces",
         "address-phones",
+        "address-lines",
     ],
 )
 def test_adversarial_long_text_is_fast(text):
@@ -231,3 +233,13 @@ def test_phone_formats_share_one_placeholder(text):
     m = Masker()
     m.mask("010-1234-5678")
     assert m.mask(f"연락처 {text} 입니다") == "연락처 [전화1] 입니다"
+
+
+def test_labelled_address_masks_every_segment_between_taken_spans():
+    m = Masker()
+    assert m.mask("주소: 010-1234-5678 서울 마포구 망원동 1") == "주소: [전화1] [주소1]"
+    assert m._values["[주소1]"] == "서울 마포구 망원동 1"
+    assert m.mask("주소: 서울 마포구 (010-1234-5678) 망원동 1 / a@b.co") == (
+        "주소: [주소2] ([전화1]) [주소3] / [이메일1]"
+    )
+    assert m.mask("주소: 010-1234-5678 / a@b.co") == "주소: [전화1] / [이메일1]"

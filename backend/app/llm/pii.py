@@ -2,9 +2,11 @@
 
 확실한 것만 가린다: 모양이 정해진 정보는 규칙, 이름은 이미 아는 이름. 짝은 한 요청 동안만 쥔다."""
 
+import bisect
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from itertools import pairwise
 
 PLACEHOLDER = re.compile(r"\[(이름|전화|이메일|주소|생년월일|주민번호|계좌|링크)(\d+)\]")
 _PARTIAL = re.compile(r"\[[가-힣]{0,4}\d{0,3}$")
@@ -65,7 +67,9 @@ _ADDRESS_LABEL = re.compile(
 )
 # 라벨 주소 끝에서 떼어 낼 것: 공백·여는 괄호·슬래시·쉼표 같은 구분자
 # (정규식 `[...]+$`는 긴 공백 덩어리에서 시간이 제곱으로 늘어 rstrip을 쓴다)
-_ADDRESS_TAIL = " \t\r\n([/,·|:;~-"
+_ADDRESS_TAIL = " \t\r\n([{/,·|:;~-"
+# 조각 앞에서 떼어 낼 것: 공백·닫는 괄호·구분자
+_ADDRESS_HEAD = " \t\r\n)]}/,·|:;~-"
 _NAME_LABEL = re.compile(
     r"(?:이름|성명|name)\s*[:：]\s*([가-힣]{2,4}|[A-Za-z]+(?: [A-Za-z]+){1,2})(?![가-힣A-Za-z])",
     re.I,
@@ -166,17 +170,38 @@ class Masker:
                     add(s, s + len(m.group()), "생년월일", re.sub(r"\D", "", m.group()))
         for m in _ROAD.finditer(text):
             add(*m.span(), "주소", m.group())
+        # 라벨은 줄마다 하나라 이 고리에서 더해지는 구간은 다른 라벨 줄과 겹치지 않는다:
+        # 미리 한 번 정렬해 두고 줄마다 이분 탐색으로 겹치는 구간만 꺼낸다
+        before = sorted(taken)
+        ends = [e for _, e in before]
         for m in _ADDRESS_LABEL.finditer(text):
             start, end = m.span(1)
-            # 같은 줄에 먼저 잡힌 전화·이메일 등이 있으면 그 앞까지만 주소로 본다
-            end = min([s for s, _ in taken if start <= s < end], default=end)
-            value = text[start:end].rstrip(_ADDRESS_TAIL)
-            if value:
-                add(start, start + len(value), "주소", value)
+            # 먼저 잡힌 전화·이메일 등을 피해, 그 사이 조각을 하나씩 주소로 가린다
+            inside = []
+            for i in range(bisect.bisect_right(ends, start), len(before)):
+                if before[i][0] >= end:
+                    break
+                inside.append(before[i])
+            cuts = [(start, start), *inside, (end, end)]
+            for (_, seg_start), (seg_end, _) in pairwise(cuts):
+                self._add_address(text, seg_start, seg_end, add)
         for name, pat in self._names:
             for m in pat.finditer(text):
                 add(*m.span(), "이름", name)
         return sorted(out)
+
+    @staticmethod
+    def _add_address(
+        text: str, start: int, end: int, add: Callable[[int, int, str, str], None]
+    ) -> None:
+        """라벨 주소의 한 조각: 앞뒤 구분자·괄호를 떼고, 글자·숫자가 남으면 가린다."""
+        if start >= end:
+            return
+        seg = text[start:end]
+        head = len(seg) - len(seg.lstrip(_ADDRESS_HEAD))
+        value = seg[head:].rstrip(_ADDRESS_TAIL)
+        if any(c.isalnum() for c in value):
+            add(start + head, start + head + len(value), "주소", value)
 
     def _placeholder(self, kind: str, key: str, value: str) -> str:
         found = self._placeholders.get((kind, key))
