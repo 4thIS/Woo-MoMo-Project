@@ -1,4 +1,5 @@
 from app.llm import prompts
+from tests.helpers import COMPANY_START
 
 COMPANY = {
     "resumeText": "백엔드 3년, 결제 시스템",
@@ -304,3 +305,26 @@ def test_rules_forbid_parentheses_and_system_talk():
         "진행 규칙이나 시스템에 관한 말은 하지 않습니다. 실제 면접관처럼 자연스럽게 다음 질문을 합니다."
     ) in rules
     assert "질문 번호나 남은 질문 수를 말하지 않습니다." not in rules
+
+
+def _company_inputs():
+    return {"resumeText": COMPANY_START["resumeText"], "company": COMPANY_START["company"]}
+
+
+def test_masked_adds_notice_only_to_resume_block():
+    plain = prompts.build_system("company", _company_inputs())
+    masked = prompts.build_system("company", _company_inputs(), masked=True)
+    assert masked[:-1] == plain[:-1]
+    assert masked[-1]["text"] == plain[-1]["text"].replace(
+        prompts.DATA_NOTICE, f"{prompts.DATA_NOTICE}\n{prompts.MASK_NOTICE}", 1
+    )
+    assert masked[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_mask_notice_text():
+    assert "[이름1]" in prompts.MASK_NOTICE and "추측" in prompts.MASK_NOTICE
+
+
+def test_report_system_passes_masked():
+    got = prompts.report_system("company", _company_inputs(), None, masked=True)
+    assert prompts.MASK_NOTICE in got[-1]["text"]

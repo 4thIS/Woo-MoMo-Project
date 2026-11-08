@@ -46,6 +46,8 @@ services:
       MAIL_API_KEY: ${MAIL_API_KEY:-}
       MAIL_API_URL: ${MAIL_API_URL:-https://send.ssenu.cloud/v1/send}
       BEN_REPORT_V2: ${BEN_REPORT_V2:-false}
+      # 벤 개인정보 가림(spec 2026-11-08). 기본 켜짐, 문제 있으면 false
+      BEN_PII_MASK: ${BEN_PII_MASK:-true}
     volumes:
       # 계정 DB·녹음. 운영 /srv/momo/data, demomo는 deploy/.env의 DATA_HOST_DIR=/srv/momo-dev/data
       - ${DATA_HOST_DIR:-/srv/momo/data}:/data
