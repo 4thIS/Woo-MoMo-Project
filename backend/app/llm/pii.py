@@ -3,10 +3,12 @@
 확실한 것만 가린다: 모양이 정해진 정보는 규칙, 이름은 이미 아는 이름. 짝은 한 요청 동안만 쥔다."""
 
 import bisect
+import json
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable
 from itertools import pairwise
+from typing import Any
 
 PLACEHOLDER = re.compile(r"\[(이름|전화|이메일|주소|생년월일|주민번호|계좌|링크)(\d+)\]")
 _PARTIAL = re.compile(r"\[[가-힣]{0,4}\d{0,3}$")
@@ -242,3 +244,53 @@ class Masker:
             last = end
         parts.append(text[last:])
         return "".join(parts)
+
+    # ── 되돌리기 ──
+
+    def unmask(self, text: str, *, json_escape: bool = False) -> str:
+        def sub(m: re.Match[str]) -> str:
+            value = self._values.get(m.group(0))
+            if value is None:  # Claude가 지어낸 표시는 그대로
+                return m.group(0)
+            return json.dumps(value, ensure_ascii=False)[1:-1] if json_escape else value
+
+        return PLACEHOLDER.sub(sub, text)
+
+    def stream(self, *, json_escape: bool = False) -> "StreamUnmask":
+        return StreamUnmask(self, json_escape)
+
+    # ── 요청 단위 ──
+
+    def mask_system(self, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{**b, "text": self.mask(b["text"])} if "text" in b else dict(b) for b in blocks]
+
+    def mask_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out = []
+        for msg in messages:
+            content = msg.get("content")
+            out.append(
+                {**msg, "content": self.mask(content)} if isinstance(content, str) else dict(msg)
+            )
+        return out
+
+
+class StreamUnmask:
+    """조각 끝의 표시 앞부분(최대 HOLD_MAX자)을 붙잡아 다음 조각과 합쳐 되돌린다."""
+
+    def __init__(self, masker: Masker, json_escape: bool) -> None:
+        self._masker = masker
+        self._json = json_escape
+        self._buf = ""
+
+    def feed(self, chunk: str) -> str:
+        text = self._buf + chunk
+        hold = _PARTIAL.search(text)
+        if hold is not None and len(text) - hold.start() <= HOLD_MAX:
+            self._buf, text = text[hold.start() :], text[: hold.start()]
+        else:
+            self._buf = ""
+        return self._masker.unmask(text, json_escape=self._json)
+
+    def flush(self) -> str:
+        text, self._buf = self._buf, ""
+        return self._masker.unmask(text, json_escape=self._json)
