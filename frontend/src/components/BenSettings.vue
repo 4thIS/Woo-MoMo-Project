@@ -21,6 +21,13 @@ const axes = computed(() => BEN_AXES.filter((a) => props.showCompany || a.key !=
 function move(key: keyof BenAxisValues, raw: string) {
   emit('update:modelValue', { ...props.modelValue, [key]: Number(raw) as Notch })
 }
+
+/** 화살표로 한 칸. 끝에서는 잠겨 있어 여기 오지 않는다 */
+function step(key: keyof BenAxisValues, by: -1 | 1) {
+  const next = props.modelValue[key] + by
+  if (next < 0 || next > 2) return
+  emit('update:modelValue', { ...props.modelValue, [key]: next as Notch })
+}
 </script>
 
 <template>
@@ -28,7 +35,19 @@ function move(key: keyof BenAxisValues, raw: string) {
     <div v-for="a in axes" :key="a.key" class="axis" data-test="ben-axis">
       <span class="mono label">{{ a.label }}</span>
       <span class="slide">
-        <span class="mono arrow" aria-hidden="true">◀</span>
+        <!-- 보이면 눌려야 한다. 전에는 aria-hidden span이라 눌러도 아무 일이 없었다 (2026-11-08).
+             Tab 차례와 낭독기는 속의 range가 맡으므로 여기서는 빠진다 -->
+        <button
+          type="button"
+          class="mono nudge"
+          tabindex="-1"
+          aria-hidden="true"
+          :disabled="modelValue[a.key] === 0"
+          data-test="ben-prev"
+          @click="step(a.key, -1)"
+        >
+          ◀
+        </button>
         <span class="track">
           <!-- 눈금 셋. 고른 자리만 채운다 — 어디쯤인지 그림으로도 보이게 -->
           <span
@@ -51,7 +70,17 @@ function move(key: keyof BenAxisValues, raw: string) {
             @input="move(a.key, ($event.target as HTMLInputElement).value)"
           />
         </span>
-        <span class="mono arrow" aria-hidden="true">▶</span>
+        <button
+          type="button"
+          class="mono nudge"
+          tabindex="-1"
+          aria-hidden="true"
+          :disabled="modelValue[a.key] === 2"
+          data-test="ben-next"
+          @click="step(a.key, 1)"
+        >
+          ▶
+        </button>
       </span>
       <span class="display value" data-test="ben-value">{{ a.names[modelValue[a.key]] }}</span>
       <span class="mono hint" data-test="ben-hint">{{ a.hints[modelValue[a.key]] }}</span>
@@ -82,9 +111,24 @@ function move(key: keyof BenAxisValues, raw: string) {
   align-items: center;
   gap: var(--sp-2);
 }
-.arrow {
+/* 이름을 `.arrow`로 두면 base.css의 전역 `.arrow`(44x44 네모 버튼)와 섞여
+   내가 안 적은 폭·배경·그림자가 따라붙는다 (2026-11-08) */
+.nudge {
   font-size: var(--fs-meta);
   color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  line-height: 1;
+}
+.nudge:hover:not(:disabled) {
+  color: var(--accent);
+}
+/* 끝에 닿았음을 커서와 색으로 알린다 — 눌러도 아무 일이 없는 것과는 다르다 */
+.nudge:disabled {
+  color: var(--raise);
+  cursor: default;
 }
 /* 눈금은 보이는 것, 조작은 그 위에 덮인 투명한 range가 맡는다 —
    브라우저마다 다른 기본 막대를 그리지 않으면서 키보드·낭독기는 그대로 얻는다 */
