@@ -74,8 +74,11 @@ onBeforeUnmount(() => io?.disconnect())
 
 <template>
   <!-- 문서 맨 위의 자리지기. 이만큼 내려가면 바가 내용을 덮기 시작하므로 판을 깐다.
-       고정이 아닌 보통 흐름에 있어야 해서 바 바깥에 둔다 (2026-11-07) -->
-  <div ref="sentinel" class="sentinel" aria-hidden="true" />
+       고정이 아닌 보통 흐름에 있어야 해서 바 바깥에 둔다 (2026-11-07).
+       바가 숨는 화면(면접)에서는 **자리를 비운다** — 덮을 바가 없는데 64px을 차지하면
+       100svh 면접장이 그만큼 밀려 내려가고 쓸데없는 스크롤이 생긴다. 지우지는 않는다:
+       남겨 두면 돌아올 때 IntersectionObserver가 판 깔림을 다시 재 준다 (2026-11-08) -->
+  <div ref="sentinel" class="sentinel" :class="{ gone: !shown }" aria-hidden="true" />
 
   <header v-if="shown" class="topbar" :class="{ docked }" data-test="topbar">
     <!-- 처음으로 돌아가는 길. **맨 위에서도 보인다** — 바 배경만 투명해지고
@@ -165,6 +168,9 @@ onBeforeUnmount(() => io?.disconnect())
 .sentinel {
   height: var(--topbar-h);
   pointer-events: none;
+}
+.sentinel.gone {
+  height: 0;
 }
 .topbar {
   position: fixed;

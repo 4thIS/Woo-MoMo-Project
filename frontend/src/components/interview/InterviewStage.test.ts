@@ -227,6 +227,27 @@ describe('InterviewStage — 면접관', () => {
   })
 })
 
+describe('말풍선이 커져도 면접관은 그대로 (2026-11-08)', () => {
+  const css = InterviewStageSource.split('<style')[1] ?? ''
+
+  it('말풍선은 제 자리 안에 있다 — 흐름에 바로 놓으면 자란 만큼 면접관을 민다', () => {
+    const w = mount(InterviewStage, { props: base })
+    expect(w.get('.bubble-slot').find('.bubble').exists()).toBe(true)
+  })
+
+  it('그 자리가 남는 세로 공간을 전부 가진다 — 면접관은 늘 바닥 쪽에 선다', () => {
+    expect(css).toMatch(/\.bubble-slot\s*\{[^}]*flex:\s*1/)
+  })
+
+  it('말풍선은 제 자리를 넘지 않는다 — 넘으면 다시 면접관을 민다', () => {
+    expect(css).toMatch(/\.bubble\s*\{[^}]*max-height:\s*100%/)
+  })
+
+  it('넘치는 글은 상자 안에서 스크롤한다 — says가 줄어들 수 있어야 한다', () => {
+    expect(css).toMatch(/\.says\s*\{[^}]*min-height:\s*0/)
+  })
+})
+
 describe('말풍선은 글자를 가두어야 한다', () => {
   const css = InterviewStageSource.split('<style')[1] ?? ''
 
