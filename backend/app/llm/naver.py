@@ -7,7 +7,8 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
-BASE = "https://openapi.naver.com/v1/search"
+# 옛 개발자센터(openapi.naver.com)는 검색 API 신규 발급이 막혀 NAVER API HUB를 쓴다(2026-11-09)
+BASE = "https://naverapihub.apigw.ntruss.com/search/v1"
 COUNT = 5
 _TAG = re.compile(r"<[^>]+>")
 
@@ -45,7 +46,8 @@ class NaverSearch:
         timeout: float = 3.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self._headers = {"X-Naver-Client-Id": client_id, "X-Naver-Client-Secret": client_secret}
+        # NAVER API HUB(네이버 클라우드) 인증 헤더 — 응답은 text/plain이지만 본문은 JSON이다
+        self._headers = {"X-NCP-APIGW-API-KEY-ID": client_id, "X-NCP-APIGW-API-KEY": client_secret}
         self._timeout = timeout
         self._transport = transport
 
@@ -66,7 +68,7 @@ class NaverSearch:
         return [i for i in items if isinstance(i, dict)][:COUNT]
 
     def news(self, query: str) -> list[Doc]:
-        items = self._items("news.json", {"query": query, "display": str(COUNT), "sort": "date"})
+        items = self._items("news", {"query": query, "display": str(COUNT), "sort": "date"})
         return [
             Doc(
                 "news",
@@ -79,7 +81,7 @@ class NaverSearch:
         ]
 
     def web(self, query: str) -> list[Doc]:
-        items = self._items("webkr.json", {"query": query, "display": str(COUNT)})
+        items = self._items("webkr", {"query": query, "display": str(COUNT)})
         return [
             Doc(
                 "web",

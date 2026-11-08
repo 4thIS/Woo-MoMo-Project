@@ -95,7 +95,7 @@ sudo mkdir -p /srv/momo/data /srv/momo-dev/data && sudo chown -R 10001:10001 /sr
 | `WEB_BIND` | `127.0.0.1:8006` | web 바인딩(주소:포트). 폴더마다 다른 포트 |
 | `DATA_HOST_DIR` | `/srv/momo-dev/data` | 호스트의 데이터 폴더(dev만 적는다). 없으면 `/srv/momo/data` |
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | 벤(Claude) 키. 없으면 벤 시작이 `503 ben_unavailable` |
-| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | (네이버 개발자센터 "검색" 앱) | 벤 회사 브리핑의 뉴스·웹문서 검색. 없으면 공고만으로 브리핑을 쓴다 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | (네이버 클라우드 콘솔 NAVER API HUB — 뉴스·웹문서) | 벤 회사 브리핑의 뉴스·웹문서 검색. 없으면 공고만으로 브리핑을 쓴다 |
 | `ADMIN_LOGIN` | `admin` | 관리자 아이디. **이메일 모양이 아닌 아이디**로 둔다. 이메일 값이 기존 사용자와 같으면 그 사용자가 관리자로 바뀐다. 목업 결제는 이 계정만 |
 | `ADMIN_PASSWORD` | (긴 무작위 문자열) | **`.env`에만 둔다. 추측하기 쉬운 값 금지.** 공개 사이트라 약하면 누구나 티켓을 충전해 하루 `BEN_DAILY_LIMIT`번까지 Claude 비용을 쓸 수 있다. `$`는 쓰지 않는다(compose가 변수로 읽는다) |
 | `BEN_DAILY_LIMIT` | `30` | 서버 전체 하루(한국 날짜) 벤 면접 수 상한. 마지막 방어선 |

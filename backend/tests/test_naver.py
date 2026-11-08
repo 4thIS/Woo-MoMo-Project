@@ -24,7 +24,9 @@ def test_news_strips_tags_and_dates():
 
     def handler(req):
         seen["url"] = req.url
-        seen["id"] = req.headers["x-naver-client-id"]
+        seen["id"] = req.headers["x-ncp-apigw-api-key-id"]
+        seen["key"] = req.headers["x-ncp-apigw-api-key"]
+        seen["host"] = req.url.host
         return httpx.Response(200, json=NEWS)
 
     got = _client(handler).news("토스")
@@ -37,7 +39,9 @@ def test_news_strips_tags_and_dates():
             date="2026-11-03",
         )
     ]
-    assert seen["url"].path == "/v1/search/news.json"
+    assert seen["url"].path == "/search/v1/news"
+    assert seen["host"] == "naverapihub.apigw.ntruss.com"
+    assert seen["key"] == "secret"
     assert dict(seen["url"].params) == {"query": "토스", "display": "5", "sort": "date"}
     assert seen["id"] == "id"
 
@@ -56,7 +60,7 @@ def test_web_uses_webkr():
     got = _client(handler).web("토스 백엔드 개발자")
     assert got == [Doc(kind="web", title="토스 채용", text="인재상", url="https://toss.im/career")]
     assert seen == {
-        "path": "/v1/search/webkr.json",
+        "path": "/search/v1/webkr",
         "params": {"query": "토스 백엔드 개발자", "display": "5"},
     }
 
