@@ -382,3 +382,27 @@ describe('TopBar — 지금 단계 (2026-11-08)', () => {
     expect(w.get('[data-test=top-brand]').text()).toContain('보관함')
   })
 })
+
+describe('TopBar — 자리지기 (2026-11-08)', () => {
+  it('바가 숨는 화면에서는 자리를 비운다 — 안 비우면 면접장 맨 위에 빈 띠가 64px 남는다', async () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = bar()
+    await flushPromises()
+    // scoped CSS는 jsdom에 적용되지 않으므로 클래스로 본다 (.sentinel.gone { height: 0 })
+    expect(w.get('.sentinel').classes()).toContain('gone')
+  })
+
+  it('바가 보이는 화면에서는 자리를 지킨다 — 고정된 바가 내용을 덮는다', async () => {
+    useInterviewStore().$patch({ phase: 'report' })
+    const w = bar()
+    await flushPromises()
+    expect(w.get('.sentinel').classes()).not.toContain('gone')
+  })
+
+  it('숨는 화면에서도 자리지기는 남는다 — 돌아올 때 판 깔림을 다시 재야 한다', async () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = bar()
+    await flushPromises()
+    expect(w.find('.sentinel').exists()).toBe(true)
+  })
+})

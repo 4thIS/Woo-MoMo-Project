@@ -202,8 +202,11 @@ const closing = computed(() => s.ended && !s.interviewerTurn && s.reportStatus =
   min-height: var(--dock-h);
   max-height: 60vh;
 }
+/* 방은 **화면 높이로 못 박는다**. 내용에 끌려 늘어나면 질문이 길어질 때마다 무대가
+   커지고, 그 안의 면접관·지원자가 통째로 아래로 밀려 잘렸다 (2026-11-08) */
 .stage-area {
   position: relative;
+  height: 100%;
   min-height: 0;
 }
 /* 좁은 화면 — 좌우 판은 각각 최소 300px이라 660px 아래에서는 서로 포개진다.
