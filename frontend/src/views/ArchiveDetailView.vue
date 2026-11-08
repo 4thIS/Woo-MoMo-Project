@@ -75,7 +75,7 @@ const tocItems = computed<TocItem[]>(() => {
   }))
 })
 
-const { current, read } = useReadingToc(body, tocItems)
+const { current } = useReadingToc(body, tocItems)
 
 /** 카드마다 그 문항에 속한 녹음들. v2 리포트는 제 문항 목록으로 짝짓는다 */
 const clips = computed(() =>
@@ -110,12 +110,7 @@ function printReport() {
 <template>
   <main class="report stars" data-test="archive-detail">
     <div class="cols">
-      <ReportRail
-        :items="tocItems"
-        :summary="reportV2?.summary ?? null"
-        :read="read"
-        :current="current"
-      >
+      <ReportRail :items="tocItems" :summary="reportV2?.summary ?? null" :current="current">
         <template #head>
           <button type="button" class="mono link" data-test="archive-back" @click="$emit('back')">
             ← 보관함으로

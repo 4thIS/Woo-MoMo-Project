@@ -18,9 +18,7 @@ const summary: ReportV2Summary = {
 }
 
 const rail = (over: Partial<Record<string, unknown>> = {}) =>
-  mount(ReportRail, {
-    props: { items, summary, read: new Set<string>(), ...over },
-  })
+  mount(ReportRail, { props: { items, summary, ...over } })
 
 describe('ReportRail', () => {
   it('문항 목차를 진짜 링크로 만든다 — Tab 차례와 뒤로 가기가 거저 따라온다', () => {
@@ -40,10 +38,10 @@ describe('ReportRail', () => {
     expect(w.findAll('[data-test=toc-item] .over')).toHaveLength(2)
   })
 
-  it('읽은 문항을 표시하고 몇 개까지 읽었는지 적는다 — 끝이 보이면 덜 지친다', () => {
-    const w = rail({ read: new Set(['q1']) })
-    expect(w.get('[data-test=toc-read]').text()).toContain('1')
-    expect(w.findAll('[data-test=toc-item].read')).toHaveLength(1)
+  it('읽음을 세지 않는다 — 목차는 눌러서 옮겨 다니는 자리지 진도를 세는 자리가 아니다', () => {
+    const w = rail()
+    expect(w.find('[data-test=toc-read]').exists()).toBe(false)
+    expect(w.get('[data-test=toc-count]').text()).toContain('3')
   })
 
   it('지금 보는 문항에 aria-current를 단다', () => {
@@ -65,7 +63,7 @@ describe('ReportRail', () => {
 
   it('머리글과 액션은 슬롯이다 — 보관함 상세가 다른 것을 끼운다', () => {
     const w = mount(ReportRail, {
-      props: { items, summary: null, read: new Set<string>() },
+      props: { items, summary: null },
       slots: {
         head: '<p data-test="x-head">보관함 면접</p>',
         actions: '<b data-test="x-act">지우기</b>',
@@ -119,5 +117,75 @@ describe('ReportRail — 목차는 해시를 쓰지 않는다 (2026-11-08)', () 
 
   it('링크는 여전히 진짜 href다 — Tab 차례와 우클릭이 거저 따라온다', () => {
     expect(rail().get('[data-test=toc-item]').attributes('href')).toBe('#q1')
+  })
+})
+
+describe('ReportRail — 목록을 과녁으로 (2026-11-08)', () => {
+  it('줄 맨 앞은 눌리지 않는 읽음 네모가 아니라 번호 칩이다 — 본문 카드의 Q1과 짝이 맞는다', () => {
+    const w = rail()
+    expect(w.get('[data-test=toc-item]').get('[data-test=toc-chip]').text()).toBe('Q1')
+  })
+
+  it('과녁을 손가락 크기로 키운다 — 28px 줄은 누르기 어렵다', () => {
+    const src = readFileSync(join(__dirname, 'ReportRail.vue'), 'utf8')
+    const row = src.match(/\.row \{[^}]*\}/)![0]
+    expect(row).toMatch(/min-height:\s*4[4-9]px/)
+  })
+
+  it('머리에 문항 수를 적는다 — 리포트와 보관함이 같은 레일을 쓴다', () => {
+    expect(rail().get('[data-test=toc-count]').text()).toContain('3')
+  })
+})
+
+describe('ReportRail — 앞뒤로 오간다 (2026-11-08)', () => {
+  const target = (id: string) => {
+    const el = document.createElement('div')
+    el.id = id
+    el.scrollIntoView = vi.fn()
+    document.body.appendChild(el)
+    return el
+  }
+
+  it('다음을 누르면 그다음 문항으로 간다', async () => {
+    const el = target('q2')
+    const w = rail({ current: 'q1' })
+    await w.get('[data-test=toc-next]').trigger('click')
+    expect(el.scrollIntoView).toHaveBeenCalled()
+    el.remove()
+  })
+
+  it('이전을 누르면 앞 문항으로 간다', async () => {
+    const el = target('q1')
+    const w = rail({ current: 'q2' })
+    await w.get('[data-test=toc-prev]').trigger('click')
+    expect(el.scrollIntoView).toHaveBeenCalled()
+    el.remove()
+  })
+
+  it('꼬리줄은 제 카드와 id를 나눠 쓴다 — 같은 자리를 두 번 세지 않는다', async () => {
+    // items: q1, q2, q2-1(꼬리) → q2에서 다음은 q2-1이 아니라 없음(끝)
+    const el = target('q2-1')
+    const w = rail({ current: 'q2' })
+    await w.get('[data-test=toc-next]').trigger('click')
+    expect(el.scrollIntoView).toHaveBeenCalled()
+    el.remove()
+  })
+
+  it('첫 문항에서는 이전이 잠긴다', () => {
+    const w = rail({ current: 'q1' })
+    expect((w.get('[data-test=toc-prev]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('마지막 문항에서는 다음이 잠긴다', () => {
+    const w = rail({ current: 'q2-1' })
+    expect((w.get('[data-test=toc-next]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('아직 아무 데도 없으면 다음은 첫 문항으로 간다', async () => {
+    const el = target('q1')
+    const w = rail()
+    await w.get('[data-test=toc-next]').trigger('click')
+    expect(el.scrollIntoView).toHaveBeenCalled()
+    el.remove()
   })
 })
