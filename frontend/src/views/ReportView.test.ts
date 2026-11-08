@@ -225,7 +225,7 @@ describe('ReportView', () => {
     expect(times).toHaveLength(1)
     expect(times[0].text()).toBe('1분 0초')
   })
-  it('다시 면접 보기는 reset', async () => {
+  it('다시 면접 보기는 적어 둔 것을 남긴 채 reset — 같은 조건으로 한 번 더 보려는 것이다', async () => {
     const s = useInterviewStore()
     s.$patch({
       phase: 'report',
@@ -235,7 +235,7 @@ describe('ReportView', () => {
     })
     const reset = vi.spyOn(s, 'reset').mockResolvedValue()
     await mount(ReportView).find('[data-test="restart"]').trigger('click')
-    expect(reset).toHaveBeenCalled()
+    expect(reset).toHaveBeenCalledWith(true)
   })
 })
 

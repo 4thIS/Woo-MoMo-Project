@@ -743,7 +743,16 @@ export const useInterviewStore = defineStore('interview', {
       }
     },
 
-    async reset() {
+    /** 면접을 비우고 준비 화면으로.
+     *
+     * `keepInputs`면 **적어 둔 것은 남긴다** — 리포트의 "다시 면접 보기"는 같은 조건으로
+     * 한 번 더 보려는 것이라, 분야·직무·회사·공고·대입 네 칸·이력서를 다시 치게 하면 안 된다.
+     * 남기는 것은 준비 화면에서 사람이 적은 것뿐이고, 지난 면접(대화·리포트·보관 결과·
+     * 그 면접의 면접관)은 어느 쪽이든 비운다 (2026-11-08).
+     *
+     * 고른 면접관은 `interviewer` 스토어가 들고 있어 여기서 건드리지 않는다 —
+     * `interviewerId`는 "그 면접의 면접관"이라 비우는 게 맞다 */
+    async reset(keepInputs = false) {
       await this.abort() // 재생·생성을 멈추고 generate의 꼬리까지 끝낸 뒤 비운다 — 안 그러면 꼬리가 stage를 waiting으로 되돌린다
       if (session) await session.dispose().catch(() => undefined)
       session = null
@@ -765,22 +774,25 @@ export const useInterviewStore = defineStore('interview', {
       this.reportV2 = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = {
-        field: null,
-        job: '',
-        companyName: '',
-        postingUrl: '',
-        name: '',
-        age: null,
-        university: '',
-        department: '',
+      if (!keepInputs) {
+        this.profile = {
+          field: null,
+          job: '',
+          companyName: '',
+          postingUrl: '',
+          name: '',
+          age: null,
+          university: '',
+          department: '',
+        }
+        this.chosenTrack = null
+        this.resumeText = ''
+        this.resumeName = null
+        // 분야에 딸린 것이라 분야를 남기면 같이 남긴다 — 비우면 받으러 한 번 더 나간다
+        this.fallbackQuestions = []
       }
       this.postingError = null
       this.briefing = null
-      this.chosenTrack = null
-      this.resumeText = ''
-      this.resumeName = null
-      this.fallbackQuestions = []
       this.startedAt = null
       this.endedAt = null
       this.interviewerId = null

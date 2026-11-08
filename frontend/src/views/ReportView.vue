@@ -133,7 +133,9 @@ function printReport() {
             @click="printReport"
             >PDF로 저장</PixelButton
           >
-          <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
+          <!-- 적어 둔 것(분야·직무·회사·이력서…)을 남긴 채 준비 화면으로 —
+               같은 조건으로 한 번 더 보려는 것이라 다시 치게 하면 안 된다 (2026-11-08) -->
+          <PixelButton data-test="restart" @click="s.reset(true)">다시 면접 보기</PixelButton>
         </template>
       </ReportRail>
 
