@@ -16,10 +16,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from app import db
+from app.config import Settings
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
-from app.llm import delivery, prompts, report_v2
+from app.llm import delivery, pii, prompts, report_v2
 from app.llm.briefing import Collector
 from app.llm.claude import (
     BRIEFING_MODEL,
@@ -50,6 +51,7 @@ from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 ANSWER_MAX = 2000
 # 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
@@ -320,6 +322,63 @@ def _resolve_briefing(
     return text
 
 
+def _masker(settings: Settings, user: User, interview: PremiumInterview) -> pii.Masker | None:
+    """가림이 켜져 있으면 이 요청의 Masker. 아는 이름: 가입 이름, 입학 면접 이름, 이력서 이름 줄."""
+    if not settings.ben_pii_mask:
+        return None
+    names = [user.name or ""]
+    admission = interview.inputs.get("admission")
+    if admission:
+        names.append(admission.get("name") or "")
+    names += pii.names_in(interview.inputs.get("resumeText") or "")
+    return pii.Masker(names)
+
+
+def _masked(
+    masker: pii.Masker | None,
+    system: list[dict[str, Any]],
+    messages: list[prompts.Message],
+) -> tuple[list[dict[str, Any]], list[prompts.Message]]:
+    """시스템 블록 → 메시지 순서로 가린다(번호 고정). 로그에는 종류별 개수만 남긴다."""
+    if masker is None:
+        return system, messages
+    out = masker.mask_system(system), masker.mask_messages(messages)
+    counts = " ".join(f"{k}={v}" for k, v in sorted(masker.counts.items()))
+    log.info("pii masked %s", counts or "none")
+    return out
+
+
+def _mask_or_fail(
+    masker: pii.Masker | None,
+    system: list[dict[str, Any]],
+    messages: list[prompts.Message],
+) -> Generator[str, None, tuple[list[dict[str, Any]], list[prompts.Message]] | None]:
+    """가리기에 실패하면 원문을 보내지 않고 claude_error로 끝낸다(spec 5절). 실패면 None."""
+    try:
+        return _masked(masker, system, messages)
+    except Exception as exc:
+        log.warning("pii mask failed: %s", type(exc).__name__)
+        yield sse("error", {"code": "claude_error"})
+        return None
+
+
+def _unmasked(
+    stream: Iterator[str], masker: pii.Masker | None, *, json_escape: bool
+) -> Iterator[str]:
+    """Claude 조각을 되돌린 조각으로 바꾼다. 조각 사이에 걸린 표시는 붙잡았다가 합쳐 되돌린다."""
+    if masker is None:
+        yield from stream
+        return
+    un = masker.stream(json_escape=json_escape)
+    for text in stream:
+        piece = un.feed(text)
+        if piece:
+            yield piece
+    tail = un.flush()
+    if tail:
+        yield tail
+
+
 def _stream(events: Iterator[str]) -> StreamingResponse:
     """ping 주석을 먼저 보내고, 예상 못 한 예외는 server_error 이벤트로 끝낸다."""
 
@@ -395,6 +454,7 @@ def take_turn(
     turn_sink = _usage_sink(db_path, clock, user.id, interview.id, "turn")
     # 브리핑 요약은 Haiku로 한다 — 사용량도 그 모델로 남긴다
     research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research", BRIEFING_MODEL)
+    masker = _masker(request.app.state.settings, user, interview)
 
     def events() -> Iterator[str]:
         brief = interview.briefing
@@ -402,15 +462,25 @@ def take_turn(
             brief = yield from _resolve_briefing(
                 claude, collector, db_path, interview, now, research_sink
             )
-        system = prompts.build_system(interview.track, interview.inputs, brief)
+        system = prompts.build_system(
+            interview.track, interview.inputs, brief, masked=masker is not None
+        )
+        masked = yield from _mask_or_fail(masker, system, messages)
+        if masked is None:
+            return
+        out_system, out_messages = masked
         chunks: list[str] = []
         try:
-            for text in claude.stream_text(
-                system=system,
-                messages=messages,
-                effort="low",
-                max_tokens=TURN_MAX_TOKENS,
-                on_usage=turn_sink,
+            for text in _unmasked(
+                claude.stream_text(
+                    system=out_system,
+                    messages=out_messages,
+                    effort="low",
+                    max_tokens=TURN_MAX_TOKENS,
+                    on_usage=turn_sink,
+                ),
+                masker,
+                json_escape=False,
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})
@@ -508,16 +578,22 @@ def _generate_report_once(
     system: list[dict[str, Any]],
     msgs: list[prompts.Message],
     sink: UsageSink,
+    masker: pii.Masker | None = None,
 ) -> Generator[str, None, str]:
-    """리포트 한 번을 스트리밍하며 delta를 흘리고 원문을 돌려준다. ClaudeError는 던진다."""
+    """리포트 한 번을 스트리밍하며 delta를 흘리고 (가렸으면 되돌린) 원문을 돌려준다.
+    ClaudeError는 던진다."""
     chunks: list[str] = []
-    for text in claude.stream_text(
-        system=system,
-        messages=msgs,
-        effort="medium",
-        max_tokens=REPORT_MAX_TOKENS,
-        on_usage=sink,
-        output_format=report_v2.REPORT_V2_SCHEMA,
+    for text in _unmasked(
+        claude.stream_text(
+            system=system,
+            messages=msgs,
+            effort="medium",
+            max_tokens=REPORT_MAX_TOKENS,
+            on_usage=sink,
+            output_format=report_v2.REPORT_V2_SCHEMA,
+        ),
+        masker,
+        json_escape=True,  # JSON 문자열 안에 들어가므로 이스케이프해 되돌린다
     ):
         chunks.append(text)
         yield sse("delta", {"text": text})
@@ -533,6 +609,7 @@ def _report_v2_events(
     sink: UsageSink,
     *,
     voice_wait: bool,
+    masker: pii.Masker | None = None,
 ) -> Iterator[str]:
     """버전 2 리포트: 구조화 출력을 검증하고 실패하면 한 번 더 만든다(원문·측정값은 로그 금지)."""
     voices = None
@@ -550,6 +627,11 @@ def _report_v2_events(
         warmth=prompts.ben_settings(interview.inputs)["warmth"],
     )
     n = report_v2.answer_count(interview.messages)
+    # 재생성도 같은 가린 요청을 보낸다(번호가 그대로라 되돌리기도 같다)
+    masked = yield from _mask_or_fail(masker, system, msgs)
+    if masked is None:
+        return
+    out_system, out_msgs = masked
     for attempt in (1, 2):
         if attempt == 2:
             try:
@@ -560,7 +642,7 @@ def _report_v2_events(
                 return
             yield sse("reset", {})
         try:
-            raw = yield from _generate_report_once(claude, system, msgs, sink)
+            raw = yield from _generate_report_once(claude, out_system, out_msgs, sink, masker)
         except ClaudeError as exc:
             # too_long도 같은 코드로 끝낸다(다시 만들어도 같은 길이라 재생성하지 않음)
             yield sse("error", {"code": exc.code})
@@ -626,10 +708,13 @@ def make_report(
         raise ApiError(409, "no_answers")  # 시도를 세기 전에 거절 — Claude를 부르지 않는다
     claude = _claude(request)
     _count_attempt(conn, interview)
+    masker = _masker(settings, user, interview)
     system = (
-        prompts.report_system(interview.track, interview.inputs, interview.briefing)
+        prompts.report_system(
+            interview.track, interview.inputs, interview.briefing, masked=masker is not None
+        )
         if v2
-        else prompts.build_system(interview.track, interview.inputs)
+        else prompts.build_system(interview.track, interview.inputs, masked=masker is not None)
     )
     db_path = settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
@@ -637,7 +722,14 @@ def make_report(
     if v2:
         return _stream(
             _report_v2_events(
-                claude, interview, parsed, system, db_path, report_sink, voice_wait=with_voice
+                claude,
+                interview,
+                parsed,
+                system,
+                db_path,
+                report_sink,
+                voice_wait=with_voice,
+                masker=masker,
             )
         )
 
@@ -652,14 +744,22 @@ def make_report(
                 voice=delivery.voice_used(merged),
                 warmth=warmth,
             )
+        masked = yield from _mask_or_fail(masker, system, msgs)
+        if masked is None:
+            return
+        out_system, out_msgs = masked
         chunks: list[str] = []
         try:
-            for text in claude.stream_text(
-                system=system,
-                messages=msgs,
-                effort="medium",
-                max_tokens=REPORT_MAX_TOKENS,
-                on_usage=report_sink,
+            for text in _unmasked(
+                claude.stream_text(
+                    system=out_system,
+                    messages=out_msgs,
+                    effort="medium",
+                    max_tokens=REPORT_MAX_TOKENS,
+                    on_usage=report_sink,
+                ),
+                masker,
+                json_escape=True,  # 리포트는 JSON — 되돌린 값도 JSON 문자열로 이스케이프
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})
