@@ -228,7 +228,9 @@ function printReport() {
 .report {
   max-width: 1280px;
   margin: 0 auto;
-  padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
+  /* 좌우는 --page-x(120px)가 아니라 준비 화면과 같은 16px이다 — 120px씩 떼면
+     1280px을 줘도 내용은 1040px로 되돌아가 넓힌 뜻이 없어진다 (2026-11-08) */
+  padding: var(--sp-8) var(--sp-4) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
