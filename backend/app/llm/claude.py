@@ -8,6 +8,7 @@ from typing import Any, Literal, Protocol
 import anthropic
 
 MODEL = "claude-sonnet-5-5"
+BRIEFING_MODEL = "claude-haiku-5-5"  # 회사 브리핑 요약(spec 2026-11-08) — 빠르고 싸다
 TURN_MAX_TOKENS = 4096
 REPORT_MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -109,6 +110,17 @@ class ClaudeClient(Protocol):
         on_usage: UsageSink | None = None,
         fetch_domains: list[str] | None = None,
     ) -> ResearchResult: ...
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        max_tokens: int,
+        timeout: float,
+        on_usage: UsageSink | None = None,
+    ) -> str: ...
 
 
 class AnthropicClaude:
@@ -232,3 +244,32 @@ class AnthropicClaude:
         _report(on_usage, total, "ok")
         texts.extend(preamble)  # 검색이 한 번도 없었다면 머리말도 본문이다
         return ResearchResult(text="".join(texts), sources=sources)
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        max_tokens: int,
+        timeout: float,
+        on_usage: UsageSink | None = None,
+    ) -> str:
+        """도구 없이 한 번 부른다. 재시도 없음 — 늦으면 기한 안에서 포기하는 편이 낫다."""
+        try:
+            resp = self._sdk.with_options(max_retries=0).messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                timeout=timeout,
+            )
+        except anthropic.APIError as exc:
+            _report(on_usage, Usage(), "error")
+            raise ClaudeError("claude_error") from exc
+        used = _usage_of(resp)
+        if resp.stop_reason == "refusal":
+            _report(on_usage, used, "refused")
+            raise ClaudeError("refused")
+        _report(on_usage, used, "ok")
+        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

@@ -53,6 +53,8 @@ class FakeClaude:
         self.calls: list[dict[str, Any]] = []
         self.research_results: list[Any] = []
         self.research_calls: list[dict[str, Any]] = []
+        self.complete_results: list[Any] = []
+        self.complete_calls: list[dict[str, Any]] = []
 
     def stream_text(
         self,
@@ -109,6 +111,33 @@ class FakeClaude:
             if self.research_results
             else ResearchResult(text=DEFAULT_BRIEFING, sources=list(DEFAULT_SOURCES))
         )
+        if isinstance(item, Exception):
+            self._report(on_usage, item)
+            raise item
+        if on_usage is not None:
+            on_usage(self.usage, "ok")
+        return item
+
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        model: str,
+        max_tokens: int,
+        timeout: float,
+        on_usage: UsageSink | None = None,
+    ) -> str:
+        self.complete_calls.append(
+            {
+                "system": system,
+                "messages": messages,
+                "model": model,
+                "max_tokens": max_tokens,
+                "timeout": timeout,
+            }
+        )
+        item = self.complete_results.pop(0) if self.complete_results else DEFAULT_BRIEFING
         if isinstance(item, Exception):
             self._report(on_usage, item)
             raise item

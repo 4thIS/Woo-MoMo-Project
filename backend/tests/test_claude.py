@@ -2,9 +2,11 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import anthropic
+import httpx
 import pytest
 
 from app.llm.claude import (
+    BRIEFING_MODEL,
     FALLBACK_BETA,
     MAX_CONTINUATIONS,
     MODEL,
@@ -521,3 +523,51 @@ def test_max_tokens_without_output_format_is_unchanged():
         )
     ) == ["a"]
     assert got == [(Usage(10, 5, 3, 2, 0), "ok")]
+
+
+def test_complete_is_one_call_without_tools():
+    usage = SimpleNamespace(
+        input_tokens=900,
+        output_tokens=400,
+        cache_read_input_tokens=None,
+        cache_creation_input_tokens=None,
+        server_tool_use=None,
+    )
+    create = _Create(
+        [
+            SimpleNamespace(
+                content=[_text("사업: "), _text("결제")], stop_reason="end_turn", usage=usage
+            )
+        ]
+    )
+    seen = []
+    got = AnthropicClaude(sdk=create).complete(
+        system="규칙",
+        messages=R_MESSAGES,
+        model=BRIEFING_MODEL,
+        max_tokens=2000,
+        timeout=7.0,
+        on_usage=lambda u, o: seen.append((u, o)),
+    )
+    assert got == "사업: 결제"
+    call = create.calls[0]
+    assert call["model"] == "claude-haiku-5-5"
+    assert call["timeout"] == 7.0 and call["max_tokens"] == 2000
+    assert "tools" not in call
+    assert create.options == [{"max_retries": 0}]
+    assert seen == [(Usage(input_tokens=900, output_tokens=400), "ok")]
+
+
+def test_complete_refusal_and_error():
+    create = _Create([_resp([], stop_reason="refusal")])
+    with pytest.raises(ClaudeError) as e:
+        AnthropicClaude(sdk=create).complete(
+            system="s", messages=R_MESSAGES, model=BRIEFING_MODEL, max_tokens=10, timeout=1.0
+        )
+    assert e.value.code == "refused"
+    err = anthropic.APIConnectionError(request=httpx.Request("POST", "https://x"))
+    with pytest.raises(ClaudeError) as e:
+        AnthropicClaude(sdk=_Create(error=err)).complete(
+            system="s", messages=R_MESSAGES, model=BRIEFING_MODEL, max_tokens=10, timeout=1.0
+        )
+    assert e.value.code == "claude_error"
