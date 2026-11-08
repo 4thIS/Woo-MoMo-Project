@@ -26,6 +26,7 @@ import { normalizePostingUrl } from '@/utils/postingUrl'
 import { formatBytes } from '@/utils/format'
 import ResumeForm from '@/components/ResumeForm.vue'
 import BenSettings from '@/components/BenSettings.vue'
+import TrackPick from '@/components/TrackPick.vue'
 import { DEFAULT_BEN } from '@/content/benAxes'
 import DocIcon from '@/components/ui/icons/DocIcon.vue'
 
@@ -499,6 +500,10 @@ async function clearAndRetry() {
         <!-- 벤에게만 해당하는 것들을 한 상자로 묶는다 — 고지와 동의가 안내문 더미에
              흩어져 있으면 무엇이 벤 때문인지 보이지 않는다 (2026-11-07) -->
         <div v-if="iv.current?.premium" class="ben-box" data-test="ben-box">
+          <!-- 벤은 둘 다 봐서 트랙을 사용자가 고른다. 고르기 패널 안에만 두면 **닫는 순간
+               길이 사라져** 회사 정보 칸도 시작 버튼도 막힌 채 단서가 없다 (2026-11-08).
+               정해지면 이 줄은 사라진다 -->
+          <TrackPick v-if="iv.current.track === null && interview.track === null" />
           <!-- 벤은 대화가 서버를 거쳐 외부 AI로 간다(루트 CLAUDE.md 8번). 회사명을 적으면
              웹 검색까지 하므로 시작 전에 한 줄로 알린다 -->
           <p class="mono notice" data-test="ben-notice">

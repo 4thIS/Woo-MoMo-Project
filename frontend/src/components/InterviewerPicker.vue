@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
+import TrackPick from '@/components/TrackPick.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
-import type { Track } from '@/services/account'
 
 const TRACK_LABEL = { company: '회사', admission: '대입', both: '대입·회사' } as const
 
@@ -45,15 +45,16 @@ function pick(id: InterviewerId) {
   const who = INTERVIEWERS.find((p) => p.id === id)
   // 막는 게 아니라 길을 여는 버튼이다 — 흐리게 하지 않고, 누르면 요금제로 보낸다
   if (who?.premium && !canUsePremium.value) return emit('need-premium')
-  // 면접관을 바꾸면 앞서 고른 트랙은 버린다
-  interview.setTrack(null)
+  /* 트랙을 사용자가 고르는 면접관(벤)으로 바꿀 때는 **보던 트랙을 물려준다** —
+     쥴리(회사)로 보던 중이었으면 회사다. 안 그러면 패널을 닫는 순간 트랙이 비어
+     회사 정보 칸이 사라지고 시작도 막힌다 (2026-11-08).
+     반대로 제 트랙이 있는 면접관으로 가면 고른 값은 버린다 — 그쪽이 이긴다 */
+  const seen = iv.id !== null ? interview.track : null // 아직 아무도 안 골랐으면 물려줄 것이 없다
+  interview.setTrack(who && who.track === null ? seen : null)
   void model.chooseInterviewer(id)
   void iv.preview(id)
 }
 
-function pickTrack(t: Track) {
-  interview.setTrack(t)
-}
 function onKey(e: KeyboardEvent) {
   const dir =
     e.key === 'ArrowRight' || e.key === 'ArrowDown'
@@ -181,21 +182,9 @@ const sheet = (id: InterviewerId) => {
         :class="{ on: iv.id === p.id }"
       />
     </div>
-    <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다 -->
-    <div v-if="iv.current?.track === null" class="track" data-test="track-pick">
-      <span class="mono q">어느 면접으로 볼까요?</span>
-      <button
-        v-for="t in ['admission', 'company'] as const"
-        :key="t"
-        type="button"
-        class="mono tbtn"
-        :class="{ on: interview.chosenTrack === t }"
-        :data-test="`track-${t}`"
-        @click="pickTrack(t)"
-      >
-        {{ TRACK_LABEL[t] }}
-      </button>
-    </div>
+    <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다.
+         **준비 화면의 벤 상자도 같은 것을 쓴다** — 여기만 두면 패널을 닫는 순간 길이 사라진다 -->
+    <TrackPick v-if="iv.current?.track === null" />
     <p v-if="iv.previewFailed" class="mono err" data-test="preview-error">
       미리 듣기를 재생할 수 없습니다
     </p>
@@ -434,31 +423,6 @@ const sheet = (id: InterviewerId) => {
 .tix.lit i {
   background: var(--accent);
   box-shadow: 0 0 5px var(--accent);
-}
-.track {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  border: 2px solid var(--accent);
-  padding: var(--sp-3) var(--sp-4);
-}
-.track .q {
-  font-size: var(--fs-meta);
-  color: var(--text-2);
-}
-.tbtn {
-  font-size: var(--fs-label);
-  background: none;
-  color: var(--text-2);
-  border: 2px solid var(--line);
-  padding: var(--sp-2) var(--sp-4);
-  cursor: pointer;
-}
-.tbtn.on {
-  border-color: var(--accent-2);
-  color: var(--accent-2);
 }
 .card {
   position: relative;

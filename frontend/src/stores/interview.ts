@@ -214,6 +214,10 @@ export const useInterviewStore = defineStore('interview', {
       // 실패는 대기와 다르게 말한다(#41): 사용자가 위 진행 창의 '다시 시도'를 못 보고 "다 채웠는데 안 열린다"고 느끼기 쉽다
       if (m.status === 'error') return '면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도'
       if (m.status !== 'ready') return '면접관이 준비되면 열립니다'
+      /* 벤은 둘 다 보므로 트랙을 사용자가 고른다. 안 골랐으면 그것부터 말한다 —
+         "위 항목을 채우면"은 어느 항목인지 알려 주지 않고, 트랙 고르기는
+         아래 입력 칸이 아니라 벤 상자에 있다 (2026-11-08) */
+      if (this.track === null) return '어느 면접으로 볼지 고르면 열립니다'
       // 목소리는 더 이상 시작을 막지 않는다 — 자막으로 가다가 준비되면 합류한다(`docs/download-time.md`)
       return '위 항목을 채우면 열립니다'
     },
