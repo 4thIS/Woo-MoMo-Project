@@ -26,16 +26,25 @@ const props = defineProps<{
   items: TocItem[]
   /** 무료 리포트에는 총평이 없다 */
   summary: ReportV2Summary | null
-  /** 읽은 항목 id. 한 번 들어오면 지우지 않는다 */
-  read: Set<string>
   /** 지금 보고 있는 항목 */
   current?: string
 }>()
 
+/** 카드 하나에 한 자리. 꼬리줄은 제 카드와 id를 나눠 쓰므로 앞뒤로 오갈 때는 한 번만 센다 */
+const stops = computed(() => [...new Set(props.items.map((i) => i.id))])
+const at = computed(() => stops.value.indexOf(props.current ?? ''))
+const hasPrev = computed(() => at.value > 0)
+const hasNext = computed(() => at.value < stops.value.length - 1)
+/** 앞뒤로 한 칸. 아직 아무 데도 없으면 다음은 첫 문항으로 간다 */
+function go(by: -1 | 1) {
+  const i = at.value < 0 ? (by > 0 ? 0 : stops.value.length - 1) : at.value + by
+  const id = stops.value[i]
+  if (id) scrollToId(id)
+}
+
 const overCount = computed(
   () => props.items.filter((i) => i.ms !== null && overBy(i.ms) > 0).length,
 )
-const readCount = computed(() => props.items.filter((i) => props.read.has(i.id)).length)
 </script>
 
 <template>
@@ -81,9 +90,7 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
     <nav class="toc" aria-label="문항 목차">
       <div class="toc-head">
         <span class="mono lbl">문항</span>
-        <span class="mono cnt" data-test="toc-read">
-          읽음 {{ readCount }} / {{ items.length }}
-        </span>
+        <span class="mono cnt" data-test="toc-count">{{ stops.length }}개</span>
         <span v-if="overCount" class="mono cnt over" data-test="toc-over">
           60초 초과 {{ overCount }}
         </span>
@@ -93,15 +100,17 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
         <li v-for="(it, i) in items" :key="i">
           <a
             class="row"
-            :class="{ follow: it.follow, read: read.has(it.id), on: current === it.id }"
+            :class="{ follow: it.follow, on: current === it.id }"
             :href="`#${it.id}`"
             :aria-current="current === it.id ? 'true' : undefined"
             data-test="toc-item"
             @click.prevent="scrollToId(it.id)"
           >
-            <span class="mark" aria-hidden="true" />
-            <!-- 꼬리줄은 제 카드와 같은 id라 번호를 숨긴다 — 두 번 적으면 같은 문항처럼 읽힌다 -->
-            <span v-if="!it.follow" class="mono id">{{ it.id.toUpperCase() }}</span>
+            <!-- 읽음 네모는 **보는 것**이지 누르는 것이 아니었는데 체크박스처럼 보였다.
+                 그 자리를 번호 칩이 받는다 — 본문 카드의 Q1과 짝이 맞는다 (2026-11-08) -->
+            <span class="mono chip" data-test="toc-chip">{{
+              it.follow ? '꼬리' : it.id.toUpperCase()
+            }}</span>
             <span class="q">{{ it.question }}</span>
             <span v-if="it.ms !== null" class="mono t" :class="{ over: overBy(it.ms) > 0 }">{{
               formatDuration(it.ms)
@@ -109,6 +118,28 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
           </a>
         </li>
       </ul>
+
+      <!-- 본문을 읽다가 목차를 보지 않고도 옮겨 다닌다 -->
+      <div class="steps">
+        <button
+          type="button"
+          class="mono step"
+          :disabled="!hasPrev"
+          data-test="toc-prev"
+          @click="go(-1)"
+        >
+          ◀ 이전
+        </button>
+        <button
+          type="button"
+          class="mono step"
+          :disabled="!hasNext"
+          data-test="toc-next"
+          @click="go(1)"
+        >
+          다음 ▶
+        </button>
+      </div>
     </nav>
 
     <div class="actions">
@@ -180,6 +211,33 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
 .warn {
   color: var(--danger);
 }
+/* 본문을 읽다가 목차를 보지 않고도 옮겨 다니는 줄 */
+.steps {
+  flex: none;
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) 0;
+  border-top: var(--rule);
+  margin-top: var(--sp-2);
+}
+.step {
+  flex: 1 1 0;
+  min-height: 36px;
+  background: none;
+  border: 2px solid var(--raise);
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.step:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.step:disabled {
+  color: var(--raise);
+  cursor: default;
+}
+
 /* 16줄이 넘치면 **목차 안에서만** 스크롤한다. 본문 스크롤과 분리된다.
    basis가 0이면 안 된다 — 높이가 내용에 맞는(auto) 기둥에서는 0으로 접혀 목록이 사라진다 */
 .toc {
@@ -213,19 +271,22 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
   margin: 0;
   padding: var(--sp-1) 0;
 }
+/* 손가락이 쓰는 과녁은 44px이다 — 28px 줄은 누르기 어려웠다 (2026-11-08) */
 .row {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-4);
-  border-left: 3px solid transparent;
+  gap: var(--sp-3);
+  min-height: 46px;
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 4px solid transparent;
   font-size: var(--fs-label);
   color: var(--text-2);
   text-decoration: none;
 }
 .row:hover,
 .row:focus-visible {
-  color: var(--accent);
+  background: var(--raise);
+  color: var(--text);
 }
 .row.on {
   border-left-color: var(--accent);
@@ -233,25 +294,25 @@ const readCount = computed(() => props.items.filter((i) => props.read.has(i.id))
   color: var(--text);
 }
 .row.follow {
-  padding-left: var(--sp-10);
+  padding-left: var(--sp-8);
 }
-.row .mark {
+/* 번호 칩. 지금 보는 줄에서는 뒤집혀 과녁의 가운데를 알린다 */
+.row .chip {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--off);
-}
-.row.read .mark {
-  background: var(--ok);
-  border-color: var(--ok);
-}
-.row.read .q {
-  color: var(--text-3);
-}
-.row .id {
-  flex: none;
+  min-width: 38px;
+  text-align: center;
+  padding: 2px var(--sp-1);
+  border: 2px solid var(--raise);
   font-size: var(--fs-meta);
   color: var(--text-3);
+}
+.row.on .chip {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.row.follow .chip {
+  border-style: dashed;
 }
 .row .q {
   flex: 1 1 0;

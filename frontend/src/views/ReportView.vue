@@ -76,7 +76,7 @@ const tocItems = computed<TocItem[]>(() => {
 
 /* 지금 보는 문항과 읽은 데까지. 보관함 상세와 같은 것을 쓴다 */
 const body = ref<HTMLElement | null>(null)
-const { current, read } = useReadingToc(body, tocItems)
+const { current } = useReadingToc(body, tocItems)
 
 const copied = ref(false)
 async function copy() {
@@ -104,12 +104,7 @@ function printReport() {
 <template>
   <main class="report stars rise">
     <div class="cols">
-      <ReportRail
-        :items="tocItems"
-        :summary="s.reportV2?.summary ?? null"
-        :read="read"
-        :current="current"
-      >
+      <ReportRail :items="tocItems" :summary="s.reportV2?.summary ?? null" :current="current">
         <template #head>
           <h1 class="display ttl">면접 리포트</h1>
           <p class="mono sub">
