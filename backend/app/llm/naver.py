@@ -21,13 +21,17 @@ class Doc:
     date: str = ""  # 뉴스만, YYYY-MM-DD
 
 
-def _plain(s: str) -> str:
-    return " ".join(htmllib.unescape(_TAG.sub("", s or "")).split())
+def _s(v: object) -> str:
+    return v if isinstance(v, str) else ""
 
 
-def _date(raw: str) -> str:
+def _plain(v: object) -> str:
+    return " ".join(htmllib.unescape(_TAG.sub("", _s(v))).split())
+
+
+def _date(raw: object) -> str:
     try:
-        return parsedate_to_datetime(raw).strftime("%Y-%m-%d")
+        return parsedate_to_datetime(_s(raw)).strftime("%Y-%m-%d")
     except (TypeError, ValueError, IndexError):
         return ""
 
@@ -53,8 +57,11 @@ class NaverSearch:
                 resp = c.get(f"{BASE}/{path}", params=params, headers=self._headers)
             if resp.status_code != 200:
                 return []
-            items = resp.json().get("items", [])
+            data = resp.json()
         except (httpx.HTTPError, ValueError, AttributeError):
+            return []
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
             return []
         return [i for i in items if isinstance(i, dict)][:COUNT]
 
@@ -63,10 +70,10 @@ class NaverSearch:
         return [
             Doc(
                 "news",
-                _plain(i.get("title", "")),
-                _plain(i.get("description", "")),
-                i.get("originallink") or i.get("link", ""),
-                _date(i.get("pubDate", "")),
+                _plain(i.get("title")),
+                _plain(i.get("description")),
+                _s(i.get("originallink")) or _s(i.get("link")),
+                _date(i.get("pubDate")),
             )
             for i in items
         ]
@@ -76,8 +83,8 @@ class NaverSearch:
         return [
             Doc(
                 "web",
-                _plain(i.get("title", "")),
-                _plain(i.get("description", "")),
+                _plain(i.get("title")),
+                _plain(i.get("description")),
                 i.get("link", ""),
             )
             for i in items

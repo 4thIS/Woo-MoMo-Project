@@ -74,3 +74,25 @@ def test_errors_are_empty():
 def test_bad_date_is_blank():
     body = {"items": [{**NEWS["items"][0], "pubDate": "어제"}]}
     assert _client(lambda r: httpx.Response(200, json=body)).news("토스")[0].date == ""
+
+
+def test_odd_bodies_are_empty():
+    for body in ({"items": None}, {"items": 5}, [1, 2], "x", None):
+        assert _client(lambda r, b=body: httpx.Response(200, json=b)).news("토스") == []
+        assert _client(lambda r, b=body: httpx.Response(200, json=b)).web("토스") == []
+
+
+def test_non_string_fields_are_blank():
+    body = {
+        "items": [
+            {"title": 5, "description": ["a"], "originallink": None, "link": 3, "pubDate": 7},
+            "x",
+        ]
+    }
+    got = _client(lambda r: httpx.Response(200, json=body)).news("토스")
+    assert got == [Doc(kind="news", title="", text="", url="", date="")]
+
+
+def test_missing_keys_are_blank():
+    got = _client(lambda r: httpx.Response(200, json={"items": [{}]})).web("토스")
+    assert got == [Doc(kind="web", title="", text="", url="")]
