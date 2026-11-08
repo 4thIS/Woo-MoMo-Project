@@ -353,3 +353,21 @@ def test_complete_refusal_and_error():
             system="s", messages=R_MESSAGES, model=BRIEFING_MODEL, max_tokens=10, timeout=1.0
         )
     assert e.value.code == "claude_error"
+
+
+def test_complete_cut_off_by_max_tokens_is_too_long_after_usage():
+    got, sink = _collect()
+    create = _Create(
+        [SimpleNamespace(content=[_text("사업: 결")], stop_reason="max_tokens", usage=_usage())]
+    )
+    with pytest.raises(ClaudeError) as e:
+        AnthropicClaude(sdk=create).complete(
+            system="s",
+            messages=R_MESSAGES,
+            model=BRIEFING_MODEL,
+            max_tokens=10,
+            timeout=1.0,
+            on_usage=sink,
+        )
+    assert e.value.code == "too_long"
+    assert got == [(Usage(10, 5, 3, 2, 0), "ok")]

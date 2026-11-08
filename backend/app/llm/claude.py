@@ -173,4 +173,7 @@ class AnthropicClaude:
             _report(on_usage, used, "refused")
             raise ClaudeError("refused")
         _report(on_usage, used, "ok")
+        if resp.stop_reason == "max_tokens":
+            # 잘린 요약은 소제목이 빠진 채 끝난다 — 쓰지 않는다(사용량은 이미 기록)
+            raise ClaudeError("too_long")
         return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

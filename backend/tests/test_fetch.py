@@ -87,6 +87,15 @@ def test_connects_to_the_checked_ip_with_original_host():
     }
 
 
+def test_decimal_ip_host_resolving_to_loopback_blocks():
+    with pytest.raises(fetch.FetchError):
+        fetch.fetch_html(
+            "http://2130706433/",
+            resolver=_resolver({"2130706433": ["127.0.0.1"]}),
+            transport=_transport(lambda r: httpx.Response(200)),
+        )
+
+
 def test_any_private_address_blocks():
     with pytest.raises(fetch.FetchError):
         fetch.fetch_html(

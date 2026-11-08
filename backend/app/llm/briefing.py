@@ -6,7 +6,7 @@
 import logging
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -28,6 +28,7 @@ SUMMARY_BUDGET = 9.5
 SUMMARY_MIN_TIMEOUT = 1.0
 SUMMARY_MAX_TOKENS = 2000
 STEP_TIMEOUT = 3.0
+EXTRA_MIN_LEFT = 0.3  # 부속 페이지는 남은 시간이 이보다 적으면 건너뛴다
 
 SUMMARY_SYSTEM = "\n".join(
     [
@@ -81,15 +82,20 @@ class WebCollector:
         self._step = step_timeout
 
     def _posting(self, url: str) -> Doc | None:
+        deadline = time.monotonic() + self._step
         try:
             page = self._fetch(posting_text.detail_url(url), timeout=self._step)
         except fetch.FetchError:
             return None
         texts = [posting_text.extract(page.html)]
         # 본문이 부속 페이지(iframe)에 있는 사이트는 그것도 읽는다. 실패하면 메인만 쓴다.
+        # 단계 기한 안에서 남은 시간만 쓴다 — 느린 부속 페이지 때문에 메인 본문까지 잃지 않게
         for extra in posting_text.extra_urls(url):
+            remaining = deadline - time.monotonic()
+            if remaining < EXTRA_MIN_LEFT:
+                break
             try:
-                texts.append(posting_text.extract(self._fetch(extra, timeout=self._step).html))
+                texts.append(posting_text.extract(self._fetch(extra, timeout=remaining).html))
             except fetch.FetchError:
                 continue
         text = " ".join(t for t in texts if t)[: posting_text.MAX_CHARS]
@@ -109,6 +115,8 @@ class WebCollector:
         deadline = started + self._step
         got: dict[str, object] = {}
         for key, fut in jobs.items():
+            # 끝난 단계는 자기 걸린 시간을 남긴다(이름·URL·본문은 남기지 않는다)
+            fut.add_done_callback(_log_step(key, started))
             try:
                 got[key] = fut.result(timeout=max(0.0, deadline - time.monotonic()))
             except FutureTimeout:
@@ -131,6 +139,14 @@ class WebCollector:
             found=found,
             posting_url=posting_url,
         )
+
+
+def _log_step(key: str, started: float) -> Callable[[Future[object]], None]:
+    def done(fut: Future[object]) -> None:
+        ok = not fut.cancelled() and fut.exception() is None and fut.result() is not None
+        log.info("briefing step=%s ms=%d ok=%s", key, int((time.monotonic() - started) * 1000), ok)
+
+    return done
 
 
 @dataclass(frozen=True)
