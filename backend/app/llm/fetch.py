@@ -21,6 +21,9 @@ ALLOWED_PORTS = {"http": 80, "https": 443}
 HTML_TYPES = ("text/html", "application/xhtml+xml")
 _BLOCKED_V4 = [ipaddress.ip_network(n) for n in ("100.64.0.0/10", "0.0.0.0/8")]
 
+_NAT64_BLOCKED = ipaddress.ip_network("64:ff9b:1::/48")
+_EMBEDDED_V4 = [ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("::/96")]
+
 Resolver = Callable[..., list[Any]]
 
 
@@ -39,14 +42,20 @@ def is_public_ip(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
-        addr = addr.ipv4_mapped
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr in _NAT64_BLOCKED:
+            return False
+        if addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
+        elif any(addr in n for n in _EMBEDDED_V4) and int(addr) > 0:
+            # NAT64·IPv4 호환 주소는 끝 32비트의 IPv4로 다시 판정한다
+            addr = ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
     if isinstance(addr, ipaddress.IPv4Address) and any(addr in n for n in _BLOCKED_V4):
         return False
     return addr.is_global and not addr.is_multicast
 
 
-def _checked(url: str, resolver: Resolver) -> tuple[httpx.URL, str]:
+def _checked(url: str, resolver: Resolver, deadline: float) -> tuple[httpx.URL, str]:
     parts = urlsplit(url)
     scheme = (parts.scheme or "").lower()
     if scheme not in ALLOWED_PORTS or not parts.hostname:
@@ -57,16 +66,28 @@ def _checked(url: str, resolver: Resolver) -> tuple[httpx.URL, str]:
         raise FetchError("port") from exc
     if port != ALLOWED_PORTS[scheme]:
         raise FetchError("port")
-    host = parts.hostname
+    if parts.username is not None or parts.password is not None:
+        raise FetchError("userinfo")
+    try:
+        host = parts.hostname.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise FetchError("host") from exc
     try:
         infos = resolver(host, port, 0, socket.SOCK_STREAM)
     except OSError as exc:
         raise FetchError("dns") from exc
+    # 느린 DNS의 실제 상한은 호출한 쪽(Task 5)이 느린 작업을 버려서 지킨다.
+    # 여기서는 끝난 뒤 기한이 지났는지만 확인한다
+    if time.monotonic() > deadline:
+        raise FetchError("timeout")
     ips = [info[4][0] for info in infos]
     if not ips or not all(is_public_ip(ip) for ip in ips):
         raise FetchError("blocked")
     ip = ips[0]
-    target = httpx.URL(url).copy_with(scheme=scheme, host=ip, port=None)
+    try:
+        target = httpx.URL(url).copy_with(scheme=scheme, host=ip, port=None)
+    except (ValueError, httpx.InvalidURL) as exc:
+        raise FetchError("url") from exc
     return target, host
 
 
@@ -81,16 +102,24 @@ def fetch_html(
     with httpx.Client(transport=transport, follow_redirects=False, trust_env=False) as client:
         current = url
         for _ in range(MAX_REDIRECTS + 1):
-            target, host = _checked(current, resolver)
+            target, host = _checked(current, resolver, deadline)
             left = deadline - time.monotonic()
             if left <= 0:
                 raise FetchError("timeout")
-            req = client.build_request(
-                "GET",
-                target,
-                headers={"Host": host, "User-Agent": USER_AGENT, "Accept": "text/html"},
-                extensions={"sni_hostname": host, "timeout": httpx.Timeout(left).as_dict()},
-            )
+            try:
+                req = client.build_request(
+                    "GET",
+                    target,
+                    headers={
+                        "Host": host,
+                        "User-Agent": USER_AGENT,
+                        "Accept": "text/html",
+                        "Accept-Encoding": "identity",
+                    },
+                    extensions={"sni_hostname": host, "timeout": httpx.Timeout(left).as_dict()},
+                )
+            except (ValueError, httpx.HTTPError) as exc:
+                raise FetchError("request") from exc
             try:
                 resp = client.send(req, stream=True)
             except httpx.HTTPError as exc:
