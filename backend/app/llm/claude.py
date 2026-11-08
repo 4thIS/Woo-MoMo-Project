@@ -159,6 +159,10 @@ class AnthropicClaude:
                 max_tokens=max_tokens,
                 system=system,
                 messages=messages,
+                # Haiku 5.5는 생각이 기본으로 켜진다 — 요약에는 필요 없고 시간·토큰만 든다.
+                # disabled는 effort high 이하에서만 받으므로 low로 둔다. 서버 쪽 폴백은 Haiku에 없다
+                thinking={"type": "disabled"},
+                output_config={"effort": "low"},
                 timeout=timeout,
             )
         except anthropic.APIError as exc:

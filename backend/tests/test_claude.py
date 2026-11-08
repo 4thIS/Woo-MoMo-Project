@@ -332,6 +332,10 @@ def test_complete_is_one_call_without_tools():
     assert call["model"] == "claude-haiku-5-5"
     assert call["timeout"] == 7.0 and call["max_tokens"] == 2000
     assert "tools" not in call
+    # Haiku 5.5는 생각이 기본으로 켜져 max_tokens·7초를 잡아먹는다 — 끄고 effort low
+    assert call["thinking"] == {"type": "disabled"}
+    assert call["output_config"] == {"effort": "low"}
+    assert "extra_body" not in call and "extra_headers" not in call  # Haiku는 fallbacks 없음
     assert create.options == [{"max_retries": 0}]
     assert seen == [(Usage(input_tokens=900, output_tokens=400), "ok")]
 
