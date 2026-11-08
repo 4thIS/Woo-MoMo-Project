@@ -145,3 +145,16 @@ def test_json_ld_list_and_string_fields():
 def test_saramin_non_ascii_digit_rejected():
     url = "https://www.saramin.co.kr/zf_user/jobs/view?rec_idx=²"
     assert pt.detail_url(url) == url
+
+
+def test_extra_urls_jobkorea_iframe():
+    want = ["https://www.jobkorea.co.kr/Recruit/GI_Read_Comt_Ifrm?Gno=123"]
+    assert pt.extra_urls("https://www.jobkorea.co.kr/Recruit/GI_Read/123") == want
+    assert pt.extra_urls("https://jobkorea.co.kr/recruit/gi_read/123?Oem_Code=C1") == want
+
+
+def test_extra_urls_other_cases_are_empty():
+    assert pt.extra_urls("https://www.jobkorea.co.kr/Recruit/GI_Read/12a") == []
+    assert pt.extra_urls("https://www.jobkorea.co.kr/Recruit/GI_Read/١٢٣") == []
+    assert pt.extra_urls("https://www.wanted.co.kr/Recruit/GI_Read/123") == []
+    assert pt.extra_urls("https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=7") == []

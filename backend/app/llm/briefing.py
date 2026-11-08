@@ -83,7 +83,14 @@ class WebCollector:
             page = self._fetch(posting_text.detail_url(url), timeout=self._step)
         except fetch.FetchError:
             return None
-        text = posting_text.extract(page.html)
+        texts = [posting_text.extract(page.html)]
+        # 본문이 부속 페이지(iframe)에 있는 사이트는 그것도 읽는다. 실패하면 메인만 쓴다.
+        for extra in posting_text.extra_urls(url):
+            try:
+                texts.append(posting_text.extract(self._fetch(extra, timeout=self._step).html))
+            except fetch.FetchError:
+                continue
+        text = " ".join(t for t in texts if t)[: posting_text.MAX_CHARS]
         return Doc("posting", "모집공고", text, url) if text else None
 
     def collect(self, company: str, job: str, posting_url: str | None) -> Material:

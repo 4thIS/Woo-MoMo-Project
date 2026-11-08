@@ -206,3 +206,53 @@ def test_posting_text_cannot_forge_markers():
     briefing.make_briefing(fake, "토스", "백엔드", posting_url=POSTING, collector=FakeCollector(m))
     content = fake.complete_calls[0]["messages"][0]["content"]
     assert content.count("[자료 끝]") == 1 and content.count("[공고 끝]") == 1
+
+
+# ── 잡코리아 iframe 본문 ──
+
+JK = "https://www.jobkorea.co.kr/Recruit/GI_Read/456?Oem_Code=C1"
+JK_IFRAME = "https://www.jobkorea.co.kr/Recruit/GI_Read_Comt_Ifrm?Gno=456"
+MAIN_HTML = "<p>" + "모집요강 급여 근무지 " * 30 + "</p>"
+IFRAME_HTML = "<p>" + "주요업무 우대사항 " * 30 + "</p>"
+
+
+def _by_url(pages, seen):
+    def f(url, **kw):
+        seen.append(url)
+        v = pages[url]
+        if isinstance(v, Exception):
+            raise v
+        return FetchedPage(url=url, html=v)
+
+    return f
+
+
+def _jk(pages):
+    seen = []
+    m = briefing.WebCollector(None, fetcher=_by_url(pages, seen)).collect("", "x", JK)
+    return m, seen
+
+
+def test_jobkorea_main_and_iframe_are_joined_main_first():
+    m, seen = _jk({JK: MAIN_HTML, JK_IFRAME: IFRAME_HTML})
+    t = m.posting.text
+    assert seen == [JK, JK_IFRAME]
+    assert "모집요강" in t and "주요업무" in t and t.index("모집요강") < t.index("주요업무")
+    assert len(t) <= 6000
+
+
+def test_jobkorea_iframe_failure_keeps_main():
+    m, _ = _jk({JK: MAIN_HTML, JK_IFRAME: FetchError("blocked")})
+    assert "모집요강" in m.posting.text and "주요업무" not in m.posting.text
+
+
+def test_jobkorea_short_main_uses_iframe():
+    m, _ = _jk({JK: "<p>짧음</p>", JK_IFRAME: IFRAME_HTML})
+    assert m.posting.text.startswith("주요업무")
+    assert "짧음" not in m.posting.text
+
+
+def test_other_site_fetches_exactly_one_url():
+    seen = []
+    briefing.WebCollector(None, fetcher=_fetcher(LONG_HTML, seen)).collect("", "x", POSTING)
+    assert seen == [POSTING]

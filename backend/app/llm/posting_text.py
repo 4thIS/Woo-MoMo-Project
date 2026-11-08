@@ -158,3 +158,17 @@ def detail_url(url: str) -> str:
         if rec.isascii() and rec.isdigit():
             return f"https://www.saramin.co.kr/zf_user/jobs/relay/view-detail?rec_idx={rec}"
     return url
+
+
+_JOBKOREA_READ = re.compile(r"/recruit/gi_read/([0-9]+)/?$", re.IGNORECASE)
+
+
+def extra_urls(url: str) -> list[str]:
+    """메인 페이지에 없는 본문을 담은 부속 페이지 주소. 잡코리아는 상세 내용이 iframe에 있다."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if host in ("www.jobkorea.co.kr", "jobkorea.co.kr"):
+        m = _JOBKOREA_READ.search(parts.path)
+        if m and m.group(1).isascii():
+            return [f"https://www.jobkorea.co.kr/Recruit/GI_Read_Comt_Ifrm?Gno={m.group(1)}"]
+    return []
