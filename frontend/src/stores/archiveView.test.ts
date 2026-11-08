@@ -60,4 +60,22 @@ describe('archiveView', () => {
     v.close()
     expect(v.detail).toBe(null)
   })
+
+  it('나가면 닫고, 열며 민 히스토리 항목을 되감는다 — 안 되감으면 뒤로 가기가 한 번 헛돈다', async () => {
+    vi.spyOn(useAccountStore(), 'getArchive').mockResolvedValue(detail as never)
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    const v = useArchiveViewStore()
+    await v.open('a1')
+    v.leave()
+    expect(v.detail).toBe(null)
+    expect(back).toHaveBeenCalled()
+    back.mockRestore()
+  })
+
+  it('열지 않았는데 나가면 아무 일도 하지 않는다 — 남의 히스토리 항목을 되감으면 안 된다', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    useArchiveViewStore().leave()
+    expect(back).not.toHaveBeenCalled()
+    back.mockRestore()
+  })
 })

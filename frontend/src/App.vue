@@ -32,14 +32,12 @@ onMounted(() => window.addEventListener('popstate', onPop))
 onBeforeUnmount(() => window.removeEventListener('popstate', onPop))
 
 /** 상세에서 목록으로. 셋을 같이 해야 한다 (2026-11-08) —
- *  ① 상세를 닫고 ② 보관함 모달을 다시 열고 ③ 상세를 열며 민 히스토리 항목을 되감는다.
- *  ③을 빼면 뒤로 가기가 한 번 헛돌고, ②를 빼면 사용자는 어디로 갔는지 모른 채
- *  이전 페이지로 나가게 된다.
- *  `history.back()`이 쏘는 popstate는 onPop에 닿지만, 그때 detail은 이미 null이다 */
+ *  ①② 상세를 닫고 히스토리 항목을 되감고(`leave()`) ③ 보관함 모달을 다시 연다.
+ *  ①②를 빼면 뒤로 가기가 한 번 헛돌고, ③을 빼면 사용자는 어디로 갔는지 모른 채
+ *  이전 페이지로 나가게 된다. 상단바의 "처음으로"는 ③만 다르다 */
 function backToArchive() {
-  archive.close()
+  archive.leave()
   useModalStore().show('archive')
-  if ((history.state as { momoArchive?: string } | null)?.momoArchive) history.back()
 }
 
 async function removeArchive() {

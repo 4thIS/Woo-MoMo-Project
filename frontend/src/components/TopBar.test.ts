@@ -341,6 +341,29 @@ describe('TopBar — 이름을 누르면 처음으로 (2026-11-08)', () => {
     to.mockRestore()
   })
 
+  it('보관함 상세에서 눌러도 홈으로 간다 — 상세가 phase보다 앞서 그려져 덮고 있다', async () => {
+    const s = useInterviewStore()
+    const v = useArchiveViewStore()
+    v.$patch({ detail: { id: 'a1' } as never })
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(v.detail).toBe(null)
+    expect(s.phase).toBe('landing')
+  })
+
+  it('상세에서 누르면 상세가 민 히스토리 항목도 되감는다', async () => {
+    const v = useArchiveViewStore()
+    v.$patch({ detail: { id: 'a1' } as never })
+    history.pushState({ momoArchive: 'a1' }, '')
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(back).toHaveBeenCalled()
+    back.mockRestore()
+  })
+
   it('이미 랜딩이면 눌러도 그대로다', async () => {
     const s = useInterviewStore()
     s.$patch({ phase: 'landing' })
