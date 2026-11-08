@@ -55,6 +55,9 @@ function goHome() {
     location.href = '/'
     return
   }
+  // 보관함 상세는 phase보다 앞서 그려진다(App.vue의 v-else-if) — 닫지 않으면
+  // phase만 바꿔 봐야 상세가 그대로 덮고 있어 아무 일도 안 일어난 것으로 보인다 (2026-11-08)
+  archive.leave()
   if (interview.phase !== 'landing') interview.phase = 'landing'
   // 화면만 바꾸면 이전 스크롤 자리가 남아 히어로 중간이 보인다. 맨 위에서 시작한다
   window.scrollTo(0, 0)

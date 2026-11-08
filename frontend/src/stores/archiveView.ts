@@ -29,5 +29,14 @@ export const useArchiveViewStore = defineStore('archiveView', {
     close() {
       this.detail = null
     },
+    /** 상세에서 나간다 — ① 닫고 ② 열며 민 히스토리 항목을 되감는다 (2026-11-08).
+     *  **어디로 가는지는 부르는 쪽이 정한다**(목록으로 / 처음으로). ②를 빼면 뒤로 가기가
+     *  한 번 헛돈다. 열지 않았으면 아무 일도 하지 않는다 — 남이 민 항목을 되감으면 안 된다.
+     *  `history.back()`이 쏘는 popstate는 App.vue의 onPop에 닿지만 그때 detail은 이미 null이다 */
+    leave() {
+      if (!this.detail) return
+      this.detail = null
+      if ((history.state as { momoArchive?: string } | null)?.momoArchive) history.back()
+    },
   },
 })
