@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ReportRail from './ReportRail.vue'
 import type { ReportV2Summary } from '@/utils/reportV2'
@@ -187,5 +187,39 @@ describe('ReportRail — 앞뒤로 오간다 (2026-11-08)', () => {
     await w.get('[data-test=toc-next]').trigger('click')
     expect(el.scrollIntoView).toHaveBeenCalled()
     el.remove()
+  })
+})
+
+describe('ReportRail — 목록이 지금 자리를 따라온다 (2026-11-08)', () => {
+  /* 16문항이면 목록 안에서 스크롤된다. 본문을 내려 Q12를 보고 있는데 목차는
+     Q1~Q8만 보이면, 지금 어디인지 표시해 봐야 화면에 없다 */
+  const spies = () => {
+    const calls: { i: number; arg: unknown }[] = []
+    const w = rail({ current: undefined })
+    w.findAll('[data-test=toc-item]').forEach((r, i) => {
+      ;(r.element as HTMLElement).scrollIntoView = (arg?: unknown) => calls.push({ i, arg })
+    })
+    return { w, calls }
+  }
+
+  it('지금 줄이 목록 안에서 보이게 따라온다', async () => {
+    const { w, calls } = spies()
+    await w.setProps({ current: 'q2-1' })
+    await flushPromises()
+    expect(calls.map((c) => c.i)).toEqual([2])
+  })
+
+  it('목록만 움직이고 본문은 건드리지 않는다 — block: nearest라 이미 보이면 가만히 둔다', async () => {
+    const { w, calls } = spies()
+    await w.setProps({ current: 'q2' })
+    await flushPromises()
+    expect(calls[0].arg).toEqual({ block: 'nearest' })
+  })
+
+  it('아직 아무 데도 없으면 아무 줄도 끌어오지 않는다', async () => {
+    const { w, calls } = spies()
+    await w.setProps({ current: undefined })
+    await flushPromises()
+    expect(calls).toHaveLength(0)
   })
 })

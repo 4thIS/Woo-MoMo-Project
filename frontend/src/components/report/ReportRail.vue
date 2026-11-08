@@ -9,7 +9,7 @@
  * 보관함 상세가 그것을 듣고 화면을 닫기 때문이다 (2026-11-08).
  * 부드러운 스크롤은 쓰지 않는다(16문항 거리에서 멀미).
  */
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { formatDuration, overBy } from '@/utils/timing'
 import { scrollToId } from '@/utils/anchorScroll'
 import type { ReportV2Summary } from '@/utils/reportV2'
@@ -35,6 +35,19 @@ const stops = computed(() => [...new Set(props.items.map((i) => i.id))])
 const at = computed(() => stops.value.indexOf(props.current ?? ''))
 const hasPrev = computed(() => at.value > 0)
 const hasNext = computed(() => at.value < stops.value.length - 1)
+/* 목록은 제 안에서 스크롤된다(16문항이면 다 안 들어간다). 본문을 내려 Q12를 보고 있는데
+   목차가 Q1~Q8에 머물러 있으면 지금 자리를 칠해 봐야 화면에 없다 — 따라오게 한다.
+   `block: 'nearest'`라 이미 보이는 줄에서는 아무 데도 움직이지 않는다 (2026-11-08) */
+const rows = ref<HTMLElement[]>([])
+watch(
+  () => props.current,
+  async (id) => {
+    if (!id) return
+    await nextTick()
+    rows.value[props.items.findIndex((it) => it.id === id)]?.scrollIntoView({ block: 'nearest' })
+  },
+)
+
 /** 앞뒤로 한 칸. 아직 아무 데도 없으면 다음은 첫 문항으로 간다 */
 function go(by: -1 | 1) {
   const i = at.value < 0 ? (by > 0 ? 0 : stops.value.length - 1) : at.value + by
@@ -99,6 +112,7 @@ const overCount = computed(
         <!-- key가 id가 아니라 자리인 이유: 무료 리포트의 꼬리줄은 제 카드와 id를 나눠 쓴다 -->
         <li v-for="(it, i) in items" :key="i">
           <a
+            ref="rows"
             class="row"
             :class="{ follow: it.follow, on: current === it.id }"
             :href="`#${it.id}`"
