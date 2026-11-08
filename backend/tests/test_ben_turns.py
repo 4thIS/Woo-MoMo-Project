@@ -3,7 +3,15 @@ import json
 from app.llm import prompts
 from app.llm.claude import TURN_MAX_TOKENS, ClaudeError
 from app.repos import premium
-from tests.helpers import logout, make_premium, open_db, signup, sse_events, start_ben
+from tests.helpers import (
+    COMPANY_START,
+    logout,
+    make_premium,
+    open_db,
+    signup,
+    sse_events,
+    start_ben,
+)
 
 
 def _turn(client, iid, answer=None):
@@ -109,6 +117,41 @@ def test_at_most_9_interviewer_turns(client, clock):
     assert last == ("done", {"ended": True})
     clock.advance(11)
     assert _turn(client, iid, answer="10번째").json() == {"error": "interview_over"}
+
+
+def _play_until_last(client, clock, iid):
+    for i in range(premium.MAX_MODEL_TURNS - 1):
+        clock.advance(11)
+        _turn(client, iid, answer=None if i == 0 else f"답변 {i}")
+    clock.advance(11)
+    return _turn(client, iid, answer="마지막 답변")
+
+
+def test_last_allowed_turn_is_a_closing_without_claude(client, fake_claude, clock, settings):
+    """상한에 걸리는 마지막 응답이 질문이면 답할 수 없는 채로 면접이 끝났다(2026-11-08 demomo 재현).
+    마지막 응답은 서버가 짧은 반응 + 종료 문장으로 보낸다 — Claude를 부르지 않는다."""
+    iid = start_ben(client)
+    res = _play_until_last(client, clock, iid)
+    assert sse_events(res.text) == [
+        ("delta", {"text": "네. 면접을 마치겠습니다."}),
+        ("done", {"ended": True}),
+    ]
+    assert len(fake_claude.calls) == premium.MAX_MODEL_TURNS - 1
+    msgs = json.loads(_row(settings, iid)["messages_json"])
+    assert msgs[-2:] == [
+        {"role": "user", "text": "마지막 답변"},
+        {"role": "model", "text": "네. 면접을 마치겠습니다."},
+    ]
+    with open_db(settings) as conn:
+        attempts = conn.execute("SELECT attempts FROM premium_interviews").fetchone()[0]
+    assert attempts == premium.MAX_MODEL_TURNS - 1  # Claude를 안 부른 끝맺음은 시도로 세지 않는다
+
+
+def test_closing_follows_warmth(client, clock):
+    body = {**COMPANY_START, "benSettings": {"warmth": "high"}}
+    iid = start_ben(client, body)
+    res = _play_until_last(client, clock, iid)
+    assert sse_events(res.text)[0] == ("delta", {"text": "네, 잘 들었습니다. 면접을 마치겠습니다."})
 
 
 def test_other_users_interview_is_404(client, settings):

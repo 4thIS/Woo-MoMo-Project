@@ -357,6 +357,11 @@ def report_system(track: str, inputs: dict[str, Any], briefing: str | None) -> l
     return build_system(track, inputs)
 
 
+def closing_line(warmth: str = "low") -> str:
+    """면접관 응답 상한의 마지막 응답(2026-11-08): 짧은 반응 + 종료 문장. 서버가 Claude 없이 보낸다."""
+    return f"{REACTION[warmth]} {END_PHRASE}."
+
+
 def has_end_phrase(text: str) -> bool:
     """프론트 hasEndPhrase와 같다: 공백을 모두 빼고 비교한다."""
     return "".join(END_PHRASE.split()) in "".join(text.split())
