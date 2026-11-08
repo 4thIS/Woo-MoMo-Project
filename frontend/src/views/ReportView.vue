@@ -188,6 +188,18 @@ function printReport() {
   flex-direction: column;
   gap: var(--gap-card);
 }
+/* 마지막 문항도 화면 위로 올라올 수 있게 꼬리 여백을 둔다 (2026-11-08).
+   없으면 문서가 바닥에 걸려 마지막 카드가 "지금 보는 것" 구간(위 20%~아래 40%)에
+   영영 못 들어온다 — 답변이 짧을수록 심해서, 다음을 눌러도 마지막 문항에 닿지 못했다.
+   gap 하나만큼 끌어올려 카드 사이 간격이 두 번 들어가지 않게 한다 */
+.body::after {
+  content: '';
+  display: block;
+  flex: none;
+  height: 50svh;
+  margin-top: calc(var(--gap-card) * -1);
+}
+
 .ttl {
   margin: 0;
   font-size: var(--fs-h2);
