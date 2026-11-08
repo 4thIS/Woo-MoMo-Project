@@ -20,7 +20,9 @@ from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
 from app.llm import delivery, prompts, report_v2
+from app.llm.briefing import Collector
 from app.llm.claude import (
+    BRIEFING_MODEL,
     MODEL,
     REPORT_MAX_TOKENS,
     TURN_MAX_TOKENS,
@@ -52,9 +54,11 @@ router = APIRouter()
 ANSWER_MAX = 2000
 # 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
 BEN_PER_MINUTE = 6
-# 회사 브리핑 조사: 15초마다 ping(Cloudflare 무응답 끊김 대비), 전체 90초 넘으면 실패로 친다
+# 회사 브리핑 조사: 기한 안에서 PING_EVERY마다 ping(Cloudflare 무응답 끊김 대비).
+# 기다림은 ping 간격과 남은 기한 중 짧은 쪽이라 기한이 ping 간격보다 짧아도 제때 포기한다
 PING_EVERY = 15.0
-RESEARCH_DEADLINE = 90.0
+# 시작 → 첫 질문 15초 안에 들도록 조사는 10초까지만 기다린다(spec 2026-11-08)
+RESEARCH_DEADLINE = 10.0
 
 
 @router.post("/premium/purchase", response_model=Session)
@@ -154,6 +158,7 @@ def _usage_sink(
     user_id: str,
     interview_id: str,
     kind: str,
+    model: str = MODEL,
 ) -> UsageSink:
     """Claude 호출 사용량을 claude_usage에 남기는 콜백. 워커 스레드에서도 불리므로
     쓸 때마다 자기 연결을 연다. 실패는 삼킨다 — 기록이 면접을 막지 않는다(본문은 남기지 않는다)."""
@@ -167,7 +172,7 @@ def _usage_sink(
                     user_id=user_id,
                     interview_id=interview_id,
                     kind=kind,
-                    model=MODEL,
+                    model=model,
                     input_tokens=used.input_tokens,
                     output_tokens=used.output_tokens,
                     cache_read_tokens=used.cache_read_tokens,
@@ -185,6 +190,7 @@ def _usage_sink(
 
 def _research_and_store(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview_id: str,
     key: str,
@@ -199,11 +205,16 @@ def _research_and_store(
     스트림이 포기했거나 클라이언트가 끊겨도 결과는 버려지지 않는다.
     예상 못 한 예외는 실패(None)로 접는다 — 본문은 로그에 남기지 않는다."""
     try:
-        made = briefing_llm.make_briefing(claude, name, job, on_usage, posting_url)
+        made = briefing_llm.make_briefing(
+            claude, name, job, on_usage, posting_url, collector=collector
+        )
         if made is None:
             return None
-        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다
-        posting_failed = bool(posting_url) and prompts.POSTING_MISSING_STEM in made.text
+        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다.
+        # 요약이 "확인하지 못함"을 빼먹어도 모으기 결과(posting_read)로 판단한다
+        posting_failed = bool(posting_url) and (
+            not made.posting_read or prompts.POSTING_MISSING_STEM in made.text
+        )
         with db.connection(db_path) as c:
             if not posting_failed:
                 briefings.put(
@@ -223,6 +234,7 @@ def _research_and_store(
 
 def _research_with_pings(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview_id: str,
     key: str,
@@ -237,6 +249,7 @@ def _research_with_pings(
     future = pool.submit(
         _research_and_store,
         claude,
+        collector,
         db_path,
         interview_id,
         key,
@@ -250,15 +263,16 @@ def _research_with_pings(
     deadline = time.monotonic() + RESEARCH_DEADLINE
     while True:
         try:
-            return future.result(timeout=PING_EVERY)
+            return future.result(timeout=max(0.0, min(PING_EVERY, deadline - time.monotonic())))
         except TimeoutError:
             if time.monotonic() >= deadline:
                 return None
-            yield PING
+            yield PING  # 기한 전에 ping 간격이 꽉 찼다
 
 
 def _resolve_briefing(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview: PremiumInterview,
     now: float,
@@ -284,7 +298,16 @@ def _resolve_briefing(
             pass
         else:
             yield from _research_with_pings(
-                claude, db_path, interview.id, key, name, job, iso(now), on_usage, posting_url
+                claude,
+                collector,
+                db_path,
+                interview.id,
+                key,
+                name,
+                job,
+                iso(now),
+                on_usage,
+                posting_url,
             )
     with db.connection(db_path) as c:
         premium.set_briefing(c, interview_id=interview.id, briefing=text)
@@ -363,18 +386,22 @@ def take_turn(
         # 상한의 마지막 응답이 질문이면 답할 수 없는 채로 끝난다(2026-11-08) — 끝맺음만 보낸다
         return _stream(_closing_events(db_path, interview, answer))
     claude = _claude(request)
+    collector: Collector = request.app.state.collector
     _count_attempt(conn, interview)
     messages = prompts.turn_messages(interview.messages, answer)
     now = request.app.state.clock()
     first_with_briefing = interview.model_turns == 0 and interview.briefing_status != "none"
     clock = request.app.state.clock
     turn_sink = _usage_sink(db_path, clock, user.id, interview.id, "turn")
-    research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research")
+    # 브리핑 요약은 Haiku로 한다 — 사용량도 그 모델로 남긴다
+    research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research", BRIEFING_MODEL)
 
     def events() -> Iterator[str]:
         brief = interview.briefing
         if first_with_briefing:
-            brief = yield from _resolve_briefing(claude, db_path, interview, now, research_sink)
+            brief = yield from _resolve_briefing(
+                claude, collector, db_path, interview, now, research_sink
+            )
         system = prompts.build_system(interview.track, interview.inputs, brief)
         chunks: list[str] = []
         try:

@@ -184,6 +184,7 @@ def _cost(row: sqlite3.Row) -> float:
         row["cache_read_tokens"],
         row["cache_write_tokens"],
         row["web_searches"],
+        model=row["model"],  # 행마다 기록된 모델 요금(브리핑 요약은 Haiku)
     )
 
 
