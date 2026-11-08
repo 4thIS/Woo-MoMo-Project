@@ -113,3 +113,8 @@ def test_naver_keys_from_env():
     s = Settings.from_env({"NAVER_CLIENT_ID": " a ", "NAVER_CLIENT_SECRET": "b"})
     assert (s.naver_client_id, s.naver_client_secret) == ("a", "b")
     assert Settings.from_env({}).naver_client_id is None
+
+
+def test_ben_pii_mask_defaults_on_from_env():
+    assert Settings.from_env({}).ben_pii_mask is True
+    assert Settings.from_env({"BEN_PII_MASK": "false"}).ben_pii_mask is False

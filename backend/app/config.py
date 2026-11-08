@@ -85,6 +85,7 @@ class Settings:
     gemini_api_keys: tuple[str, ...] = field(default=(), repr=False)
     gemini_voice_model: str = DEFAULT_GEMINI_VOICE_MODEL
     ben_report_v2: bool = False
+    ben_pii_mask: bool = False  # 직접 생성 기본은 꺼짐, 운영 기본은 from_env에서 켜짐
     signup_email_verify: bool = False
     signup_terms_required: bool = False
     mail_api_key: str | None = field(default=None, repr=False)
@@ -136,6 +137,7 @@ class Settings:
             gemini_api_keys=_parse_keys(e.get("GEMINI_API_KEYS")),
             gemini_voice_model=_stripped(e.get("GEMINI_VOICE_MODEL")) or DEFAULT_GEMINI_VOICE_MODEL,
             ben_report_v2=_parse_bool(e.get("BEN_REPORT_V2"), default=False),
+            ben_pii_mask=_parse_bool(e.get("BEN_PII_MASK"), default=True),
             signup_email_verify=_parse_bool(e.get("SIGNUP_EMAIL_VERIFY"), default=False),
             signup_terms_required=_parse_bool(e.get("SIGNUP_TERMS_REQUIRED"), default=False),
             mail_api_key=_stripped(e.get("MAIL_API_KEY")),
