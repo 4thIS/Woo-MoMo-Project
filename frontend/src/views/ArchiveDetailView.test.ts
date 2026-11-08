@@ -171,3 +171,11 @@ describe('ArchiveDetailView — 폭 (2026-11-08)', () => {
     expect(report).not.toMatch(/padding:[^;]*--page-x/)
   })
 })
+
+describe('ArchiveDetailView — 마지막 문항에 닿는다 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'ArchiveDetailView.vue'), 'utf8')
+
+  it('리포트 화면과 같은 꼬리 여백을 둔다 — 레일도 목차도 같은 것을 쓴다', () => {
+    expect(src).toMatch(/\.body::after \{[^}]*height:/)
+  })
+})

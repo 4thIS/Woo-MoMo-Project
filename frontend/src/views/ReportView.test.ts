@@ -447,3 +447,9 @@ describe('ReportView — 면접관 표기', () => {
     expect(t).not.toContain('면접관(여)')
   })
 })
+
+describe('ReportView — 마지막 문항에 닿는다 (2026-11-08)', () => {
+  it('본문 끝에 꼬리 여백을 둔다 — 없으면 마지막 카드가 바닥에 걸려 "지금 보는 것"이 되지 못한다', () => {
+    expect(ReportViewSource).toMatch(/\.body::after \{[^}]*height:/)
+  })
+})
