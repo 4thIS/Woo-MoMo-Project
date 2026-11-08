@@ -38,8 +38,13 @@ def _transport(handler):
         "fe80::1",
         "fc00::1",
         "fd12::1",
-        "::ffff:127.0.0.1",
         "::",
+        "64:ff9b::7f00:1",
+        "64:ff9b::a00:1",
+        "::7f00:1",
+        "::10.0.0.1",
+        "64:ff9b:1::1",
+        "::ffff:127.0.0.1",
     ],
 )
 def test_private_ips_are_not_public(ip):
@@ -261,4 +266,13 @@ def test_redirect_to_bad_scheme_or_port_is_rejected(location):
             "https://jobs.example.com/",
             resolver=_resolver({"jobs.example.com": [PUBLIC], "x.com": [PUBLIC]}),
             transport=_transport(lambda r: httpx.Response(302, headers={"location": location})),
+        )
+
+
+def test_nat64_address_resolving_to_private_ipv4_blocks():
+    with pytest.raises(fetch.FetchError):
+        fetch.fetch_html(
+            "https://nat.example.com/",
+            resolver=_resolver({"nat.example.com": ["64:ff9b::a00:5"]}),
+            transport=_transport(lambda r: httpx.Response(200)),
         )
