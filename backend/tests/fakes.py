@@ -191,3 +191,22 @@ class FakeBaze:
         if isinstance(item, Exception):
             raise item
         return item
+
+
+class FakeCollector:
+    """정해 둔 Material을 돌려준다. calls에 (회사, 직무, 공고 링크)를 남긴다."""
+
+    def __init__(self, material=None) -> None:
+        from app.llm.briefing import Material
+        from app.llm.naver import Doc
+
+        self.material = material or Material(
+            posting=None,
+            found=[Doc("web", "토스 기술 블로그", "결제 시스템", "https://toss.tech")],
+            posting_url=None,
+        )
+        self.calls: list[tuple[str, str, str | None]] = []
+
+    def collect(self, company: str, job: str, posting_url: str | None):
+        self.calls.append((company, job, posting_url))
+        return self.material
