@@ -1146,3 +1146,54 @@ describe('PrepareView — 벤 트랙을 패널 밖에서도 고른다 (2026-11-0
     expect(w.find('[data-test=track-pick]').exists()).toBe(false)
   })
 })
+
+describe('PrepareView — 대입 칸은 받아 줄 글자만 받는다 (2026-11-08)', () => {
+  /** 대입 트랙은 면접관으로 갈린다 — 위 '트랙별 칸' 묶음과 같은 방법 */
+  const adTrack = async () => {
+    useInterviewerStore().select('f3')
+    const w = mountView()
+    await flushPromises()
+    return w
+  }
+
+  it('나이 칸은 숫자만 — 붙여넣기로 들어와도 걸러진다', async () => {
+    const w = await adTrack()
+    const el = w.get('[data-test=ad-age]')
+    await el.setValue('2a7!')
+    expect((el.element as HTMLInputElement).value).toBe('27')
+    expect(useInterviewStore().profile.age).toBe(27)
+  })
+
+  it('나이 칸을 비우면 비운 것으로 둔다 — 0으로 적지 않는다', async () => {
+    const w = await adTrack()
+    const el = w.get('[data-test=ad-age]')
+    await el.setValue('27')
+    await el.setValue('')
+    expect(useInterviewStore().profile.age).toBeNull()
+  })
+
+  it('나이 칸은 type=number가 아니다 — number는 "12a"를 빈 값으로 줘 걸러 낼 수가 없다', async () => {
+    const w = await adTrack()
+    expect(w.get('[data-test=ad-age]').attributes('type')).not.toBe('number')
+  })
+
+  it('이름·대학·학과는 특수문자를 지운다', async () => {
+    const w = await adTrack()
+    for (const [k, typed, kept] of [
+      ['ad-name', '홍길동<script>', '홍길동script'],
+      ['ad-university', '한국대(관악)', '한국대관악'],
+      ['ad-department', '컴퓨터·AI공학부', '컴퓨터AI공학부'],
+    ] as const) {
+      const el = w.get(`[data-test=${k}]`)
+      await el.setValue(typed)
+      expect((el.element as HTMLInputElement).value).toBe(kept)
+    }
+  })
+
+  it('한글·영문·숫자·공백은 그대로 둔다', async () => {
+    const w = await adTrack()
+    const el = w.get('[data-test=ad-university]')
+    await el.setValue('한국대학교 Seoul 2')
+    expect((el.element as HTMLInputElement).value).toBe('한국대학교 Seoul 2')
+  })
+})

@@ -271,3 +271,22 @@ describe('말풍선은 글자를 가두어야 한다', () => {
     expect(w.find('.says').text()).toContain(long)
   })
 })
+
+describe('무대 맨 위에는 띠가 없다 (2026-11-08)', () => {
+  const css = InterviewStageSource.split('<style')[1] ?? ''
+
+  it('::before는 하나뿐이다 — 둘이면 뒤엣것이 앞엣것을 통째로 덮는다', () => {
+    expect((css.match(/[.]stage::before\s*[{]/g) ?? []).length).toBe(1)
+  })
+
+  it('남은 ::before는 바닥이다 — 맨 위 띠는 무대가 창이던 시절의 잔재였다', () => {
+    const rule = css.slice(css.indexOf('.stage::before'))
+    expect(rule).toMatch(/bottom:\s*0/)
+    expect(rule).not.toMatch(/inset:\s*0 0 auto 0/)
+  })
+
+  it('바닥은 내용 뒤에 깔린다 — 절대 배치는 정적 요소보다 나중에 그려져 지원자를 덮는다', () => {
+    const rule = css.slice(css.indexOf('.stage::before'))
+    expect(rule.slice(0, rule.indexOf('}'))).toMatch(/z-index:\s*-1/)
+  })
+})
