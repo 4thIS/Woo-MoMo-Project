@@ -165,4 +165,9 @@ describe('ArchiveDetailView — 폭 (2026-11-08)', () => {
   it('준비 화면과 같은 폭을 쓴다 — 레일 376px을 떼고 나면 본문에 남는 폭이 얼마 안 된다', () => {
     expect(src).toMatch(/max-width:\s*1280px/)
   })
+
+  it('좌우 여백은 --page-x가 아니다 — 120px씩 떼면 내용이 1040px로 되돌아간다', () => {
+    const report = src.match(/\.report \{[^}]*\}/)![0]
+    expect(report).not.toMatch(/padding:[^;]*--page-x/)
+  })
 })
