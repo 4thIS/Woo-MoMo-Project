@@ -318,6 +318,27 @@ def is_over(interview: PremiumInterview) -> bool:
     return last is not None and last["role"] == "model" and prompts.has_end_phrase(last["text"])
 
 
+def _closing_events(
+    db_path: Path, interview: PremiumInterview, answer: str | None
+) -> Iterator[str]:
+    """마지막 응답: 온화함에 맞는 짧은 반응 + 종료 문장. Claude를 부르지 않아 시도로 세지 않는다."""
+    reply = prompts.closing_line(prompts.ben_settings(interview.inputs)["warmth"])
+    try:
+        with db.connection(db_path) as c:
+            saved = premium.append_turn(
+                c,
+                interview_id=interview.id,
+                answer=answer,
+                model_text=reply,
+                expected_model_turns=interview.model_turns,
+            )
+    except premium.TurnConflict:
+        yield sse("error", {"code": "turn_conflict"})
+        return
+    yield sse("delta", {"text": reply})
+    yield sse("done", {"ended": is_over(saved)})
+
+
 @router.post("/premium/interviews/{interview_id}/turns")
 def take_turn(
     interview_id: str,
@@ -337,10 +358,13 @@ def take_turn(
             raise ApiError(422, "missing_answer", field="answer")
         if len(answer) > ANSWER_MAX:
             raise ApiError(422, "answer_too_long", field="answer")
+    db_path = request.app.state.settings.db_path
+    if interview.model_turns == MAX_MODEL_TURNS - 1:
+        # 상한의 마지막 응답이 질문이면 답할 수 없는 채로 끝난다(2026-11-08) — 끝맺음만 보낸다
+        return _stream(_closing_events(db_path, interview, answer))
     claude = _claude(request)
     _count_attempt(conn, interview)
     messages = prompts.turn_messages(interview.messages, answer)
-    db_path = request.app.state.settings.db_path
     now = request.app.state.clock()
     first_with_briefing = interview.model_turns == 0 and interview.briefing_status != "none"
     clock = request.app.state.clock

@@ -8,7 +8,8 @@ from typing import Any
 from app.db import transaction
 from app.ids import new_id
 
-# 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1. 모델이 규칙을 넘겨도 서버가 여기서 끊는다
+# 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1. 모델이 규칙을 넘겨도 서버가 여기서 끊는다.
+# 마지막(9번째) 응답은 라우터가 Claude 없이 끝맺음 문장으로 보낸다(2026-11-08)
 MAX_MODEL_TURNS = 9
 # 면접 하나의 Claude 호출 시도(턴·리포트, 실패 포함) 상한 — 재시도 반복으로 비용이 불지 않게
 MAX_ATTEMPTS = 2 * MAX_MODEL_TURNS + 3
