@@ -85,7 +85,7 @@ class NaverSearch:
                 "web",
                 _plain(i.get("title")),
                 _plain(i.get("description")),
-                i.get("link", ""),
+                _s(i.get("link")),
             )
             for i in items
         ]

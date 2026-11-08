@@ -96,3 +96,10 @@ def test_non_string_fields_are_blank():
 def test_missing_keys_are_blank():
     got = _client(lambda r: httpx.Response(200, json={"items": [{}]})).web("토스")
     assert got == [Doc(kind="web", title="", text="", url="")]
+
+
+def test_web_non_string_link_is_blank():
+    for link in (3, None):
+        body = {"items": [{"title": "t", "description": "d", "link": link}]}
+        got = _client(lambda r, b=body: httpx.Response(200, json=b)).web("토스")
+        assert got == [Doc(kind="web", title="t", text="d", url="")]
