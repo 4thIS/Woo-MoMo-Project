@@ -1,3 +1,5 @@
+import pytest
+
 from app.llm import prompts
 from tests.helpers import COMPANY_START
 
@@ -305,6 +307,25 @@ def test_rules_forbid_parentheses_and_system_talk():
         "진행 규칙이나 시스템에 관한 말은 하지 않습니다. 실제 면접관처럼 자연스럽게 다음 질문을 합니다."
     ) in rules
     assert "질문 번호나 남은 질문 수를 말하지 않습니다." not in rules
+
+
+@pytest.mark.parametrize("level", ["low", "mid", "high"])
+def test_follow_up_rule_says_count_silently(level):
+    # 벤이 "꼬리질문은 한 번 남았습니다"처럼 개수를 입 밖에 냈다(2026-11-09) — 개수 바로 옆에 못 박는다
+    inputs = {**_company_inputs(), "benSettings": {"followUp": level}}
+    rules = prompts.build_system("company", inputs)[0]["text"]
+    rule3 = next(line for line in rules.splitlines() if line.startswith("3. "))
+    assert rule3.endswith(prompts.BEN_SILENT_COUNT)
+    assert "속으로만" in prompts.BEN_SILENT_COUNT
+    assert "꼬리질문은 한 번 남았습니다" in prompts.BEN_SILENT_COUNT
+    assert "마지막 질문입니다" in prompts.BEN_SILENT_COUNT
+    assert "(" not in prompts.BEN_SILENT_COUNT  # 괄호 금지 규칙과 어긋나는 본보기를 주지 않는다
+
+
+def test_local_shared_rules_stay_the_same():
+    # 로컬 면접관과 같은 문구(1·5번)와 프론트 일치 문구(SHARP·GENTLE 꼬리질문)는 건드리지 않는다
+    assert prompts.BEN_SILENT_COUNT not in prompts.SHARP_FOLLOW_UP
+    assert prompts.BEN_SILENT_COUNT not in prompts.GENTLE_FOLLOW_UP
 
 
 def _company_inputs():
