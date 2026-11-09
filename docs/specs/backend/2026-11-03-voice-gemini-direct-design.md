@@ -17,7 +17,7 @@
 |---|---|---|
 | `VOICE_PROVIDER` | `gemini`(코드), compose는 `baze` | `gemini` 또는 `baze`. 다른 값이면 기동 실패(`ValueError`) |
 | `GEMINI_API_KEYS` | (없음) | 쉼표로 여러 개. **서로 다른 구글 프로젝트의 키**여야 한도가 늘어난다(같은 프로젝트 키는 한도를 함께 쓴다) |
-| `GEMINI_VOICE_MODEL` | `gemini-3.8-flash` | 분석 모델 이름 |
+| `GEMINI_VOICE_MODEL` | `gemini-3.5-flash` | 분석 모델 이름 (2026-11-09: 3.8-flash에서 바꿈 — 응답 40~60초+로 리포트 대기 20초를 넘김, 3.5-flash 약 6초) |
 | `BAZE_*` | 지금 그대로 | `VOICE_PROVIDER=baze`일 때만 쓴다 |
 
 - `create_app`은 `VOICE_PROVIDER`가 가리키는 쪽 하나만 만든다. 그쪽 키가 없으면 분석기가 없다 → 지금처럼 `voiceAnalysis: "unavailable"`, 업로드 `503 voice_unavailable`.
@@ -32,7 +32,7 @@
   - 주소 `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, 인증 `x-goog-api-key` 헤더. 본문은 BAZE와 같다.
   - `refresh_credits()`는 아무것도 하지 않는다(Gemini에는 잔액 조회가 없다).
   - 키 값은 로그·상태·예외에 남기지 않는다(순번 1부터만).
-- 사용량 기록: `baze_usage` 표를 그대로 쓴다. `model` 칸에 `Settings.voice_usage_model`을 넣는다 — BAZE는 지금처럼 모델 이름, Gemini는 `gemini:` 접두어(`gemini:gemini-3.8-flash`). 마이그레이션 없음.
+- 사용량 기록: `baze_usage` 표를 그대로 쓴다. `model` 칸에 `Settings.voice_usage_model`을 넣는다 — BAZE는 지금처럼 모델 이름, Gemini는 `gemini:` 접두어(`gemini:gemini-3.5-flash`). 마이그레이션 없음.
 
 ## 4. 오류와 한도
 

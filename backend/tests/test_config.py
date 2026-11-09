@@ -89,8 +89,8 @@ def test_repr_hides_secrets():
 def test_voice_provider_and_gemini_settings():
     d = Settings.from_env({})
     assert d.voice_provider == "gemini"
-    assert d.gemini_api_keys == () and d.gemini_voice_model == "gemini-3.8-flash"
-    assert d.voice_usage_model == "gemini:gemini-3.8-flash"
+    assert d.gemini_api_keys == () and d.gemini_voice_model == "gemini-3.5-flash"
+    assert d.voice_usage_model == "gemini:gemini-3.5-flash"
     s = Settings.from_env(
         {"VOICE_PROVIDER": " BAZE ", "GEMINI_API_KEYS": " g1, ,g2", "GEMINI_VOICE_MODEL": "gm"}
     )

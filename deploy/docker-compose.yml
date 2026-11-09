@@ -40,7 +40,7 @@ services:
       # 목소리 분석 경로(gemini|baze, spec 2026-11-03). 프론트 동의 문구가 나가기 전까지는 baze로 둔다
       VOICE_PROVIDER: ${VOICE_PROVIDER:-baze}
       GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
-      GEMINI_VOICE_MODEL: ${GEMINI_VOICE_MODEL:-gemini-3.8-flash}
+      GEMINI_VOICE_MODEL: ${GEMINI_VOICE_MODEL:-gemini-3.5-flash}
       SIGNUP_EMAIL_VERIFY: ${SIGNUP_EMAIL_VERIFY:-false}
       SIGNUP_TERMS_REQUIRED: ${SIGNUP_TERMS_REQUIRED:-false}
       MAIL_API_KEY: ${MAIL_API_KEY:-}

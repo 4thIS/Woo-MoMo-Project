@@ -385,7 +385,7 @@ curl -sI https://demomo.ssenu.cloud/admin
 |------|--------|------|
 | `VOICE_PROVIDER` | compose `baze` (코드 기본 `gemini`) | `gemini`(Gemini API 직접) 또는 `baze`(학교 게이트웨이). 다른 값이면 API가 뜨지 않는다. |
 | `GEMINI_API_KEYS` | (없음) | Gemini 키를 쉼표로 구분해 넣는다. 무료 등급 한도는 **구글 프로젝트 단위**이므로 서로 다른 프로젝트의 키여야 한도가 늘어난다. |
-| `GEMINI_VOICE_MODEL` | `gemini-3.8-flash` | Gemini 직접 호출 때 쓰는 모델 이름. |
+| `GEMINI_VOICE_MODEL` | `gemini-3.5-flash` | Gemini 직접 호출 때 쓰는 모델 이름. `gemini-3.8-flash`는 한 답변에 40~60초 넘게 걸려 리포트 대기(20초)를 넘긴다(2026-11-09 실측: 3.5-flash 약 6초) |
 
 **Gemini로 켜는 순서:** 프론트 약관·동의 문구(“구글이 서비스 개선에 쓸 수 있음”)가 그 환경에 나간 뒤에 켠다. 아래 BAZE 키 넣는 방법과 같이 `read -rsp`로 `GEMINI_API_KEYS`를 넣고, `.env`에 `VOICE_PROVIDER=gemini`를 둔 뒤 `docker compose up -d --no-build`. 되돌릴 때는 `VOICE_PROVIDER=baze`로 바꾸고 같은 명령.
 
