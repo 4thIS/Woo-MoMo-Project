@@ -17,7 +17,8 @@ DEFAULT_BAZE_MIN_REMAINING = 50.0
 # 목소리 분석을 어디로 보낼지 (spec 2026-11-03). 한 번에 한 곳만 쓴다
 VOICE_PROVIDERS = ("gemini", "baze")
 DEFAULT_VOICE_PROVIDER = "gemini"
-DEFAULT_GEMINI_VOICE_MODEL = "gemini-3.8-flash"
+# 3.8-flash는 답변 하나에 40~60초+, 3.5-flash는 약 6초(2026-11-09 demomo 실측) — 리포트 대기 20초
+DEFAULT_GEMINI_VOICE_MODEL = "gemini-3.5-flash"
 DEFAULT_MAIL_API_URL = "https://send.ssenu.cloud/v1/send"
 # DATA_DIR = 사용자 데이터(DB·녹음). 정적 계약 데이터(MOMO_DATA_DIR)와 다르다.
 DEFAULT_STORAGE_DIR = Path(__file__).resolve().parents[1] / "var"

@@ -120,7 +120,7 @@ def test_upload_success_runs_analysis_and_cleans_up(
     assert len(usage) == 1
     assert usage[0]["key_index"] == 1
     assert usage[0]["outcome"] == "ok"
-    assert usage[0]["model"] == settings.voice_usage_model == "gemini:gemini-3.8-flash"
+    assert usage[0]["model"] == settings.voice_usage_model == "gemini:gemini-3.5-flash"
     assert usage[0]["interview_id"] == interview_id
     assert _wait_tmp_empty(settings) == []
 

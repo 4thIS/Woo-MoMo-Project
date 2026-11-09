@@ -11,7 +11,7 @@ from app.config import Settings
 from app.llm.gemini import GeminiClient
 from app.llm.voice_common import VOICE_INSTRUCTION, VOICE_SCHEMA
 
-URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
 NOW = datetime(2026, 11, 3, 12, 0, tzinfo=UTC).timestamp()
 
 GOOD = {
