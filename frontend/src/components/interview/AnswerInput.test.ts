@@ -123,7 +123,7 @@ describe('AnswerInput 듣기 잠금·늦은 결과', () => {
     expect(startSpeech).toHaveBeenCalledTimes(2)
     expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
   })
-  it('마이크 오류가 나면 말하기가 꺼진다', async () => {
+  it('마이크를 쓸 수 없는 오류가 나면 말하기가 꺼진다', async () => {
     vi.mocked(speechSupported).mockReturnValue(true)
     let fail: ((e: string) => void) | null = null
     vi.mocked(startSpeech).mockImplementation((_i, _f, onError) => {
@@ -131,7 +131,7 @@ describe('AnswerInput 듣기 잠금·늦은 결과', () => {
     })
     const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
     await w.find('[data-test="mic"]').trigger('click')
-    fail!('network')
+    fail!('audio-capture')
     await w.vm.$nextTick()
     await w.setProps({ generating: true })
     await w.setProps({ generating: false })
@@ -156,13 +156,19 @@ describe('AnswerInput 듣기 잠금·늦은 결과', () => {
   })
 })
 
-type Cbs = { interim: (t: string) => void; final: (t: string) => void; end?: () => void }
+type Cbs = {
+  interim: (t: string) => void
+  final: (t: string) => void
+  err: (e: string) => void
+  end?: () => void
+}
 function armSpeech(): Cbs {
   const cbs = {} as Cbs
   vi.mocked(speechSupported).mockReturnValue(true)
-  vi.mocked(startSpeech).mockImplementation((onInterim, onFinal, _onErr, onEnd) => {
+  vi.mocked(startSpeech).mockImplementation((onInterim, onFinal, onErr, onEnd) => {
     cbs.interim = onInterim
     cbs.final = onFinal
+    cbs.err = onErr
     cbs.end = onEnd
   })
   return cbs
@@ -274,6 +280,96 @@ describe('AnswerInput 답변 타이머(60초 게이지)', () => {
     await w.find('textarea').setValue('늦은 답')
     await w.find('[data-test="send"]').trigger('click')
     expect(w.emitted('send')?.[0]).toEqual(['늦은 답'])
+  })
+})
+
+describe('AnswerInput 말이 씹히지 않게 (이슈 #180)', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  const open = async () => {
+    const cbs = armSpeech()
+    const w = mount(AnswerInput, { props: { generating: false, disabled: false } })
+    await w.find('[data-test="mic"]').trigger('click')
+    return { cbs, w, ta: () => (w.find('textarea').element as HTMLTextAreaElement).value }
+  }
+
+  it('생각하느라 3초 멈춰도 보내지 않는다 — 7초를 넘겨야 보낸다', async () => {
+    const { cbs, w } = await open()
+    cbs.final('제가 맡은 건')
+    vi.advanceTimersByTime(3000)
+    expect(w.emitted('send')).toBeUndefined() // 리포트가 따로 셀 만큼 흔한 쉼이다
+    vi.advanceTimersByTime(4000)
+    expect(w.emitted('send')?.[0]).toEqual(['제가 맡은 건'])
+  })
+
+  it('브라우저가 스스로 끊어도 확정 전 글자를 버리지 않는다', async () => {
+    const { cbs, w, ta } = await open()
+    cbs.final('제가 맡은 건 ')
+    cbs.interim('결제 시스템을')
+    cbs.end?.()
+    await w.vm.$nextTick()
+    expect(ta()).toBe('제가 맡은 건 결제 시스템을')
+  })
+
+  it('오래 조용해서 난 no-speech는 말하기를 켜 둔 채 다시 듣는다', async () => {
+    const { cbs, w } = await open()
+    cbs.err('no-speech')
+    await w.vm.$nextTick()
+    expect(startSpeech).toHaveBeenCalledTimes(2)
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
+    expect(w.find('.err').exists()).toBe(false)
+  })
+
+  it('잠깐 끊긴 network·aborted도 다시 듣는다 — 글자를 살린 채로', async () => {
+    const { cbs, w, ta } = await open()
+    cbs.interim('그래서 제가')
+    cbs.err('network')
+    await w.vm.$nextTick()
+    expect(ta()).toBe('그래서 제가')
+    expect(startSpeech).toHaveBeenCalledTimes(2)
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중')
+  })
+
+  it('다시 듣는 동안에도 침묵 타이머는 살아 있다', async () => {
+    const { cbs, w } = await open()
+    cbs.final('답변')
+    cbs.err('no-speech')
+    vi.advanceTimersByTime(7000)
+    expect(w.emitted('send')?.[0]).toEqual(['답변'])
+  })
+
+  it('권한·마이크 문제는 꺼지고 이유를 알린다', async () => {
+    for (const e of ['not-allowed', 'service-not-allowed', 'audio-capture']) {
+      const { cbs, w } = await open()
+      cbs.err(e)
+      await w.vm.$nextTick()
+      expect(w.find('[data-test="mic"]').attributes('disabled')).toBeDefined()
+      expect(w.find('.err').text()).not.toBe('')
+    }
+  })
+
+  it('카운트다운 막대를 누르면 전송이 취소된다', async () => {
+    const { cbs, w } = await open()
+    cbs.final('아직 안 끝났어요')
+    await w.vm.$nextTick()
+    await w.find('[data-test="silence"]').trigger('click')
+    vi.advanceTimersByTime(7000 * 2)
+    expect(w.emitted('send')).toBeUndefined()
+    expect(w.find('[data-test="silence"]').exists()).toBe(false)
+    expect(w.find('[data-test="mic"]').text()).toContain('듣는 중') // 계속 듣는다
+  })
+
+  it('취소한 뒤 다시 말하면 타이머가 다시 선다', async () => {
+    const { cbs, w } = await open()
+    cbs.final('아직')
+    await w.vm.$nextTick()
+    await w.find('[data-test="silence"]').trigger('click')
+    cbs.final(' 더 있어요')
+    await w.vm.$nextTick()
+    expect(w.find('[data-test="silence"]').exists()).toBe(true)
+    vi.advanceTimersByTime(7000)
+    expect(w.emitted('send')?.[0]).toEqual(['아직 더 있어요'])
   })
 })
 
