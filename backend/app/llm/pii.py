@@ -56,6 +56,13 @@ _LINK = re.compile(
     r")[^\s)\]>\"',]*",
     re.I,
 )
+# 저장소 링크(github·gitlab의 소유자/저장소…)는 소유자만 가린다
+# — 저장소 이름은 면접 재료다(이슈 #182)
+_REPO_OWNER = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:github\.com|gitlab\.com)/([A-Za-z0-9_.-]{1,100})/[A-Za-z0-9_.-]",
+    re.I,
+)
+_OWNER = "owner:"  # 소유자 조각의 비교 키 머리 — 링크 전체 키와 섞이지 않게
 _BIRTH_LABEL = re.compile(r"생년월일|생일|출생|birth|dob", re.I)
 _DATE = re.compile(
     r"(?<!\d)(?:19|20)?\d{2}\s*[./년-]\s*\d{1,2}\s*[./월-]\s*\d{1,2}(?:\s*일)?(?!\d)"
@@ -213,7 +220,12 @@ class Masker:
         for m in _EMAIL.finditer(text):
             add(*m.span(), "이메일", m.group().lower())
         for m in _LINK.finditer(text):
-            add(*m.span(), "링크", _link_key(m.group()))
+            repo = _REPO_OWNER.match(m.group())
+            if repo:
+                s = m.start() + repo.start(1)
+                add(s, s + len(repo.group(1)), "링크", _OWNER + repo.group(1).lower())
+            else:
+                add(*m.span(), "링크", _link_key(m.group()))
         for line in _LINE.finditer(text):
             if _BIRTH_LABEL.search(line.group()):
                 for m in _DATE.finditer(line.group()):
@@ -267,9 +279,11 @@ class Masker:
 
         라벨이 있어야 잡히는 주소·생년월일·계좌가 Claude 응답에서 되돌아와 라벨 없이
         다음 요청에 실려도 새지 않게 한다. 긴 값부터, str.find로만 훑는다."""
-        known = dict(self._known)
+        # 저장소 소유자는 다시 찾지 않는다
+        # — 짧은 영문 소유자(예: toss)가 다른 낱말·주소 안에서 잘린다
+        known = {v: kk for v, kk in self._known.items() if not kk[1].startswith(_OWNER)}
         for _, _, kind, key, value in out:
-            if kind != "이름":
+            if kind != "이름" and not key.startswith(_OWNER):
                 known.setdefault(value, (kind, key))
         for value in sorted(known, key=len, reverse=True):
             if len(value) < _KNOWN_MIN:
