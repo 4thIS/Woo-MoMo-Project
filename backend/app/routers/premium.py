@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -546,11 +547,24 @@ def _parse_delivery(body: Any, interview: PremiumInterview) -> list[DeliveryMetr
     return parsed.delivery
 
 
+# 저장된 분석 상태 → 리포트 이유(이슈 #178). 행이 없으면(녹음이 안 올라옴) unavailable
+_VOICE_STATUS = {
+    "done": "ok",
+    "queued": "pending",
+    "failed": "failed",
+    "unavailable": "unavailable",
+}
+
+
 def _metrics(
     metrics: list[DeliveryMetric],
     voices: dict[int, tuple[str, StoredVoice | None]] | None = None,
+    *,
+    consent: bool = False,
 ) -> list[delivery.AnswerMetrics]:
-    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다."""
+    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다.
+
+    목소리 이유(voice_status)는 접지 않고 남긴다 — 리포트가 "측정 없음"의 이유를 말할 수 있게."""
     out = []
     for m in metrics:
         base = delivery.AnswerMetrics(
@@ -563,7 +577,13 @@ def _metrics(
             filler_level=m.fillerLevel,
         )
         status, result = (voices or {}).get(m.answer, ("", None))
-        out.append(delivery.with_voice(base, result if status == "done" else None))
+        merged = delivery.with_voice(base, result if status == "done" else None)
+        if consent:
+            reason = _VOICE_STATUS.get(status, "unavailable")
+            if reason == "ok" and merged.voice is None:
+                reason = "failed"  # 한글 없는 받아쓰기라 결과를 버렸다
+            merged = replace(merged, voice_status=reason)
+        out.append(merged)
     return out
 
 
@@ -634,7 +654,7 @@ def _report_v2_events(
     voices = None
     if voice_wait:
         voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
-    merged = _metrics(parsed, voices)
+    merged = _metrics(parsed, voices, consent=interview.voice_consent)
     briefing = interview.briefing
     has_posting = bool(interview.track == "company" and briefing and prompts._has_posting(briefing))
     has_delivery = bool(parsed)

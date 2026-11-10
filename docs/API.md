@@ -402,7 +402,13 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
       "voice": { "confidence": {"level": "...", "reason": "..."}, "tone": {"level": "...", "reason": "..."},
                  "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
                  "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
-      "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
+      "insufficient": false,   // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null(voiceStatus 제외)
+      "voiceStatus": "ok"      // 목소리 분석 이유(2026-11-10, 이슈 #178, additive) — 자신감·발음 축이 비는 이유를 말한다. 항상 있다
+                               // no_consent: 이 면접에서 목소리 분석에 동의하지 않음(가장 먼저 본다)
+                               // too_short: 측정 부족(insufficient와 같은 조건)
+                               // ok: 분석 결과 있음 / pending: 리포트를 만들 때까지(20초) 분석이 안 끝남
+                               // failed: 분석 오류(한글 없는 받아쓰기 포함) / unavailable: 서버 사정(키 없음·한도 소진·녹음 미도착)
+                               // 예전에 저장된 리포트(report_v2_json·보관함 reportV2)에는 이 키가 없다 -> 이유 없이 "측정 없음"
     },
     "profile": [               // 답변별 육각형 프로필(2026-10-30). 항상 6개, 순서 고정
       { "key": "content", "label": "답변 내용", "level": 4, "comment": "..." },   // level 1~5(모델), comment 40자 이내(서버가 정리)
