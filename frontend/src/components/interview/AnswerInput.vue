@@ -1,6 +1,9 @@
 <script lang="ts">
-/** 말하기 중 마지막 음성 결과 뒤 이만큼 조용하면 자동 전송. Chrome이 무음으로 인식을 스스로 끊는 시간(약 5~8초)보다 짧게 */
-export const SILENCE_MS = 3000
+/** 말하기 중 마지막 음성 결과 뒤 이만큼 조용하면 자동 전송 (2026-11-10, 이슈 #180).
+ *  3초였을 때는 생각하느라 멈춘 것을 말이 끝난 것으로 보고 보내 버렸다 — 리포트가 "2초 넘는 쉼"을
+ *  따로 셀 만큼 흔한 쉼이다. Chrome이 무음으로 스스로 끊는 시간(약 5~8초)보다 짧게 둘 이유는
+ *  이제 없다: 끊겨도 글자를 잃지 않고 다시 듣는다. */
+export const SILENCE_MS = 7000
 /** 음성 인식 경로를 한 번 알렸다는 표시. 기기마다(브라우저마다) 한 번이면 된다 */
 export const SPEECH_NOTICE_KEY = 'momo.speechNotice.v1'
 </script>
@@ -48,6 +51,12 @@ function armSilence() {
       submit()
     }
   }, SILENCE_MS)
+}
+
+/** 인식이 끊길 때 확정되지 않은 글자를 본문에 남긴다 — 버리면 마지막 몇 마디가 사라진다 (이슈 #180) */
+function keepInterim() {
+  text.value += interim.value
+  interim.value = ''
 }
 
 function submit() {
@@ -116,6 +125,14 @@ function toggleMic() {
   beginListen()
 }
 
+/* 이 오류들만 말하기를 끈다 — 다시 시도해도 같은 결과다.
+   no-speech(오래 조용함)·aborted·network는 잠깐 끊긴 것이므로 켜 둔 채 다시 듣는다 (이슈 #180) */
+const FATAL_MIC: Record<string, string> = {
+  'not-allowed': '마이크 권한이 거부되었습니다',
+  'service-not-allowed': '마이크 권한이 거부되었습니다',
+  'audio-capture': '마이크를 찾을 수 없습니다',
+}
+
 /* 무음으로 인식이 끊길 때마다 다시 켜는데, 어떤 이유로 즉시 끊기면 폭주한다. 연속 재시작이 잦으면 멈춘다 */
 let restarts = 0
 let restartAt = 0
@@ -146,10 +163,16 @@ function beginListen() {
       armSilence()
     },
     (err) => {
-      micError.value =
-        err === 'not-allowed' ? '마이크 권한이 거부되었습니다' : `음성 인식 오류: ${err}`
-      micOn.value = false
       listening.value = false
+      const fatal = FATAL_MIC[err]
+      if (!fatal) {
+        // 오류 뒤에는 onEnd가 오지 않으므로(services/speech.ts) 글자 살리기와 재시작을 여기서 한다
+        keepInterim()
+        if (micOn.value && !locked.value) beginListen()
+        return
+      }
+      micError.value = fatal
+      micOn.value = false
       interim.value = ''
       disarmSilence()
     },
@@ -157,7 +180,7 @@ function beginListen() {
       // 브라우저가 무음 등으로 스스로 끝냄. 말하기를 켜 둔 동안은 바로 다시 듣는다
       // (침묵 타이머는 살려 둬서, 받아쓴 게 있으면 그대로 자동 전송된다)
       listening.value = false
-      interim.value = ''
+      keepInterim()
       if (micOn.value && !locked.value) beginListen()
     },
   )
@@ -170,7 +193,7 @@ watch(locked, (on) => {
     if (listening.value) {
       stopSpeech()
       listening.value = false
-      interim.value = ''
+      keepInterim() // 보통은 이미 전송된 뒤라 비어 있다
     }
   } else if (micOn.value) {
     restarts = 0
@@ -235,10 +258,19 @@ const micTitle = computed(() =>
       />
       <div v-if="interim" class="interim mono" aria-live="polite">{{ interim }}</div>
     </div>
-    <div v-if="silenceArmed" :key="silenceArmed" class="silence mono" data-test="silence">
+    <!-- 누르면 전송 취소. 아직 할 말이 남았는데 막대가 줄어드는 것을 보고 있을 때 쓸 곳이 필요하다 -->
+    <button
+      v-if="silenceArmed"
+      :key="silenceArmed"
+      type="button"
+      class="silence mono"
+      data-test="silence"
+      title="눌러서 전송 취소"
+      @click="disarmSilence"
+    >
       <span class="bar" :style="{ animationDuration: `${SILENCE_MS}ms` }" />
-      <span>말을 멈추면 {{ SILENCE_MS / 1000 }}초 뒤 전송</span>
-    </div>
+      <span>말을 멈추면 {{ SILENCE_MS / 1000 }}초 뒤 전송 · 눌러서 취소</span>
+    </button>
     <div class="actions">
       <button
         type="button"
@@ -422,6 +454,12 @@ const micTitle = computed(() =>
   margin: 0;
 }
 .silence {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
