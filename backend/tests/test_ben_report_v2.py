@@ -90,6 +90,8 @@ def test_v2_success(v2_client, fake_claude, v2_settings):
     assert data["version"] == 2
     assert data["items"][0]["id"] == "Q1"
     assert data["items"][0]["measurements"]["syllablesPerMin"] == 300
+    # 목소리 분석에 동의하지 않은 면접 — 리포트가 "측정 없음"의 이유를 말할 수 있다(이슈 #178)
+    assert data["items"][0]["measurements"]["voiceStatus"] == "no_consent"
     call = fake_claude.calls[-1]
     assert call["output_format"] == REPORT_V2_SCHEMA
     assert call["effort"] == "medium"

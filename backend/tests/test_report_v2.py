@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.llm import report_v2
 from app.llm.baze import StoredVoice
 from app.llm.delivery import AnswerMetrics, judge, render
@@ -184,6 +186,7 @@ def test_measurements_browser_only():
         "filler": {"level": "보통", "count": None, "examples": []},
         "voice": None,
         "insufficient": False,
+        "voiceStatus": "no_consent",
     }
 
 
@@ -214,7 +217,7 @@ def test_measurements_insufficient():
     for mm in (met(1, speech=3.0), met(1, syl=0)):
         j = judge(mm)
         assert j["insufficient"] is True
-        assert all(v is None for k, v in j.items() if k != "insufficient")
+        assert all(v is None for k, v in j.items() if k not in ("insufficient", "voiceStatus"))
         assert set(j) == set(judge(met(1)))
 
 
@@ -267,3 +270,35 @@ def test_item_delivery_null_unless_answer_measurable():
     got = [i["delivery"] for i in out["items"]]
     assert got == ["d1", None, None, None, None]  # 2: 5초 미만, 3: 음절 0, 4~5: 측정 없음
     assert out["summary"]["delivery"] == "sd"
+
+
+# ── 답변별 목소리 분석 이유 voiceStatus (이슈 #178, 2026-11-10) ──
+
+
+def test_voice_status_defaults_to_no_consent():
+    assert judge(met(1))["voiceStatus"] == "no_consent"
+
+
+def test_voice_status_ok_with_voice():
+    from dataclasses import replace
+
+    from app.llm.delivery import with_voice
+
+    m = replace(with_voice(met(1, speech=60.0), voice()), voice_status="ok")
+    assert judge(m)["voiceStatus"] == "ok"
+
+
+@pytest.mark.parametrize("status", ["pending", "failed", "unavailable"])
+def test_voice_status_passes_through(status):
+    from dataclasses import replace
+
+    assert judge(replace(met(1), voice_status=status))["voiceStatus"] == status
+
+
+def test_too_short_wins_over_server_status_but_not_over_no_consent():
+    from dataclasses import replace
+
+    short = met(1, speech=3.0)
+    assert judge(replace(short, voice_status="ok"))["voiceStatus"] == "too_short"
+    assert judge(replace(short, voice_status="pending"))["voiceStatus"] == "too_short"
+    assert judge(short)["voiceStatus"] == "no_consent"

@@ -53,6 +53,9 @@ class AnswerMetrics:
     voice: StoredVoice | None = None
     filler_count: int | None = None  # 목소리 분석의 군말 수(있으면 filler_level 대신 쓴다)
     filler_examples: tuple[str, ...] = ()
+    # 목소리 분석 이유(이슈 #178): no_consent | ok | pending | failed | unavailable.
+    # too_short는 판정(judge) 때 브라우저 측정으로 정한다
+    voice_status: str = "no_consent"
 
 
 def count_syllables(text: str) -> int:
@@ -238,10 +241,19 @@ def _voice_dict(v: StoredVoice) -> dict[str, Any]:
     }
 
 
+def voice_status(m: AnswerMetrics) -> str:
+    """리포트에 실을 목소리 이유. 동의 안 함이 먼저, 그다음 측정 부족, 그다음 서버 상태."""
+    if m.voice_status == "no_consent":
+        return "no_consent"
+    if not _measurable(m):
+        return "too_short"
+    return m.voice_status
+
+
 def judge(m: AnswerMetrics) -> dict[str, Any]:
     """답변 하나의 판정을 딕셔너리로(리포트 v2 measurements). `_line`과 같은 판정 함수를 쓴다."""
     if not _measurable(m):
-        return {**dict.fromkeys(_JUDGE_KEYS), "insufficient": True}
+        return {**dict.fromkeys(_JUDGE_KEYS), "insufficient": True, "voiceStatus": voice_status(m)}
     spm = _per_minute(m)
     rate = round(_pause_rate(m), 1)
     f = _filler(m)
@@ -257,6 +269,7 @@ def judge(m: AnswerMetrics) -> dict[str, Any]:
         "filler": None if f is None else {"level": f[0], "count": m.filler_count, "examples": f[1]},
         "voice": None if m.voice is None else _voice_dict(m.voice),
         "insufficient": False,
+        "voiceStatus": voice_status(m),
     }
 
 
