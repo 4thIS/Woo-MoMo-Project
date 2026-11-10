@@ -370,3 +370,34 @@ def test_other_known_names_match_literally(name, text, want):
 
 def test_one_letter_names_are_ignored():
     assert Masker(["A", "김"]).mask("A 김") == "A 김"
+
+
+# ── 저장소 링크는 소유자만 가린다 (이슈 #182 ①, 2026-11-10) ──
+
+
+def test_repo_link_masks_only_the_owner():
+    m = Masker()
+    got = m.mask("회사 저장소 https://github.com/4thIS/Woo-MoMo-Project 에서 작업")
+    assert got == "회사 저장소 https://github.com/[링크1]/Woo-MoMo-Project 에서 작업"
+    assert m.unmask(got) == "회사 저장소 https://github.com/4thIS/Woo-MoMo-Project 에서 작업"
+
+
+def test_repo_link_deeper_paths_and_gitlab():
+    m = Masker()
+    assert m.mask("github.com/gildong/my-blog/tree/main") == "github.com/[링크1]/my-blog/tree/main"
+    assert m.mask("https://gitlab.com/gildong/infra") == "https://gitlab.com/[링크1]/infra"
+
+
+def test_profile_link_is_still_masked_whole():
+    m = Masker()
+    assert m.mask("GitHub: https://github.com/gildong-hong") == "GitHub: [링크1]"
+    assert m.mask("github.com/gildong-hong/") == "[링크1]"
+
+
+def test_same_owner_same_placeholder_and_owner_not_masked_elsewhere():
+    m = Masker()
+    got = m.mask("github.com/toss/slash, github.com/toss/es-toolkit, 그리고 https://toss.im/career")
+    assert (
+        got
+        == "github.com/[링크1]/slash, github.com/[링크1]/es-toolkit, 그리고 https://toss.im/career"
+    )
