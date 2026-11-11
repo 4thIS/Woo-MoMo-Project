@@ -5,6 +5,7 @@ import TopBar from './TopBar.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
 import { useArchiveViewStore } from '@/stores/archiveView'
+import { useModalStore } from '@/stores/modal'
 import { makeMockAccount } from '@/services/accountMock'
 
 const bar = () => mount(TopBar, { attachTo: document.body })
@@ -23,6 +24,42 @@ beforeEach(() => {
   document.body.innerHTML = ''
   setActivePinia(createPinia())
   setAccountApi(makeMockAccount({ delayMs: 0 }))
+})
+
+describe('TopBar — 기업 제휴 안내', () => {
+  it('비로그인에게도 보인다 — 회사 사람은 로그인하지 않고 둘러본다', async () => {
+    const w = bar()
+    await flushPromises()
+    expect(w.find('[data-test=top-contact]').exists()).toBe(true)
+  })
+
+  it('로그인해도 그대로 있다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    expect(w.find('[data-test=top-contact]').exists()).toBe(true)
+  })
+
+  it('누르면 제휴 제안이 열린다', async () => {
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-contact]').trigger('click')
+    expect(useModalStore().open).toBe('contact')
+    expect(w.findComponent({ name: 'ContactModal' }).props('open')).toBe(true)
+  })
+
+  it('면접 중에는 바가 숨으므로 같이 사라진다', async () => {
+    const w = bar()
+    useInterviewStore().phase = 'interview'
+    await flushPromises()
+    expect(w.find('[data-test=top-contact]').exists()).toBe(false)
+  })
+
+  it('이름에 그림문자를 쓰지 않는다', async () => {
+    const w = bar()
+    await flushPromises()
+    expect(w.get('[data-test=top-contact]').text()).not.toMatch(EMOJI)
+  })
 })
 
 describe('TopBar — 등급별로 보이는 것', () => {
@@ -67,7 +104,16 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const keys = [...w.element.querySelectorAll('.side [data-test^=top-]')].map(
       (e) => (e as HTMLElement).dataset.test,
     )
-    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-divider', 'top-archive', 'top-me'])
+    // 제휴 안내는 계정 묶음 앞에 선다 — 서비스 소개이지 내 상태가 아니다 (2026-11-11)
+    expect(keys).toEqual([
+      'top-contact',
+      'top-contact-divider',
+      'top-premium',
+      'top-tickets',
+      'top-divider',
+      'top-archive',
+      'top-me',
+    ])
   })
 
   it('상태(프리미엄·티켓)와 이동(보관함·내정보)을 세로줄로 가른다', async () => {
