@@ -187,11 +187,17 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
       </div>
     </div>
 
-    <div class="bubble mono" :class="{ streaming }" aria-live="polite">
-      <!-- 스크롤은 **안쪽**에 둔다 — .bubble에 걸면 말꼬리(::after)가 잘린다 -->
-      <div class="says">
-        <span>{{ bubble || '…' }}</span
-        ><span v-if="streaming" class="blink">▌</span>
+    <!-- 말풍선의 자리. 머리말과 면접관 사이에 남는 세로 공간을 **전부** 가진다 —
+         말풍선을 흐름에 바로 놓으면 질문이 한 줄 늘 때마다 면접관이 그만큼 내려갔다.
+         이제 자란 만큼 이 자리 안의 빈 곳이 줄 뿐이고, 자리를 다 쓰면 글이 안에서
+         스크롤한다. 면접관은 어떤 질문에도 움직이지 않는다 (2026-11-08) -->
+    <div class="bubble-slot">
+      <div class="bubble mono" :class="{ streaming }" aria-live="polite">
+        <!-- 스크롤은 **안쪽**에 둔다 — .bubble에 걸면 말꼬리(::after)가 잘린다 -->
+        <div class="says">
+          <span>{{ bubble || '…' }}</span
+          ><span v-if="streaming" class="blink">▌</span>
+        </div>
       </div>
     </div>
     <p v-if="warning" class="mono warning" data-test="tts-warning">{{ warning }}</p>
@@ -244,7 +250,10 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
     radial-gradient(130% 80% at 50% 22%, var(--room-lit) 0%, var(--bg) 62%),
     repeating-linear-gradient(transparent 0 2px, var(--scan) 2px 4px);
 }
-/* 바닥 — 책상 아래가 바닥으로 읽히게 */
+/* 바닥 — 책상 아래가 바닥으로 읽히게.
+   **`.stage::before`는 이 하나뿐이어야 한다.** 무대가 창이던 시절(b4702c6) 제목 띠로 쓰던
+   24px짜리 `::before`가 같은 선택자로 뒤에 한 번 더 있어, 이 바닥을 통째로 덮고 맨 위에
+   의미 없는 띠만 남겼다. 창을 걷어낸(#86) 뒤로는 쓸모가 없어 지웠다 (2026-11-08) */
 .stage::before {
   content: '';
   position: absolute;
@@ -255,13 +264,9 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   background: linear-gradient(180deg, var(--floor-top) 0%, var(--floor-bottom) 100%);
   border-top: 2px solid var(--floor-line);
   pointer-events: none;
-}
-.stage::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 24px;
-  background: var(--bg);
+  /* 내용 **뒤**에 깐다. 절대 배치는 정적 요소보다 나중에 그려지므로, 이게 없으면
+     바닥이 책상과 지원자 정수리를 덮는다 (2026-11-08) */
+  z-index: -1;
 }
 .topbar {
   position: absolute;
@@ -313,14 +318,30 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   font-size: var(--fs-meta);
   color: var(--danger);
 }
-.bubble {
+/* 말풍선의 자리 — 머리말 아래부터 면접관 바로 위까지. 남는 공간을 전부 가지므로
+   면접관·지원자는 늘 아래쪽 제자리에 선다. 말풍선은 이 안에서만 자란다 */
+.bubble-slot {
   /* 머리말과 안내 띠 아래에서 시작한다 — 띠가 떴다 사라져도 말풍선이 움직이지 않는다 */
   margin-top: 108px;
   /* 무대가 좁아도 좌우 숨통을 남긴다 */
-  max-width: min(720px, calc(100% - var(--sp-10)));
+  width: min(720px, calc(100% - var(--sp-10)));
+  flex: 1 1 auto;
   min-height: 72px;
+  display: flex;
+  /* 말풍선은 자리의 **아래**에 붙는다 — 말꼬리와 면접관 머리 사이 거리가 질문 길이와
+     무관하게 늘 같다. 자람은 위쪽(머리말 아래 빈 곳)으로 간다 */
+  align-items: flex-end;
+}
+.bubble {
+  width: 100%;
+  min-height: 72px;
+  /* 제 자리를 넘지 않는다 — 넘으면 다시 면접관을 민다 */
+  max-height: 100%;
   /* 질문은 눌리지 않는다 — flex 부모가 줄이면 글자가 상자 밖으로 샌다 */
   flex-shrink: 0;
+  /* 넘치는 글은 says가 줄며 안에서 스크롤한다 */
+  display: flex;
+  flex-direction: column;
   padding: var(--sp-4) var(--sp-5);
   background: var(--bg);
   color: var(--text);
@@ -330,9 +351,12 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
   white-space: pre-wrap;
   position: relative;
 }
-/* 아주 긴 질문은 상자 안에서 스크롤한다. 전문은 아래 대화창에도 남는다 */
+/* 아주 긴 질문은 상자 안에서 스크롤한다. 전문은 아래 대화창에도 남는다.
+   상한은 숫자가 아니라 **자리**가 정한다 — 26vh 같은 고정값은 자리보다 커질 수 있고,
+   그러면 말풍선이 자리를 넘어 면접관을 민다 (2026-11-08) */
 .says {
-  max-height: clamp(72px, 26vh, 220px);
+  max-height: 100%;
+  min-height: 0;
   overflow-y: auto;
 }
 .bubble::after {
@@ -347,7 +371,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
 }
 /* 좁은 화면 — 가운데에 고지를 둘 자리가 없어 시계와 맞붙어 잘렸다. 빼지 않고 아랫줄
    전체를 준다(기계 생성 음성 고지는 상시 표시가 사용 조건이다, #34). 머리말이 한 줄
-   늘어난 만큼 말풍선도 내려온다 — 위의 `.bubble`보다 **뒤에** 와야 덮어쓴다 */
+   늘어난 만큼 말풍선 자리도 내려온다 — 위의 `.bubble-slot`보다 **뒤에** 와야 덮어쓴다 */
 @media (max-width: 720px) {
   .topbar {
     flex-wrap: wrap;
@@ -358,7 +382,7 @@ const sheet = (name: AnimName) => sheetFor(name, props.centerSprites, props.side
     order: 3;
     flex-basis: 100%;
   }
-  .bubble {
+  .bubble-slot {
     margin-top: 140px;
   }
 }

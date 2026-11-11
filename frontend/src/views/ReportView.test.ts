@@ -17,6 +17,51 @@ const items = [
   { question: 'Q2', answerSummary: 'A2', feedback: 'F2' },
 ]
 
+describe('ReportView — 두 기둥 (2026-11-07)', () => {
+  const done = () =>
+    useInterviewStore().$patch({
+      phase: 'report',
+      reportStatus: 'done',
+      report: items,
+      profile: { field: 'it', job: '백엔드' },
+    })
+
+  it('액션 묶음은 화면에 한 번만 나온다 — 길어서 생긴 땜질을 걷는다', () => {
+    done()
+    const w = mount(ReportView)
+    // data-test가 없는 하단 복제본까지 세려면 글자로 센다
+    const count = (label: string) =>
+      w.findAll('button').filter((b) => b.text().includes(label)).length
+    expect(count('PDF로 저장')).toBe(1)
+    expect(count('다시 면접 보기')).toBe(1)
+    expect(count('텍스트 복사')).toBe(1)
+  })
+
+  it('"시간"이라는 창이 없다 — 문항별 시간은 목차 줄로 갔다', () => {
+    done()
+    const w = mount(ReportView)
+    expect(w.find('[data-test="timing"]').exists()).toBe(false)
+  })
+
+  it('레일에 목차와 액션이 모두 있다', () => {
+    done()
+    const rail = mount(ReportView).get('[data-test="report-rail"]')
+    expect(rail.findAll('[data-test="toc-item"]')).toHaveLength(2)
+    expect(rail.find('[data-test="print"]').exists()).toBe(true)
+  })
+
+  it('카드에 목차가 가리키는 id를 단다 — 앵커로 이동한다', () => {
+    done()
+    const w = mount(ReportView)
+    const href = w.get('[data-test="toc-item"]').attributes('href')!
+    expect(w.find(href).exists()).toBe(true)
+  })
+
+  it('부드러운 스크롤을 쓰지 않는다 — 16문항 거리에서 멀미가 난다', () => {
+    expect(ReportViewSource).not.toMatch(/scroll-behavior:\s*smooth/)
+  })
+})
+
 describe('ReportView', () => {
   it('생성 중 문구', () => {
     useInterviewStore().$patch({
@@ -102,7 +147,7 @@ describe('ReportView', () => {
     await Promise.resolve()
     expect(w.find('[data-test="copy"]').text()).toBe('복사됨')
   })
-  it('총 소요 시간 태그와 질문별 시간 표, 복사 텍스트에도 포함', async () => {
+  it('총 소요 시간은 머리글에, 문항별 시간은 목차 줄에, 복사 텍스트에도 포함', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(async () => {})
     Object.assign(navigator, { clipboard: { writeText } })
     const t0 = 1_000_000
@@ -121,16 +166,16 @@ describe('ReportView', () => {
       ],
     })
     const w = mount(ReportView)
-    expect(w.text()).toContain('총 12분 34초')
-    const rows = w.findAll('[data-test="turn-row"]')
+    expect(w.get('[data-test="counts"]').text()).toContain('총 12분 34초')
+    const rows = w.findAll('[data-test="toc-item"]')
     expect(rows).toHaveLength(2)
-    expect(rows[0].text()).toContain('1분 30초')
-    expect(rows[0].text()).toContain('자기소개 해주세요')
+    expect(rows[0].get('.t').text()).toBe('1분 30초')
+    expect(rows[1].get('.t').text()).toBe('1분 5초')
     expect(w.text()).not.toMatch(/질문\s*\d\s*\/|남은/)
     await w.find('[data-test="copy"]').trigger('click')
     expect(writeText.mock.calls[0][0]).toContain('소요 시간: 총 12분 34초')
   })
-  it('시각이 없으면(옛 세션) 시간 표를 그리지 않는다', () => {
+  it('시각이 없으면(옛 세션) 목차에 시간을 적지 않는다', () => {
     useInterviewStore().$patch({
       phase: 'report',
       reportStatus: 'done',
@@ -139,9 +184,9 @@ describe('ReportView', () => {
       messages: [{ role: 'model', text: 'q' }],
     })
     const w = mount(ReportView)
-    expect(w.find('[data-test="timing"]').exists()).toBe(false)
+    expect(w.findAll('[data-test="toc-item"] .t')).toHaveLength(0)
   })
-  it('자연 종료면 마지막 인사 턴은 시간 표에 0초 행으로 남지 않는다', () => {
+  it('자연 종료면 마지막 인사 턴은 목차에 0초 줄로 남지 않는다', () => {
     const t0 = 1_000_000
     useInterviewStore().$patch({
       phase: 'report',
@@ -158,10 +203,10 @@ describe('ReportView', () => {
       ],
     })
     const w = mount(ReportView)
-    const rows = w.findAll('[data-test="turn-row"]')
-    expect(rows).toHaveLength(1)
+    const times = w.findAll('[data-test="toc-item"] .t')
+    expect(times).toHaveLength(1)
     // 부분 문자열 '0초'는 "1분 30초"처럼 정상 시간에도 나타나므로 표시된 시간 값 자체로 비교한다.
-    expect(rows[0].find('.dur').text()).not.toBe('0초')
+    expect(times[0].text()).not.toBe('0초')
   })
   it('면접 종료 버튼으로 중간에 끝냈으면(ended=false) 답 없는 마지막 질문은 endedAt까지 센다', () => {
     const t0 = 1_000_000
@@ -176,11 +221,11 @@ describe('ReportView', () => {
       messages: [{ role: 'model', text: '자기소개 해주세요', at: t0 + 5_000 }],
     })
     const w = mount(ReportView)
-    const rows = w.findAll('[data-test="turn-row"]')
-    expect(rows).toHaveLength(1)
-    expect(rows[0].text()).toContain('1분 0초')
+    const times = w.findAll('[data-test="toc-item"] .t')
+    expect(times).toHaveLength(1)
+    expect(times[0].text()).toBe('1분 0초')
   })
-  it('다시 면접 보기는 reset', async () => {
+  it('다시 면접 보기는 적어 둔 것을 남긴 채 reset — 같은 조건으로 한 번 더 보려는 것이다', async () => {
     const s = useInterviewStore()
     s.$patch({
       phase: 'report',
@@ -190,7 +235,7 @@ describe('ReportView', () => {
     })
     const reset = vi.spyOn(s, 'reset').mockResolvedValue()
     await mount(ReportView).find('[data-test="restart"]').trigger('click')
-    expect(reset).toHaveBeenCalled()
+    expect(reset).toHaveBeenCalledWith(true)
   })
 })
 
@@ -253,7 +298,7 @@ describe('ReportView — 60초 제한 표시', () => {
     expect(cards[1].text()).toContain('두 번째 답변')
     expect(w.text()).not.toContain('답변 요약')
   })
-  it('시간은 카드에 흩어놓지 않고 "시간" 창 한 곳에 모은다 — 초과 행은 붉게 + 초과분', () => {
+  it('시간은 목차 줄에 모은다 — 초과 줄은 붉게, 개수는 목차 머리에', () => {
     useInterviewStore().$patch({
       ...base,
       report: items, // 2장
@@ -268,31 +313,16 @@ describe('ReportView — 60초 제한 표시', () => {
     const w = mount(ReportView)
     expect(w.findAll('[data-test="answer-tag"]')).toHaveLength(0)
     expect(w.findAll('[data-test="card"]')[0].text()).not.toMatch(/답변 \d/)
-    expect(w.find('[data-test="timing"]').text()).toContain('제한 60초 · 초과 1문항')
-    const rows = w.findAll('[data-test="turn-row"]')
-    expect(rows[0].find('.dur').classes()).toContain('over')
-    expect(rows[0].text()).toContain('1분 30초')
-    expect(rows[0].find('[data-test="over-by"]').text()).toBe('30초 초과')
-    expect(rows[1].find('.dur').classes()).not.toContain('over')
-    expect(rows[1].find('[data-test="over-by"]').exists()).toBe(false)
+    expect(w.get('[data-test="toc-over"]').text()).toContain('1')
+    const rows = w.findAll('[data-test="toc-item"]')
+    expect(rows[0].get('.t').classes()).toContain('over')
+    expect(rows[0].get('.t').text()).toBe('1분 30초')
+    expect(rows[1].get('.t').classes()).not.toContain('over')
   })
-  it('시간 창의 danger 태그 글자색이 부모 scoped 스타일에 덮이지 않는다', () => {
-    useInterviewStore().$patch({
-      ...base,
-      report: items,
-      messages: [
-        { role: 'model', text: 'q1', at: t0 + 10_000 },
-        { role: 'user', text: 'a', at: t0 + 100_000 },
-        { role: 'model', text: '면접을 마치겠습니다.', at: t0 + 300_000 },
-      ],
-    })
-    const w = mount(ReportView)
-    const tag = w.find('[data-test="timing"] .tag.danger')
-    expect(tag.exists()).toBe(true)
-    // 부모가 .danger 클래스 셀렉터를 갖고 있으면 자식 루트에 새어 들어간다 — 스타일 블록에 없어야 한다
+  it('부모 scoped 스타일에 .danger를 두지 않는다 — 자식 루트의 색을 덮어쓴다', () => {
     expect(ReportViewSource).not.toMatch(/^\.danger\s*\{/m)
   })
-  it('꼬리질문이 섞여 턴 수 ≠ 카드 수여도 시간 창은 모든 턴을 센다', () => {
+  it('꼬리질문이 섞여 턴 수 ≠ 카드 수여도 목차는 모든 턴을 센다', () => {
     useInterviewStore().$patch({
       ...base,
       report: items, // 2장
@@ -308,7 +338,12 @@ describe('ReportView — 60초 제한 표시', () => {
     })
     const w = mount(ReportView)
     expect(w.findAll('[data-test="answer-tag"]')).toHaveLength(0)
-    expect(w.find('[data-test="timing"]').text()).toContain('제한 60초 · 초과 1문항')
+    // 카드는 2장이지만 턴은 3개 — 꼬리줄이 제 카드 아래로 들여써 끼어든다
+    const rows = w.findAll('[data-test="toc-item"]')
+    expect(rows).toHaveLength(3)
+    expect(w.findAll('[data-test="toc-item"].follow')).toHaveLength(1)
+    expect(rows[1].get('.t').text()).toBe('20초')
+    expect(w.get('[data-test="toc-over"]').text()).toContain('1')
   })
   it('복사 텍스트의 시간 줄 끝에 초과분이 붙는다', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>(async () => {})
@@ -410,5 +445,22 @@ describe('ReportView — 면접관 표기', () => {
     const t = mount(ReportView).text()
     expect(t).toContain('면접관: 올리비아')
     expect(t).not.toContain('면접관(여)')
+  })
+})
+
+describe('ReportView — 마지막 문항에 닿는다 (2026-11-08)', () => {
+  it('본문 끝에 꼬리 여백을 둔다 — 없으면 마지막 카드가 바닥에 걸려 "지금 보는 것"이 되지 못한다', () => {
+    expect(ReportViewSource).toMatch(/\.body::after \{[^}]*height:/)
+  })
+})
+
+describe('ReportView — 폭 (2026-11-08)', () => {
+  it('보관함 상세와 같은 폭을 쓴다 — 같은 레일을 쓰는 두 화면이 서로 다른 폭이면 "같은 화면"이 아니다', () => {
+    expect(ReportViewSource).toMatch(/max-width:\s*1280px/)
+  })
+
+  it('좌우 여백은 --page-x가 아니다 — 120px씩 떼면 내용이 1040px로 되돌아간다', () => {
+    const report = ReportViewSource.match(/\.report \{[^}]*\}/)![0]
+    expect(report).not.toMatch(/padding:[^;]*--page-x/)
   })
 })

@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { FIELD_LABELS, useInterviewStore } from '@/stores/interview'
-import { clip, reportHeader, reportToText } from '@/utils/reportParser'
-import { reportV2ToText } from '@/utils/reportV2'
-import { formatDuration, overBy, totalDuration, turnDurations } from '@/utils/timing'
-import { answersForReport } from '@/utils/reportAnswers'
+import { reportHeader, reportToText } from '@/utils/reportParser'
+import { itemsInOrder, reportV2ToText } from '@/utils/reportV2'
+import { formatDuration, totalDuration, turnDurations } from '@/utils/timing'
+import { answersForReport, matchQuestions } from '@/utils/reportAnswers'
+import { useReadingToc } from '@/composables/useReadingToc'
 import PixelWindow from '@/components/ui/PixelWindow.vue'
 import PixelButton from '@/components/ui/PixelButton.vue'
-import PixelTag from '@/components/ui/PixelTag.vue'
 import ReportCards from '@/components/report/ReportCards.vue'
 import ReportV2Cards from '@/components/report/ReportV2Cards.vue'
+import ReportRail, { type TocItem } from '@/components/report/ReportRail.vue'
 import { useAccountStore } from '@/stores/account'
 import { useModalStore } from '@/stores/modal'
 import { ARCHIVE_LIMIT } from '@/utils/archive'
@@ -29,10 +30,53 @@ const total = computed(() => totalDuration(s.startedAt, s.endedAt))
 // endAt을 주지 않아 표에서 제외한다. 진행 중 종료면 답 없는 마지막 질문이니 endedAt까지 센다.
 const turns = computed(() => turnDurations(s.messages, s.ended ? null : s.endedAt))
 /* 60초 제한: 시간은 카드에 흩어놓지 않고 "시간" 창 한 곳에만 모은다 (초과 문항 수 + 행마다 초과분) */
-const overCount = computed(() => turns.value.filter((t) => overBy(t.ms) > 0).length)
 const timing = computed(() =>
   total.value > 0 || turns.value.length ? { total: total.value, turns: turns.value } : undefined,
 )
+
+/** 목차 한 줄씩. 벤(v2)은 제 id를, 무료는 Q번호를 쓴다.
+ *  무료 리포트는 꼬리질문을 카드 하나에 합치므로 턴 수 ≠ 카드 수다 —
+ *  카드 질문을 턴에 짝지어(answersForReport와 같은 짝) 그 사이 턴을 꼬리줄로 편다.
+ *  꼬리줄은 제 카드와 같은 id를 가리킨다(앵커가 카드 하나뿐이라). */
+const tocItems = computed<TocItem[]>(() => {
+  if (s.reportV2) {
+    return itemsInOrder(s.reportV2.items).map((it, i) => ({
+      id: `item-${it.id}`,
+      question: it.question,
+      ms: turns.value[i]?.ms ?? null,
+      follow: it.kind === 'follow',
+    }))
+  }
+  if (!s.report) return []
+  const starts = matchQuestions(
+    s.report,
+    turns.value.map((t) => t.question),
+  )
+  const rows: TocItem[] = []
+  s.report.forEach((it, i) => {
+    const from = starts[i]
+    rows.push({
+      id: `q${i + 1}`,
+      question: it.question,
+      ms: turns.value[from]?.ms ?? null,
+      follow: false,
+    })
+    if (from < 0) return
+    const next = starts.slice(i + 1).find((v) => v >= 0) ?? turns.value.length
+    for (let k = from + 1; k < next; k++)
+      rows.push({
+        id: `q${i + 1}`,
+        question: turns.value[k].question,
+        ms: turns.value[k].ms,
+        follow: true,
+      })
+  })
+  return rows
+})
+
+/* 지금 보는 문항과 읽은 데까지. 보관함 상세와 같은 것을 쓴다 */
+const body = ref<HTMLElement | null>(null)
+const { current } = useReadingToc(body, tocItems)
 
 const copied = ref(false)
 async function copy() {
@@ -59,128 +103,131 @@ function printReport() {
 
 <template>
   <main class="report stars rise">
-    <header class="head">
-      <h1 class="display">면접 리포트</h1>
-      <div class="meta">
-        <PixelTag tone="muted"
-          >{{ fieldLabel }} · {{ s.profile.job }} · 면접관:
-          {{ s.sessionInterviewer.displayName }}</PixelTag
-        >
-        <PixelTag v-if="s.reportStatus === 'done' && s.report" tone="muted"
-          >질문 {{ nQ }} · 꼬리질문 {{ nFollow }}</PixelTag
-        >
-        <PixelTag v-if="total > 0" tone="muted" data-test="total"
-          >총 {{ formatDuration(total) }}</PixelTag
-        >
-      </div>
-      <p v-if="!s.archiveSaved" class="mono note">
-        이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.
-      </p>
-      <div class="btns">
-        <PixelButton
-          variant="secondary"
-          data-test="copy"
-          :disabled="s.reportStatus !== 'done'"
-          @click="copy"
-          >{{ copied ? '복사됨' : '텍스트 복사' }}</PixelButton
-        >
-        <PixelButton
-          variant="secondary"
-          data-test="print"
-          :disabled="s.reportStatus !== 'done'"
-          @click="printReport"
-          >PDF로 저장</PixelButton
-        >
-        <PixelButton data-test="restart" @click="s.reset()">다시 면접 보기</PixelButton>
-      </div>
-    </header>
-
-    <!-- 보관 안내. 리포트가 다 나온 뒤에만 말한다 — 쓰는 중에 꺼내면 아직 거짓이다 -->
-    <div v-if="s.reportStatus === 'done'" class="shelf mono">
-      <p v-if="!acc.signedIn" data-test="save-cta">
-        <span>로그인하면 이 리포트가 보관함에 남습니다.</span>
-        <PixelButton variant="secondary" @click="modal.show('login')">로그인</PixelButton>
-      </p>
-      <p v-else-if="s.archiveSaved" class="ok" data-test="saved">보관함에 남겼습니다.</p>
-      <p v-else data-test="save-failed">
-        보관함에 남기지 못했습니다 — 이 리포트는 이 화면에만 있습니다.
-      </p>
-      <p v-if="s.archiveEvicted.length" class="gone" data-test="evicted">
-        보관 한도({{ ARCHIVE_LIMIT }}개)를 넘어 가장 오래된 기록 {{ s.archiveEvicted.length }}개가
-        사라졌습니다.
-      </p>
-    </div>
-
-    <PixelWindow v-if="timing && turns.length" title="시간" data-test="timing" padding="sm">
-      <template #tag>
-        <PixelTag :tone="overCount ? 'danger' : 'muted'"
-          >제한 60초 · 초과 {{ overCount }}문항</PixelTag
-        >
-      </template>
-      <ol class="turns mono">
-        <li v-for="(t, i) in turns" :key="i" data-test="turn-row">
-          <span class="dur" :class="{ over: overBy(t.ms) > 0 }">{{ formatDuration(t.ms) }}</span>
-          <span class="q">{{ clip(t.question) }}</span>
-          <span v-if="overBy(t.ms) > 0" class="over-by" data-test="over-by"
-            >{{ formatDuration(overBy(t.ms)) }} 초과</span
+    <div class="cols">
+      <ReportRail :items="tocItems" :current="current">
+        <template #head>
+          <h1 class="display ttl">면접 리포트</h1>
+          <p class="mono sub">
+            {{ fieldLabel }} · {{ s.profile.job }} · 면접관: {{ s.sessionInterviewer.displayName }}
+          </p>
+          <p class="mono sub" data-test="counts">
+            질문 {{ nQ }} · 꼬리질문 {{ nFollow
+            }}<template v-if="total > 0"> · 총 {{ formatDuration(total) }}</template>
+          </p>
+          <p v-if="!s.archiveSaved" class="mono note">
+            이 리포트는 이 화면에만 있습니다. 새로고침하면 사라집니다.
+          </p>
+        </template>
+        <template #actions>
+          <PixelButton
+            variant="secondary"
+            data-test="copy"
+            :disabled="s.reportStatus !== 'done'"
+            @click="copy"
+            >{{ copied ? '복사됨' : '텍스트 복사' }}</PixelButton
           >
-        </li>
-      </ol>
-      <p class="mono note">
-        면접관이 질문을 마친 뒤 답변을 보내기까지 걸린 시간입니다 (꼬리질문 포함).
-      </p>
-    </PixelWindow>
+          <PixelButton
+            variant="secondary"
+            data-test="print"
+            :disabled="s.reportStatus !== 'done'"
+            @click="printReport"
+            >PDF로 저장</PixelButton
+          >
+          <!-- 적어 둔 것(분야·직무·회사·이력서…)을 남긴 채 준비 화면으로 —
+               같은 조건으로 한 번 더 보려는 것이라 다시 치게 하면 안 된다 (2026-11-08) -->
+          <PixelButton data-test="restart" @click="s.reset(true)">다시 면접 보기</PixelButton>
+        </template>
+      </ReportRail>
 
-    <PixelWindow v-if="s.reportStatus === 'writing'" title="총평">
-      <p class="mono">리포트를 쓰는 중…<span class="blink">▌</span></p>
-    </PixelWindow>
+      <div ref="body" class="body">
+        <!-- 보관 안내. 리포트가 다 나온 뒤에만 말한다 — 쓰는 중에 꺼내면 아직 거짓이다 -->
+        <div v-if="s.reportStatus === 'done'" class="shelf mono">
+          <p v-if="!acc.signedIn" data-test="save-cta">
+            <span>로그인하면 이 리포트가 보관함에 남습니다.</span>
+            <PixelButton variant="secondary" @click="modal.show('login')">로그인</PixelButton>
+          </p>
+          <p v-else-if="s.archiveSaved" class="ok" data-test="saved">보관함에 남겼습니다.</p>
+          <p v-else data-test="save-failed">
+            보관함에 남기지 못했습니다 — 이 리포트는 이 화면에만 있습니다.
+          </p>
+          <p v-if="s.archiveEvicted.length" class="gone" data-test="evicted">
+            보관 한도({{ ARCHIVE_LIMIT }}개)를 넘어 가장 오래된 기록
+            {{ s.archiveEvicted.length }}개가 사라졌습니다.
+          </p>
+        </div>
 
-    <PixelWindow v-else-if="s.reportStatus === 'error'" title="총평">
-      <p class="mono err">리포트 생성에 실패했습니다. {{ s.genError }}</p>
-      <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
-    </PixelWindow>
+        <PixelWindow v-if="s.reportStatus === 'writing'" title="총평">
+          <p class="mono">리포트를 쓰는 중…<span class="blink">▌</span></p>
+        </PixelWindow>
 
-    <ReportV2Cards v-else-if="s.reportV2" :report="s.reportV2" />
-    <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
+        <PixelWindow v-else-if="s.reportStatus === 'error'" title="총평">
+          <p class="mono err">리포트 생성에 실패했습니다. {{ s.genError }}</p>
+          <PixelButton variant="secondary" @click="s.finish()">다시 시도</PixelButton>
+        </PixelWindow>
 
-    <PixelWindow v-else title="리포트 원문" data-test="raw">
-      <pre class="mono raw">{{ s.reportRaw }}</pre>
-    </PixelWindow>
+        <ReportV2Cards v-else-if="s.reportV2" :report="s.reportV2" />
+        <ReportCards v-else-if="s.report" :report="s.report" :answers="answers" />
 
-    <!-- 긴 리포트를 다 읽은 뒤를 위한 하단 버튼. 쓰는 중엔 상단과 중복이라 숨긴다 -->
-    <div v-if="s.reportStatus === 'done'" class="btns bottom">
-      <PixelButton variant="secondary" :disabled="s.reportStatus !== 'done'" @click="copy">{{
-        copied ? '복사됨' : '텍스트 복사'
-      }}</PixelButton>
-      <PixelButton variant="secondary" :disabled="s.reportStatus !== 'done'" @click="printReport"
-        >PDF로 저장</PixelButton
-      >
-      <PixelButton @click="s.reset()">다시 면접 보기</PixelButton>
+        <PixelWindow v-else title="리포트 원문" data-test="raw">
+          <pre class="mono raw">{{ s.reportRaw }}</pre>
+        </PixelWindow>
+      </div>
     </div>
   </main>
 </template>
 
 <style scoped>
+/* 준비 화면과 같은 어법 — 왼쪽 기둥이 붙어 따라오고 오른쪽만 흐른다 (2026-11-07) */
+.cols {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: flex-start;
+}
+.body {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-card);
+}
+/* 마지막 문항도 화면 위로 올라올 수 있게 꼬리 여백을 둔다 (2026-11-08).
+   없으면 문서가 바닥에 걸려 마지막 카드가 "지금 보는 것" 구간(위 20%~아래 40%)에
+   영영 못 들어온다 — 답변이 짧을수록 심해서, 다음을 눌러도 마지막 문항에 닿지 못했다.
+   gap 하나만큼 끌어올려 카드 사이 간격이 두 번 들어가지 않게 한다 */
+.body::after {
+  content: '';
+  display: block;
+  flex: none;
+  height: 50svh;
+  margin-top: calc(var(--gap-card) * -1);
+}
+
+.ttl {
+  margin: 0;
+  font-size: var(--fs-h2);
+  color: var(--text);
+}
+.sub {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+@media (max-width: 1024px) {
+  .cols {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+/* 보관함 상세와 **같은 폭**이다(2026-11-08). 같은 레일을 쓰는 두 화면이 서로 다른 폭이면
+   "같은 화면"이 아니게 된다. 좌우는 --page-x(120px)가 아니라 16px이다 —
+   120px씩 떼면 1280px을 줘도 내용은 1040px로 되돌아간다 */
 .report {
-  max-width: var(--content-w);
+  max-width: 1280px;
   margin: 0 auto;
-  padding: var(--sp-8) var(--page-x) calc(var(--sp-14) + var(--hint-space, 0px));
+  padding: var(--sp-8) var(--sp-4) calc(var(--sp-14) + var(--hint-space, 0px));
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
-}
-.head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.meta,
-.btns {
-  display: flex;
-  gap: var(--sp-3);
-}
-.btns.bottom {
-  justify-content: center;
 }
 .shelf {
   display: flex;
@@ -214,53 +261,23 @@ function printReport() {
   white-space: pre-wrap;
   margin: 0;
 }
-.turns {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  font-size: var(--fs-label);
-}
-.turns li {
-  display: grid;
-  grid-template-columns: 96px 1fr auto;
-  gap: var(--sp-4);
-}
-.dur {
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.dur.over {
-  color: var(--danger);
-}
-.over-by {
-  color: var(--danger);
-  font-size: var(--fs-meta);
-  white-space: nowrap;
-}
-.q {
-  color: var(--text-2);
-}
-
 @media print {
   .report {
     max-width: none;
     padding: 0 var(--sp-4);
     gap: var(--sp-4);
   }
-  .btns,
+  /* 종이에는 두 기둥이 없다 — 머리글·총평 다음에 문항이 한 줄기로 이어진다 */
+  .cols {
+    display: block;
+  }
+  /* block이 되면 기둥 사이 gap이 사라진다 — 머리글과 첫 문항이 붙지 않게 */
+  .body {
+    margin-top: var(--sp-4);
+  }
   .note,
   .shelf {
     display: none;
-  }
-  .head h1 {
-    font-size: var(--fs-h2);
-  }
-  /* 카드가 페이지 중간에서 잘리지 않게 */
-  .report > * {
-    break-inside: avoid;
   }
 }
 </style>

@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 
+from app.llm import prompts
 from tests.helpers import (
     ADMISSION_START,
     COMPANY_START,
@@ -40,6 +41,7 @@ def test_start_company_spends_a_ticket(client, settings):
     assert json.loads(row["inputs_json"]) == {
         "resumeText": COMPANY_START["resumeText"],
         "company": COMPANY_START["company"],
+        "benSettings": prompts.BEN_DEFAULTS,  # 성향 설정을 안 보내면 기본값(2026-11-07)
     }
 
 

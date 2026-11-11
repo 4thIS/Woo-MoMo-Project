@@ -16,6 +16,7 @@ import { useInterviewerStore } from './interviewer'
 import { stripThoughts, ThoughtFilter } from '@/utils/thoughts'
 import { approxTokens } from '@/utils/tokens'
 import { normalizePostingUrl } from '@/utils/postingUrl'
+import { BEN_AXES, DEFAULT_BEN, type BenAxisValues } from '@/content/benAxes'
 import { hasEndPhrase } from '@/utils/endDetector'
 import { isGoodAnswer } from '@/utils/goodAnswer'
 import { canStartWith, trackOf } from '@/utils/track'
@@ -116,9 +117,20 @@ async function measureClip(
   return { answer, ...stats, syllables: countSyllables(text), fillerLevel: fillerLevelOf(text) }
 }
 
+/** 기본과 다른 칸만 API 이름으로 담는다. 전부 기본이면 `undefined` —
+ *  **보내지 않아야** 지금 벤과 프롬프트가 글자까지 같다(`docs/API.md`, 2026-11-07).
+ *  `undefined`를 돌려주면 `JSON.stringify`가 키를 통째로 빼 준다 */
+export function benSettingsPayload(v: BenAxisValues): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const a of BEN_AXES) if (v[a.key] !== a.base) out[a.key] = a.api[v[a.key]]
+  return Object.keys(out).length ? out : undefined
+}
+
 export const useInterviewStore = defineStore('interview', {
   state: () => ({
     phase: 'landing' as Phase,
+    /** 벤 성향 눈금(2026-11-07). 손대지 않으면 요청에 싣지 않는다 */
+    benSettings: { ...DEFAULT_BEN } as BenAxisValues,
     /** 트랙이 보는 칸만 쓴다. 유니온으로 가르면 화면 분기만 늘어난다 —
      *  어느 칸을 볼지는 canStartWith가 트랙별로 안다 */
     profile: {
@@ -201,7 +213,11 @@ export const useInterviewStore = defineStore('interview', {
       const m = useModelStore()
       // 실패는 대기와 다르게 말한다(#41): 사용자가 위 진행 창의 '다시 시도'를 못 보고 "다 채웠는데 안 열린다"고 느끼기 쉽다
       if (m.status === 'error') return '면접관을 준비하지 못했습니다 — 위 진행 창에서 다시 시도'
-      if (m.status !== 'ready') return '면접관이 자리에 앉으면 열립니다'
+      if (m.status !== 'ready') return '면접관이 준비되면 열립니다'
+      /* 벤은 둘 다 보므로 트랙을 사용자가 고른다. 안 골랐으면 그것부터 말한다 —
+         "위 항목을 채우면"은 어느 항목인지 알려 주지 않고, 트랙 고르기는
+         아래 입력 칸이 아니라 벤 상자에 있다 (2026-11-08) */
+      if (this.track === null) return '어느 면접으로 볼지 고르면 열립니다'
       // 목소리는 더 이상 시작을 막지 않는다 — 자막으로 가다가 준비되면 합류한다(`docs/download-time.md`)
       return '위 항목을 채우면 열립니다'
     },
@@ -659,8 +675,11 @@ export const useInterviewStore = defineStore('interview', {
     /** 서버에 넘길 면접 조건. 트랙이 보는 묶음 하나만 담는다 */
     benRequest(): StartRequest {
       const p = this.profile
+      const settings = benSettingsPayload(this.benSettings)
+      const ben = settings ? { benSettings: settings } : {}
       if (this.track === 'admission')
         return {
+          ...ben,
           ...(this.voiceConsent ? { voiceAnalysisConsent: true as const } : {}),
           track: 'admission',
           resumeText: this.resumeText,
@@ -677,6 +696,7 @@ export const useInterviewStore = defineStore('interview', {
       const posting = normalizePostingUrl(p.postingUrl)
       const postingUrl = posting.ok ? posting.url : null
       return {
+        ...ben,
         ...consent,
         track: 'company',
         resumeText: this.resumeText,
@@ -723,7 +743,16 @@ export const useInterviewStore = defineStore('interview', {
       }
     },
 
-    async reset() {
+    /** 면접을 비우고 준비 화면으로.
+     *
+     * `keepInputs`면 **적어 둔 것은 남긴다** — 리포트의 "다시 면접 보기"는 같은 조건으로
+     * 한 번 더 보려는 것이라, 분야·직무·회사·공고·대입 네 칸·이력서를 다시 치게 하면 안 된다.
+     * 남기는 것은 준비 화면에서 사람이 적은 것뿐이고, 지난 면접(대화·리포트·보관 결과·
+     * 그 면접의 면접관)은 어느 쪽이든 비운다 (2026-11-08).
+     *
+     * 고른 면접관은 `interviewer` 스토어가 들고 있어 여기서 건드리지 않는다 —
+     * `interviewerId`는 "그 면접의 면접관"이라 비우는 게 맞다 */
+    async reset(keepInputs = false) {
       await this.abort() // 재생·생성을 멈추고 generate의 꼬리까지 끝낸 뒤 비운다 — 안 그러면 꼬리가 stage를 waiting으로 되돌린다
       if (session) await session.dispose().catch(() => undefined)
       session = null
@@ -745,22 +774,25 @@ export const useInterviewStore = defineStore('interview', {
       this.reportV2 = null
       this.reportRaw = ''
       this.reportStatus = 'idle'
-      this.profile = {
-        field: null,
-        job: '',
-        companyName: '',
-        postingUrl: '',
-        name: '',
-        age: null,
-        university: '',
-        department: '',
+      if (!keepInputs) {
+        this.profile = {
+          field: null,
+          job: '',
+          companyName: '',
+          postingUrl: '',
+          name: '',
+          age: null,
+          university: '',
+          department: '',
+        }
+        this.chosenTrack = null
+        this.resumeText = ''
+        this.resumeName = null
+        // 분야에 딸린 것이라 분야를 남기면 같이 남긴다 — 비우면 받으러 한 번 더 나간다
+        this.fallbackQuestions = []
       }
       this.postingError = null
       this.briefing = null
-      this.chosenTrack = null
-      this.resumeText = ''
-      this.resumeName = null
-      this.fallbackQuestions = []
       this.startedAt = null
       this.endedAt = null
       this.interviewerId = null

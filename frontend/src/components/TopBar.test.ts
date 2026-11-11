@@ -1,12 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import TopBar from './TopBar.vue'
 import { useAccountStore, setAccountApi } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
+import { useArchiveViewStore } from '@/stores/archiveView'
 import { makeMockAccount } from '@/services/accountMock'
 
 const bar = () => mount(TopBar, { attachTo: document.body })
+
+/** 그림문자 한 자라도 있으면 기종마다 모양이 달라진다 — 픽셀 UI에서는 쓰지 않는다 */
+const EMOJI = /\p{Extended_Pictographic}/u
 
 /** onMounted의 load()는 0ms 타이머를 거친다 — flushPromises만으로는 안 끝난다 */
 const settle = async () => {
@@ -59,11 +63,75 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const w = bar()
     await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
     await flushPromises()
-    // 목업 가입 계정은 관리자라 top-admin도 나온다 — 순서는 나머지 셋만 본다
-    const keys = [...w.element.querySelectorAll('[data-test^=top-]')]
-      .map((e) => (e as HTMLElement).dataset.test)
-      .filter((k) => k !== 'top-admin')
-    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-archive', 'top-me'])
+    // 오른쪽 묶음의 순서를 본다 — 왼쪽 이름(top-brand)은 이제 늘 있어 섞이면 안 된다
+    const keys = [...w.element.querySelectorAll('.side [data-test^=top-]')].map(
+      (e) => (e as HTMLElement).dataset.test,
+    )
+    expect(keys).toEqual(['top-premium', 'top-tickets', 'top-divider', 'top-archive', 'top-me'])
+  })
+
+  it('상태(프리미엄·티켓)와 이동(보관함·내정보)을 세로줄로 가른다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    expect(w.find('[data-test=top-divider]').exists()).toBe(true)
+  })
+
+  it('좁은 화면에서 글자를 떼도 이름이 남게 그림 버튼에 라벨을 단다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    for (const [key, name] of [
+      ['top-archive', '보관함'],
+      ['top-me', '내정보'],
+    ]) {
+      const b = w.get(`[data-test=${key}]`)
+      expect(b.attributes('aria-label')).toBe(name)
+      expect(b.find('svg').exists()).toBe(true)
+      expect(b.find('.label').text()).toBe(name)
+    }
+  })
+
+  it('왼쪽 묶음은 맨 위에서도 보인다 — 바 배경만 투명해지고 이름은 남는다 (2026-11-08)', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    expect(w.find('[data-test=top-brand]').exists()).toBe(true)
+    expect(w.find('[data-test=topbar]').classes()).not.toContain('docked')
+  })
+
+  it('센티넬이 화면에서 벗어나면 판을 깐다 — scrollTop을 읽지 않는다', async () => {
+    let fire: (e: Pick<IntersectionObserverEntry, 'isIntersecting'>[]) => void = () => {}
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(fn: typeof fire) {
+          fire = fn
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    fire([{ isIntersecting: false }])
+    await flushPromises()
+    expect(w.find('[data-test=topbar]').classes()).toContain('docked')
+    expect(w.find('[data-test=top-brand]').exists()).toBe(true)
+    fire([{ isIntersecting: true }])
+    await flushPromises()
+    expect(w.find('[data-test=topbar]').classes()).not.toContain('docked')
+    vi.unstubAllGlobals()
+  })
+
+  it('티켓은 이모지가 아니라 픽셀 아이콘으로 그린다 — 기종마다 모양이 달라진다', async () => {
+    const w = bar()
+    await useAccountStore().signUp('a@b.com', 'pw123456', '이우진')
+    await flushPromises()
+    const t = w.get('[data-test=top-tickets]')
+    expect(t.text()).not.toMatch(EMOJI)
+    expect(t.find('svg').exists()).toBe(true)
   })
 
   it('뜰 때 저장된 세션을 되찾는다', async () => {
@@ -143,13 +211,11 @@ describe('TopBar — 관리자 진입', () => {
     })
   }
 
-  it('관리자는 /admin 링크가 보인다', async () => {
+  it('관리자 링크는 상단바에 두지 않는다 — 쓰는 사람이 둘뿐이라 내정보 안으로 옮겼다', async () => {
     asUser(true)
     const w = bar()
     await settle()
-    const a = w.get('[data-test=top-admin]')
-    expect(a.attributes('href')).toBe('/admin')
-    expect(a.element.tagName).toBe('A')
+    expect(w.find('[data-test=top-admin]').exists()).toBe(false)
   })
 
   it('일반 로그인 사용자에게는 없다', async () => {
@@ -235,5 +301,108 @@ describe('TopBar — 보유 티켓', () => {
     useAccountStore().session!.tickets = 2
     await flushPromises()
     expect(w.get('[data-test=top-tickets]').text()).toContain('2')
+  })
+})
+
+describe('TopBar — 이름을 누르면 처음으로 (2026-11-08)', () => {
+  it('누르면 랜딩으로 간다', async () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'prepare' })
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(s.phase).toBe('landing')
+  })
+
+  it('입력한 것을 버리지 않는다 — reset이 아니라 화면만 돌린다', async () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'prepare', profile: { ...s.profile, job: '백엔드 개발자' } })
+    const reset = vi.spyOn(s, 'reset')
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(reset).not.toHaveBeenCalled()
+    expect(s.profile.job).toBe('백엔드 개발자')
+  })
+
+  it('누를 수 있는 것이므로 버튼이다 — div에 클릭만 달면 키보드로 못 간다', async () => {
+    const w = bar()
+    await flushPromises()
+    expect(w.get('[data-test=top-brand]').element.tagName).toBe('BUTTON')
+  })
+
+  it('맨 위에서 시작한다 — 화면만 바꾸면 이전 스크롤 자리가 남는다', async () => {
+    const to = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    useInterviewStore().$patch({ phase: 'prepare' })
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(to).toHaveBeenCalledWith(0, 0)
+    to.mockRestore()
+  })
+
+  it('보관함 상세에서 눌러도 홈으로 간다 — 상세가 phase보다 앞서 그려져 덮고 있다', async () => {
+    const s = useInterviewStore()
+    const v = useArchiveViewStore()
+    v.$patch({ detail: { id: 'a1' } as never })
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(v.detail).toBe(null)
+    expect(s.phase).toBe('landing')
+  })
+
+  it('상세에서 누르면 상세가 민 히스토리 항목도 되감는다', async () => {
+    const v = useArchiveViewStore()
+    v.$patch({ detail: { id: 'a1' } as never })
+    history.pushState({ momoArchive: 'a1' }, '')
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(back).toHaveBeenCalled()
+    back.mockRestore()
+  })
+
+  it('이미 랜딩이면 눌러도 그대로다', async () => {
+    const s = useInterviewStore()
+    s.$patch({ phase: 'landing' })
+    const w = bar()
+    await flushPromises()
+    await w.get('[data-test=top-brand]').trigger('click')
+    expect(s.phase).toBe('landing')
+  })
+})
+
+describe('TopBar — 지금 단계 (2026-11-08)', () => {
+  it('보관함 상세에서는 보관함이라 적는다 — 면접 단계와 무관한 화면이다', async () => {
+    useArchiveViewStore().$patch({ detail: { id: 'a1' } as never })
+    const w = bar()
+    await flushPromises()
+    expect(w.get('[data-test=top-brand]').text()).toContain('보관함')
+  })
+})
+
+describe('TopBar — 자리지기 (2026-11-08)', () => {
+  it('바가 숨는 화면에서는 자리를 비운다 — 안 비우면 면접장 맨 위에 빈 띠가 64px 남는다', async () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = bar()
+    await flushPromises()
+    // scoped CSS는 jsdom에 적용되지 않으므로 클래스로 본다 (.sentinel.gone { height: 0 })
+    expect(w.get('.sentinel').classes()).toContain('gone')
+  })
+
+  it('바가 보이는 화면에서는 자리를 지킨다 — 고정된 바가 내용을 덮는다', async () => {
+    useInterviewStore().$patch({ phase: 'report' })
+    const w = bar()
+    await flushPromises()
+    expect(w.get('.sentinel').classes()).not.toContain('gone')
+  })
+
+  it('숨는 화면에서도 자리지기는 남는다 — 돌아올 때 판 깔림을 다시 재야 한다', async () => {
+    useInterviewStore().$patch({ phase: 'interview' })
+    const w = bar()
+    await flushPromises()
+    expect(w.find('.sentinel').exists()).toBe(true)
   })
 })

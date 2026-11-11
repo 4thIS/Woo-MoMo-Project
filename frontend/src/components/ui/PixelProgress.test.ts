@@ -36,7 +36,7 @@ describe('PixelProgress', () => {
   })
   it('준비 완료면 바가 ok', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 100, phase: 'ready' } })
-    expect(w.text()).toContain('면접관이 자리에 앉았습니다')
+    expect(w.text()).toContain('면접관이 준비되었습니다')
     expect(w.find('.fill').classes()).toContain('ok')
   })
   it('오류면 danger + 문구 + actions 슬롯', () => {
@@ -64,7 +64,7 @@ describe('PixelProgress', () => {
   it('init 단계: 전체 진행률 기준으로는 아직 도착 전이라 "숨 고르는 중" (#26)', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 88.2, phase: 'init' } })
     expect(w.text()).toContain('잠깐 숨 고르는 중')
-    expect(w.text()).not.toContain('자리에 앉는 중')
+    expect(w.text()).not.toContain('준비되었습니다')
   })
   it('소수 진행률은 표시할 때만 반올림한다', () => {
     const w = mount(PixelProgress, { props: { ...base, progress: 41.6, phase: 'download' } })

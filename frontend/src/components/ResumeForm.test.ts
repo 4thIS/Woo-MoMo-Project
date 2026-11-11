@@ -86,3 +86,53 @@ describe('ResumeForm — 한글 IME·포커스 (#41)', () => {
     w.unmount()
   })
 })
+
+describe('이전·다음은 한 쌍으로 아래에 둔다 (2026-11-08)', () => {
+  it('이전도 글자가 있는 버튼이다 — 구석의 아이콘 하나는 눈에 띄지 않는다', () => {
+    const w = mount(ResumeForm)
+    expect(w.get('[data-test=form-prev]').text()).toContain('이전')
+  })
+
+  it('이전과 다음이 같은 줄(.foot)에 나란히 있다 — 떨어져 있으면 되돌아가기 어렵다', () => {
+    const w = mount(ResumeForm)
+    const foot = w.get('.foot')
+    expect(foot.find('[data-test=form-prev]').exists()).toBe(true)
+    expect(foot.find('[data-test=form-next]').exists()).toBe(true)
+  })
+
+  it('첫 항목에서는 이전을 누를 수 없다', () => {
+    const w = mount(ResumeForm)
+    expect(w.get('[data-test=form-prev]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('이름·나이 칸은 받아 줄 글자만 받는다 (2026-11-08)', () => {
+  it('나이 칸은 숫자만 — 붙여넣기로 들어와도 걸러진다', async () => {
+    const w = mount(ResumeForm)
+    await w.get('[data-test=form-input]').setValue('홍길동')
+    await w.get('[data-test=form-next]').trigger('click')
+    const age = w.get('[data-test=form-input]')
+    await age.setValue('2a7!')
+    expect((age.element as HTMLInputElement).value).toBe('27')
+  })
+
+  it('이름 칸은 특수문자를 지운다', async () => {
+    const w = mount(ResumeForm)
+    const name = w.get('[data-test=form-input]')
+    await name.setValue('홍길동<script>')
+    expect((name.element as HTMLInputElement).value).toBe('홍길동script')
+  })
+
+  it('긴 글 칸은 그대로 받는다 — 지원동기에 특수문자를 막으면 글을 못 쓴다', async () => {
+    const w = mount(ResumeForm)
+    for (const v of ['홍길동', '27', '한국대학교', '', '']) {
+      await w.get('[data-test=form-input]').setValue(v)
+      await w.get('[data-test=form-next]').trigger('click')
+    }
+    const long = w.get('[data-test=form-input]')
+    await long.setValue('A/B 테스트(전환율 +12%)를 맡았습니다.')
+    expect((long.element as HTMLTextAreaElement).value).toBe(
+      'A/B 테스트(전환율 +12%)를 맡았습니다.',
+    )
+  })
+})

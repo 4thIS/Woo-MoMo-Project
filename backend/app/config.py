@@ -17,7 +17,8 @@ DEFAULT_BAZE_MIN_REMAINING = 50.0
 # 목소리 분석을 어디로 보낼지 (spec 2026-11-03). 한 번에 한 곳만 쓴다
 VOICE_PROVIDERS = ("gemini", "baze")
 DEFAULT_VOICE_PROVIDER = "gemini"
-DEFAULT_GEMINI_VOICE_MODEL = "gemini-3.8-flash"
+# 3.8-flash는 답변 하나에 40~60초+, 3.5-flash는 약 6초(2026-11-09 demomo 실측) — 리포트 대기 20초
+DEFAULT_GEMINI_VOICE_MODEL = "gemini-3.5-flash"
 DEFAULT_MAIL_API_URL = "https://send.ssenu.cloud/v1/send"
 # DATA_DIR = 사용자 데이터(DB·녹음). 정적 계약 데이터(MOMO_DATA_DIR)와 다르다.
 DEFAULT_STORAGE_DIR = Path(__file__).resolve().parents[1] / "var"
@@ -72,6 +73,8 @@ class Settings:
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
     cookie_secure: bool = True
     anthropic_api_key: str | None = field(default=None, repr=False)
+    naver_client_id: str | None = field(default=None, repr=False)
+    naver_client_secret: str | None = field(default=None, repr=False)
     admin_login: str | None = None
     admin_password: str | None = field(default=None, repr=False)
     ben_daily_limit: int = DEFAULT_BEN_DAILY_LIMIT
@@ -83,6 +86,7 @@ class Settings:
     gemini_api_keys: tuple[str, ...] = field(default=(), repr=False)
     gemini_voice_model: str = DEFAULT_GEMINI_VOICE_MODEL
     ben_report_v2: bool = False
+    ben_pii_mask: bool = False  # 직접 생성 기본은 꺼짐, 운영 기본은 from_env에서 켜짐
     signup_email_verify: bool = False
     signup_terms_required: bool = False
     mail_api_key: str | None = field(default=None, repr=False)
@@ -118,6 +122,8 @@ class Settings:
             cors_origins=_parse_origins(e.get("CORS_ORIGINS")),
             cookie_secure=_parse_bool(e.get("COOKIE_SECURE"), default=True),
             anthropic_api_key=_stripped(e.get("ANTHROPIC_API_KEY")),
+            naver_client_id=_stripped(e.get("NAVER_CLIENT_ID")),
+            naver_client_secret=_stripped(e.get("NAVER_CLIENT_SECRET")),
             admin_login=_stripped(e.get("ADMIN_LOGIN")),
             # 비밀번호는 공백도 값이다 — 비어 있을 때만 없음으로 본다
             admin_password=e.get("ADMIN_PASSWORD") or None,
@@ -132,6 +138,7 @@ class Settings:
             gemini_api_keys=_parse_keys(e.get("GEMINI_API_KEYS")),
             gemini_voice_model=_stripped(e.get("GEMINI_VOICE_MODEL")) or DEFAULT_GEMINI_VOICE_MODEL,
             ben_report_v2=_parse_bool(e.get("BEN_REPORT_V2"), default=False),
+            ben_pii_mask=_parse_bool(e.get("BEN_PII_MASK"), default=True),
             signup_email_verify=_parse_bool(e.get("SIGNUP_EMAIL_VERIFY"), default=False),
             signup_terms_required=_parse_bool(e.get("SIGNUP_TERMS_REQUIRED"), default=False),
             mail_api_key=_stripped(e.get("MAIL_API_KEY")),

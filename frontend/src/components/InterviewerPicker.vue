@@ -1,18 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import SpriteFrame from '@/components/ui/SpriteFrame.vue'
+import TrackPick from '@/components/TrackPick.vue'
 import PixelTag from '@/components/ui/PixelTag.vue'
 import { CENTER_FRAME_PX, INTERVIEWERS, type InterviewerId } from '@/interviewers'
 import { useInterviewerStore } from '@/stores/interviewer'
 import { useModelStore } from '@/stores/model'
 import { useAccountStore } from '@/stores/account'
 import { useInterviewStore } from '@/stores/interview'
-import type { Track } from '@/services/account'
 
 const TRACK_LABEL = { company: '회사', admission: '대입', both: '대입·회사' } as const
 
 /** 카드 캐릭터 배율: 92 × 2 = 184px(정수배 — 픽셀이 고르게) */
 const PICKER_SCALE = 2
+/** 줄 모양의 얼굴: 92 × 1/2 = 46px. 1/2배는 픽셀이 정확히 2:1로 줄어 또렷하다 */
+const ROW_SCALE = 0.5
+/** 줄 모양 위의 '지금 이 사람': 92 × 1 = 92px */
+const CURRENT_SCALE = 1
 
 /**
  * 면접관 고르기(spec 3.1): 카드 클릭·키보드 선택 = 선택 + 포커스 + 미리 듣기(항상 재생).
@@ -25,6 +29,12 @@ const account = useAccountStore()
  *  받아 쓰는 화면이 하나라도 잊는 순간 트랙이 비어 시작 버튼이 안 열린다 */
 const interview = useInterviewStore()
 const emit = defineEmits<{ 'need-premium': [] }>()
+/** `cards`는 랜딩(창 폭을 다 쓴다), `rows`는 준비 화면의 608px 칸.
+ *  936px짜리 카드 넷은 그 칸에 들어가지 않고, 바꾸러 온 사람은 이미 넷을 봤다 */
+const props = withDefaults(defineProps<{ variant?: 'cards' | 'rows' }>(), { variant: 'cards' })
+
+/** 줄 목록에는 **고르지 않은** 사람만 — 같은 사람이 두 번 보이면 어느 쪽이 지금인지 흐려진다 */
+const others = computed(() => INTERVIEWERS.filter((p) => p.id !== iv.id))
 const cards = ref<HTMLButtonElement[]>([])
 onMounted(() => void iv.probeSprites())
 
@@ -35,15 +45,16 @@ function pick(id: InterviewerId) {
   const who = INTERVIEWERS.find((p) => p.id === id)
   // 막는 게 아니라 길을 여는 버튼이다 — 흐리게 하지 않고, 누르면 요금제로 보낸다
   if (who?.premium && !canUsePremium.value) return emit('need-premium')
-  // 면접관을 바꾸면 앞서 고른 트랙은 버린다
-  interview.setTrack(null)
+  /* 트랙을 사용자가 고르는 면접관(벤)으로 바꿀 때는 **보던 트랙을 물려준다** —
+     쥴리(회사)로 보던 중이었으면 회사다. 안 그러면 패널을 닫는 순간 트랙이 비어
+     회사 정보 칸이 사라지고 시작도 막힌다 (2026-11-08).
+     반대로 제 트랙이 있는 면접관으로 가면 고른 값은 버린다 — 그쪽이 이긴다 */
+  const seen = iv.id !== null ? interview.track : null // 아직 아무도 안 골랐으면 물려줄 것이 없다
+  interview.setTrack(who && who.track === null ? seen : null)
   void model.chooseInterviewer(id)
   void iv.preview(id)
 }
 
-function pickTrack(t: Track) {
-  interview.setTrack(t)
-}
 function onKey(e: KeyboardEvent) {
   const dir =
     e.key === 'ArrowRight' || e.key === 'ArrowDown'
@@ -68,8 +79,65 @@ const sheet = (id: InterviewerId) => {
 </script>
 
 <template>
-  <div class="picker-wrap">
-    <div class="picker" role="radiogroup" aria-label="면접관 고르기" @keydown="onKey">
+  <div class="picker-wrap" :class="variant">
+    <!-- 줄 모양: 지금 이 사람만 크게, 나머지는 줄로 (2026-11-08) -->
+    <template v-if="props.variant === 'rows'">
+      <div v-if="iv.current" class="current" data-test="picker-current">
+        <SpriteFrame
+          :src="sheet(iv.current.id).file"
+          :frame-w="CENTER_FRAME_PX"
+          :frame-h="CENTER_FRAME_PX"
+          :frames="sheet(iv.current.id).frames"
+          :scale="CURRENT_SCALE"
+          :fps="8"
+        />
+        <div class="cur-txt">
+          <span class="name">{{ iv.current.displayName }}</span>
+          <span class="mono role">
+            {{ iv.current.name }} · {{ TRACK_LABEL[iv.current.track ?? 'both'] }}
+          </span>
+          <span class="mono tl">{{ iv.current.tagline }}</span>
+        </div>
+      </div>
+
+      <div class="rows" role="radiogroup" aria-label="면접관 고르기" @keydown="onKey">
+        <button
+          v-for="p in others"
+          :key="p.id"
+          ref="cards"
+          type="button"
+          role="radio"
+          class="row"
+          :aria-checked="false"
+          data-test="picker-row"
+          :data-id="p.id"
+          @click="pick(p.id)"
+        >
+          <SpriteFrame
+            :src="iv.spritesFor(p.id).idle.file"
+            :frame-w="CENTER_FRAME_PX"
+            :frame-h="CENTER_FRAME_PX"
+            :frames="iv.spritesFor(p.id).idle.frames"
+            :scale="ROW_SCALE"
+          />
+          <span class="mid">
+            <span class="name">{{ p.displayName }}</span>
+            <span class="mono tl">{{ p.tagline }}</span>
+          </span>
+          <span class="mono trk" :class="p.track ?? 'both'">
+            {{ TRACK_LABEL[p.track ?? 'both'] }}
+          </span>
+          <span v-if="p.premium" class="mono tix" :class="{ lit: canUsePremium }">
+            <i aria-hidden="true" />{{
+              account.signedIn ? `티켓 ${account.tickets}장` : '프리미엄'
+            }}
+          </span>
+          <span v-else class="mono go" aria-hidden="true">고르기</span>
+        </button>
+      </div>
+    </template>
+
+    <div v-else class="picker" role="radiogroup" aria-label="면접관 고르기" @keydown="onKey">
       <button
         v-for="p in INTERVIEWERS"
         :key="p.id"
@@ -106,7 +174,7 @@ const sheet = (id: InterviewerId) => {
     </div>
     <!-- 좁은 화면에서 카드가 옆으로 흐르면 몇 명 중 몇 번째인지 보이지 않는다 — 점으로 알린다.
          넓은 화면에서는 네 장이 다 보이므로 CSS로 감춘다 -->
-    <div class="dots" aria-hidden="true">
+    <div v-if="props.variant === 'cards'" class="dots" aria-hidden="true">
       <i
         v-for="p in INTERVIEWERS"
         :key="p.id"
@@ -114,21 +182,9 @@ const sheet = (id: InterviewerId) => {
         :class="{ on: iv.id === p.id }"
       />
     </div>
-    <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다 -->
-    <div v-if="iv.current?.track === null" class="track" data-test="track-pick">
-      <span class="mono q">어느 면접으로 볼까요?</span>
-      <button
-        v-for="t in ['admission', 'company'] as const"
-        :key="t"
-        type="button"
-        class="mono tbtn"
-        :class="{ on: interview.chosenTrack === t }"
-        :data-test="`track-${t}`"
-        @click="pickTrack(t)"
-      >
-        {{ TRACK_LABEL[t] }}
-      </button>
-    </div>
+    <!-- 벤은 둘 다 봐서 고른 뒤에 트랙을 정한다. 정하기 전에는 선택이 끝나지 않는다.
+         **준비 화면의 벤 상자도 같은 것을 쓴다** — 여기만 두면 패널을 닫는 순간 길이 사라진다 -->
+    <TrackPick v-if="iv.current?.track === null" />
     <p v-if="iv.previewFailed" class="mono err" data-test="preview-error">
       미리 듣기를 재생할 수 없습니다
     </p>
@@ -148,6 +204,92 @@ const sheet = (id: InterviewerId) => {
   min-width: 0;
   width: 100%;
 }
+/* ── 줄 모양 (준비 화면의 좁은 칸) ─────────────────────────────
+   지금 이 사람만 초상을 갖고, 나머지는 얼굴 46px짜리 줄로 선다 */
+.picker-wrap.rows {
+  container-type: inline-size;
+}
+.current {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  border: 2px solid var(--accent);
+  background: var(--win);
+  padding: var(--sp-3);
+}
+.cur-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cur-txt .name {
+  font-size: var(--fs-body-md);
+  color: var(--text);
+}
+.cur-txt .role {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.cur-txt .tl {
+  font-size: var(--fs-label);
+  color: var(--text-2);
+}
+/* 열 수는 **창**이 아니라 **칸**을 보고 정한다 — 이 버그의 뿌리가 창을 본 것이었다.
+   준비 화면의 입력 칸은 창이 1440px이어도 850px이다 */
+.rows {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-2);
+}
+@container (min-width: 620px) {
+  .rows {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.rows .row {
+  display: grid;
+  grid-template-columns: 46px 1fr auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 2px solid var(--raise);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  color: var(--text);
+}
+.rows .row:hover,
+.rows .row:focus-visible {
+  border-color: var(--accent);
+}
+.rows .mid {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rows .mid .name {
+  font-size: var(--fs-body-sm);
+}
+.rows .mid .tl {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+.rows .go {
+  font-size: var(--fs-meta);
+  color: var(--accent);
+}
+/* 아주 좁으면 트랙 칩과 '고르기'가 줄을 밀어낸다 — 설명만 남긴다 */
+@media (max-width: 480px) {
+  .rows .row {
+    grid-template-columns: 46px 1fr auto;
+  }
+  .rows .go {
+    display: none;
+  }
+}
+
 /* 카드 4장을 한 줄로(약 940px), 그보다 좁으면 2×2, 아주 좁으면 한 줄에 하나.
    카드 폭(캐릭터 184px + 여백 ≈ 220px)이 같아 열이 고르게 선다 */
 .picker {
@@ -281,31 +423,6 @@ const sheet = (id: InterviewerId) => {
 .tix.lit i {
   background: var(--accent);
   box-shadow: 0 0 5px var(--accent);
-}
-.track {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  border: 2px solid var(--accent);
-  padding: var(--sp-3) var(--sp-4);
-}
-.track .q {
-  font-size: var(--fs-meta);
-  color: var(--text-2);
-}
-.tbtn {
-  font-size: var(--fs-label);
-  background: none;
-  color: var(--text-2);
-  border: 2px solid var(--line);
-  padding: var(--sp-2) var(--sp-4);
-  cursor: pointer;
-}
-.tbtn.on {
-  border-color: var(--accent-2);
-  color: var(--accent-2);
 }
 .card {
   position: relative;

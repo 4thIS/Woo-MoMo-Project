@@ -89,8 +89,8 @@ def test_repr_hides_secrets():
 def test_voice_provider_and_gemini_settings():
     d = Settings.from_env({})
     assert d.voice_provider == "gemini"
-    assert d.gemini_api_keys == () and d.gemini_voice_model == "gemini-3.8-flash"
-    assert d.voice_usage_model == "gemini:gemini-3.8-flash"
+    assert d.gemini_api_keys == () and d.gemini_voice_model == "gemini-3.5-flash"
+    assert d.voice_usage_model == "gemini:gemini-3.5-flash"
     s = Settings.from_env(
         {"VOICE_PROVIDER": " BAZE ", "GEMINI_API_KEYS": " g1, ,g2", "GEMINI_VOICE_MODEL": "gm"}
     )
@@ -107,3 +107,14 @@ def test_voice_provider_invalid_fails():
 
 def test_repr_hides_gemini_keys():
     assert "AIza-secret" not in repr(Settings.from_env({"GEMINI_API_KEYS": "AIza-secret"}))
+
+
+def test_naver_keys_from_env():
+    s = Settings.from_env({"NAVER_CLIENT_ID": " a ", "NAVER_CLIENT_SECRET": "b"})
+    assert (s.naver_client_id, s.naver_client_secret) == ("a", "b")
+    assert Settings.from_env({}).naver_client_id is None
+
+
+def test_ben_pii_mask_defaults_on_from_env():
+    assert Settings.from_env({}).ben_pii_mask is True
+    assert Settings.from_env({"BEN_PII_MASK": "false"}).ben_pii_mask is False

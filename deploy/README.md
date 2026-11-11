@@ -95,9 +95,11 @@ sudo mkdir -p /srv/momo/data /srv/momo-dev/data && sudo chown -R 10001:10001 /sr
 | `WEB_BIND` | `127.0.0.1:8006` | web 바인딩(주소:포트). 폴더마다 다른 포트 |
 | `DATA_HOST_DIR` | `/srv/momo-dev/data` | 호스트의 데이터 폴더(dev만 적는다). 없으면 `/srv/momo/data` |
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | 벤(Claude) 키. 없으면 벤 시작이 `503 ben_unavailable` |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | (네이버 클라우드 콘솔 NAVER API HUB — 뉴스·웹문서) | 벤 회사 브리핑의 뉴스·웹문서 검색. 없으면 공고만으로 브리핑을 쓴다 |
 | `ADMIN_LOGIN` | `admin` | 관리자 아이디. **이메일 모양이 아닌 아이디**로 둔다. 이메일 값이 기존 사용자와 같으면 그 사용자가 관리자로 바뀐다. 목업 결제는 이 계정만 |
 | `ADMIN_PASSWORD` | (긴 무작위 문자열) | **`.env`에만 둔다. 추측하기 쉬운 값 금지.** 공개 사이트라 약하면 누구나 티켓을 충전해 하루 `BEN_DAILY_LIMIT`번까지 Claude 비용을 쓸 수 있다. `$`는 쓰지 않는다(compose가 변수로 읽는다) |
 | `BEN_DAILY_LIMIT` | `30` | 서버 전체 하루(한국 날짜) 벤 면접 수 상한. 마지막 방어선 |
+| `BEN_PII_MASK` | `true` | 벤이 Claude로 보낼 때 이름·전화·이메일·주소·생년월일·주민번호·계좌·개인 링크를 가리고 응답에서 되돌린다. `false`면 끈다 |
 | `CORS_ORIGINS` | 운영 `https://momo.ssenu.cloud` / dev `https://demomo.ssenu.cloud,http://localhost:5173` | **폴더마다 자기 오리진만 둔다.** 정확한 오리진만, 쉼표로. `*` 금지(기동 실패). 비우면 코드 기본값(셋 다)이 들어가니 꼭 적는다. 두 도메인이 같은 site(`ssenu.cloud`)라 `SameSite=Lax` 쿠키가 서로의 요청에도 실리므로, 한쪽 오리진을 다른 쪽 API에 열어 두면 dev 페이지가 로그인된 운영 계정으로 요청을 보낼 수 있다 |
 | `COOKIE_SECURE` | `1` | 세션 쿠키 `Secure`. HTTPS 뒤라 `1` 유지 |
 
@@ -383,7 +385,7 @@ curl -sI https://demomo.ssenu.cloud/admin
 |------|--------|------|
 | `VOICE_PROVIDER` | compose `baze` (코드 기본 `gemini`) | `gemini`(Gemini API 직접) 또는 `baze`(학교 게이트웨이). 다른 값이면 API가 뜨지 않는다. |
 | `GEMINI_API_KEYS` | (없음) | Gemini 키를 쉼표로 구분해 넣는다. 무료 등급 한도는 **구글 프로젝트 단위**이므로 서로 다른 프로젝트의 키여야 한도가 늘어난다. |
-| `GEMINI_VOICE_MODEL` | `gemini-3.8-flash` | Gemini 직접 호출 때 쓰는 모델 이름. |
+| `GEMINI_VOICE_MODEL` | `gemini-3.5-flash` | Gemini 직접 호출 때 쓰는 모델 이름. `gemini-3.8-flash`는 한 답변에 40~60초 넘게 걸려 리포트 대기(20초)를 넘긴다(2026-11-09 실측: 3.5-flash 약 6초) |
 
 **Gemini로 켜는 순서:** 프론트 약관·동의 문구(“구글이 서비스 개선에 쓸 수 있음”)가 그 환경에 나간 뒤에 켠다. 아래 BAZE 키 넣는 방법과 같이 `read -rsp`로 `GEMINI_API_KEYS`를 넣고, `.env`에 `VOICE_PROVIDER=gemini`를 둔 뒤 `docker compose up -d --no-build`. 되돌릴 때는 `VOICE_PROVIDER=baze`로 바꾸고 같은 명령.
 

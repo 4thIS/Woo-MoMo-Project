@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +17,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from app import db
+from app.config import Settings
 from app.deps import Db, LoggedInUser, PremiumUser
 from app.errors import ApiError
 from app.llm import briefing as briefing_llm
-from app.llm import delivery, prompts, report_v2
+from app.llm import delivery, pii, prompts, report_v2
+from app.llm.briefing import Collector
 from app.llm.claude import (
+    BRIEFING_MODEL,
     MODEL,
     REPORT_MAX_TOKENS,
     TURN_MAX_TOKENS,
@@ -35,6 +39,7 @@ from app.repos import briefings, premium, usage, users, voice
 from app.repos.premium import MAX_MODEL_TURNS, PremiumInterview
 from app.repos.users import User
 from app.schemas import (
+    BenSettings,
     DeliveryMetric,
     InterviewStart,
     InterviewStarted,
@@ -47,13 +52,16 @@ from app.sse import PING, SSE_HEADERS, sse
 from app.timefmt import iso, kst_day_start
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 ANSWER_MAX = 2000
 # 사용자당 벤 턴·리포트 요청 수(분당). 재시도를 반복해 Claude 호출이 불지 않게 한다
 BEN_PER_MINUTE = 6
-# 회사 브리핑 조사: 15초마다 ping(Cloudflare 무응답 끊김 대비), 전체 90초 넘으면 실패로 친다
+# 회사 브리핑 조사: 기한 안에서 PING_EVERY마다 ping(Cloudflare 무응답 끊김 대비).
+# 기다림은 ping 간격과 남은 기한 중 짧은 쪽이라 기한이 ping 간격보다 짧아도 제때 포기한다
 PING_EVERY = 15.0
-RESEARCH_DEADLINE = 90.0
+# 시작 → 첫 질문 15초 안에 들도록 조사는 10초까지만 기다린다(spec 2026-11-08)
+RESEARCH_DEADLINE = 10.0
 
 
 @router.post("/premium/purchase", response_model=Session)
@@ -75,7 +83,12 @@ def start_interview(
     group = body.company if body.track == "company" else body.admission
     if group is None:
         raise ApiError(422, "missing_field", field=body.track)
-    inputs = {"resumeText": body.resumeText, body.track: group.model_dump(exclude_none=True)}
+    inputs = {
+        "resumeText": body.resumeText,
+        body.track: group.model_dump(exclude_none=True),
+        # 성향 설정(2026-11-07): 기본값을 채워 저장한다. 턴·리포트가 이 값을 읽는다
+        "benSettings": (body.benSettings or BenSettings()).model_dump(),
+    }
     # 회사명 또는 모집공고 링크가 있으면 첫 턴에 조사한다(대입 트랙은 무시)
     research = bool(
         body.track == "company"
@@ -148,6 +161,7 @@ def _usage_sink(
     user_id: str,
     interview_id: str,
     kind: str,
+    model: str = MODEL,
 ) -> UsageSink:
     """Claude 호출 사용량을 claude_usage에 남기는 콜백. 워커 스레드에서도 불리므로
     쓸 때마다 자기 연결을 연다. 실패는 삼킨다 — 기록이 면접을 막지 않는다(본문은 남기지 않는다)."""
@@ -161,7 +175,7 @@ def _usage_sink(
                     user_id=user_id,
                     interview_id=interview_id,
                     kind=kind,
-                    model=MODEL,
+                    model=model,
                     input_tokens=used.input_tokens,
                     output_tokens=used.output_tokens,
                     cache_read_tokens=used.cache_read_tokens,
@@ -179,6 +193,7 @@ def _usage_sink(
 
 def _research_and_store(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview_id: str,
     key: str,
@@ -193,11 +208,16 @@ def _research_and_store(
     스트림이 포기했거나 클라이언트가 끊겨도 결과는 버려지지 않는다.
     예상 못 한 예외는 실패(None)로 접는다 — 본문은 로그에 남기지 않는다."""
     try:
-        made = briefing_llm.make_briefing(claude, name, job, on_usage, posting_url)
+        made = briefing_llm.make_briefing(
+            claude, name, job, on_usage, posting_url, collector=collector
+        )
         if made is None:
             return None
-        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다
-        posting_failed = bool(posting_url) and prompts.POSTING_MISSING_STEM in made.text
+        # 공고를 읽지 못한 브리핑은 이 면접에만 쓰고 7일 공유 캐시에는 넣지 않는다.
+        # 요약이 "확인하지 못함"을 빼먹어도 모으기 결과(posting_read)로 판단한다
+        posting_failed = bool(posting_url) and (
+            not made.posting_read or prompts.POSTING_MISSING_STEM in made.text
+        )
         with db.connection(db_path) as c:
             if not posting_failed:
                 briefings.put(
@@ -217,6 +237,7 @@ def _research_and_store(
 
 def _research_with_pings(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview_id: str,
     key: str,
@@ -231,6 +252,7 @@ def _research_with_pings(
     future = pool.submit(
         _research_and_store,
         claude,
+        collector,
         db_path,
         interview_id,
         key,
@@ -244,15 +266,16 @@ def _research_with_pings(
     deadline = time.monotonic() + RESEARCH_DEADLINE
     while True:
         try:
-            return future.result(timeout=PING_EVERY)
+            return future.result(timeout=max(0.0, min(PING_EVERY, deadline - time.monotonic())))
         except TimeoutError:
             if time.monotonic() >= deadline:
                 return None
-            yield PING
+            yield PING  # 기한 전에 ping 간격이 꽉 찼다
 
 
 def _resolve_briefing(
     claude: ClaudeClient,
+    collector: Collector,
     db_path: Path,
     interview: PremiumInterview,
     now: float,
@@ -278,7 +301,16 @@ def _resolve_briefing(
             pass
         else:
             yield from _research_with_pings(
-                claude, db_path, interview.id, key, name, job, iso(now), on_usage, posting_url
+                claude,
+                collector,
+                db_path,
+                interview.id,
+                key,
+                name,
+                job,
+                iso(now),
+                on_usage,
+                posting_url,
             )
     with db.connection(db_path) as c:
         premium.set_briefing(c, interview_id=interview.id, briefing=text)
@@ -289,6 +321,80 @@ def _resolve_briefing(
     text = row["briefing"] if row is not None else text
     yield sse("status", {"phase": "briefing", "ok": text is not None})
     return text
+
+
+def _masker(settings: Settings, user: User, interview: PremiumInterview) -> pii.Masker | None:
+    """가림이 켜져 있으면 이 요청의 Masker. 아는 이름: 가입 이름, 입학 면접 이름, 이력서 이름 줄."""
+    if not settings.ben_pii_mask:
+        return None
+    names = [user.name or ""]
+    admission = interview.inputs.get("admission")
+    if admission:
+        names.append(admission.get("name") or "")
+    names += pii.names_in(interview.inputs.get("resumeText") or "")
+    return pii.Masker(names)
+
+
+# 로그 키는 영문(spec 5절): 값은 남기지 않고 종류별 개수만
+_LOG_KEYS = {
+    "이름": "name",
+    "전화": "phone",
+    "이메일": "email",
+    "주소": "address",
+    "생년월일": "birth",
+    "주민번호": "rrn",
+    "계좌": "account",
+    "링크": "link",
+}
+
+Masked = tuple[pii.Masker | None, list[dict[str, Any]], list[prompts.Message]]
+
+
+def _masked(
+    masker: pii.Masker | None,
+    system: list[dict[str, Any]],
+    messages: list[prompts.Message],
+) -> tuple[list[dict[str, Any]], list[prompts.Message]]:
+    """시스템 블록 → 메시지 순서로 가린다(번호 고정). 로그에는 종류별 개수만 남긴다."""
+    if masker is None:
+        return system, messages
+    out = masker.mask_system(system), masker.mask_messages(messages)
+    counts = " ".join(sorted(f"{_LOG_KEYS.get(k, 'other')}={v}" for k, v in masker.counts.items()))
+    log.info("pii masked %s", counts or "none")
+    return out
+
+
+def _mask_or_fail(
+    build: Callable[[], pii.Masker | None],
+    system: list[dict[str, Any]],
+    messages: list[prompts.Message],
+) -> Generator[str, None, Masked | None]:
+    """Masker를 만들고 가린다. 어느 쪽이든 실패하면 원문을 보내지 않고 claude_error로
+    끝낸다(spec 5절). 성공이면 (masker, 시스템, 메시지), 실패면 None."""
+    try:
+        masker = build()
+        return (masker, *_masked(masker, system, messages))
+    except Exception as exc:
+        log.warning("pii mask failed: %s", type(exc).__name__)
+        yield sse("error", {"code": "claude_error"})
+        return None
+
+
+def _unmasked(
+    stream: Iterator[str], masker: pii.Masker | None, *, json_escape: bool
+) -> Iterator[str]:
+    """Claude 조각을 되돌린 조각으로 바꾼다. 조각 사이에 걸린 표시는 붙잡았다가 합쳐 되돌린다."""
+    if masker is None:
+        yield from stream
+        return
+    un = masker.stream(json_escape=json_escape)
+    for text in stream:
+        piece = un.feed(text)
+        if piece:
+            yield piece
+    tail = un.flush()
+    if tail:
+        yield tail
 
 
 def _stream(events: Iterator[str]) -> StreamingResponse:
@@ -312,6 +418,27 @@ def is_over(interview: PremiumInterview) -> bool:
     return last is not None and last["role"] == "model" and prompts.has_end_phrase(last["text"])
 
 
+def _closing_events(
+    db_path: Path, interview: PremiumInterview, answer: str | None
+) -> Iterator[str]:
+    """마지막 응답: 온화함에 맞는 짧은 반응 + 종료 문장. Claude를 부르지 않아 시도로 세지 않는다."""
+    reply = prompts.closing_line(prompts.ben_settings(interview.inputs)["warmth"])
+    try:
+        with db.connection(db_path) as c:
+            saved = premium.append_turn(
+                c,
+                interview_id=interview.id,
+                answer=answer,
+                model_text=reply,
+                expected_model_turns=interview.model_turns,
+            )
+    except premium.TurnConflict:
+        yield sse("error", {"code": "turn_conflict"})
+        return
+    yield sse("delta", {"text": reply})
+    yield sse("done", {"ended": is_over(saved)})
+
+
 @router.post("/premium/interviews/{interview_id}/turns")
 def take_turn(
     interview_id: str,
@@ -331,29 +458,49 @@ def take_turn(
             raise ApiError(422, "missing_answer", field="answer")
         if len(answer) > ANSWER_MAX:
             raise ApiError(422, "answer_too_long", field="answer")
+    db_path = request.app.state.settings.db_path
+    if interview.model_turns == MAX_MODEL_TURNS - 1:
+        # 상한의 마지막 응답이 질문이면 답할 수 없는 채로 끝난다(2026-11-08) — 끝맺음만 보낸다
+        return _stream(_closing_events(db_path, interview, answer))
     claude = _claude(request)
+    collector: Collector = request.app.state.collector
     _count_attempt(conn, interview)
     messages = prompts.turn_messages(interview.messages, answer)
-    db_path = request.app.state.settings.db_path
     now = request.app.state.clock()
     first_with_briefing = interview.model_turns == 0 and interview.briefing_status != "none"
     clock = request.app.state.clock
     turn_sink = _usage_sink(db_path, clock, user.id, interview.id, "turn")
-    research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research")
+    # 브리핑 요약은 Haiku로 한다 — 사용량도 그 모델로 남긴다
+    research_sink = _usage_sink(db_path, clock, user.id, interview.id, "research", BRIEFING_MODEL)
+    settings = request.app.state.settings
+    mask_on = settings.ben_pii_mask
 
     def events() -> Iterator[str]:
         brief = interview.briefing
         if first_with_briefing:
-            brief = yield from _resolve_briefing(claude, db_path, interview, now, research_sink)
-        system = prompts.build_system(interview.track, interview.inputs, brief)
+            brief = yield from _resolve_briefing(
+                claude, collector, db_path, interview, now, research_sink
+            )
+        system = prompts.build_system(interview.track, interview.inputs, brief, masked=mask_on)
+        # Masker도 실패 경로 안에서 만든다 — 만들다 실패해도 원문을 보내지 않는다
+        masked = yield from _mask_or_fail(
+            lambda: _masker(settings, user, interview), system, messages
+        )
+        if masked is None:
+            return
+        masker, out_system, out_messages = masked
         chunks: list[str] = []
         try:
-            for text in claude.stream_text(
-                system=system,
-                messages=messages,
-                effort="low",
-                max_tokens=TURN_MAX_TOKENS,
-                on_usage=turn_sink,
+            for text in _unmasked(
+                claude.stream_text(
+                    system=out_system,
+                    messages=out_messages,
+                    effort="low",
+                    max_tokens=TURN_MAX_TOKENS,
+                    on_usage=turn_sink,
+                ),
+                masker,
+                json_escape=False,
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})
@@ -400,11 +547,24 @@ def _parse_delivery(body: Any, interview: PremiumInterview) -> list[DeliveryMetr
     return parsed.delivery
 
 
+# 저장된 분석 상태 → 리포트 이유(이슈 #178). 행이 없으면(녹음이 안 올라옴) unavailable
+_VOICE_STATUS = {
+    "done": "ok",
+    "queued": "pending",
+    "failed": "failed",
+    "unavailable": "unavailable",
+}
+
+
 def _metrics(
     metrics: list[DeliveryMetric],
     voices: dict[int, tuple[str, StoredVoice | None]] | None = None,
+    *,
+    consent: bool = False,
 ) -> list[delivery.AnswerMetrics]:
-    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다."""
+    """브라우저 측정(+ 끝난 목소리 결과)을 판정용 값으로. 측정 없는 답변은 만들지 않는다.
+
+    목소리 이유(voice_status)는 접지 않고 남긴다 — 리포트가 "측정 없음"의 이유를 말할 수 있게."""
     out = []
     for m in metrics:
         base = delivery.AnswerMetrics(
@@ -417,7 +577,13 @@ def _metrics(
             filler_level=m.fillerLevel,
         )
         status, result = (voices or {}).get(m.answer, ("", None))
-        out.append(delivery.with_voice(base, result if status == "done" else None))
+        merged = delivery.with_voice(base, result if status == "done" else None)
+        if consent:
+            reason = _VOICE_STATUS.get(status, "unavailable")
+            if reason == "ok" and merged.voice is None:
+                reason = "failed"  # 한글 없는 받아쓰기라 결과를 버렸다
+            merged = replace(merged, voice_status=reason)
+        out.append(merged)
     return out
 
 
@@ -451,16 +617,22 @@ def _generate_report_once(
     system: list[dict[str, Any]],
     msgs: list[prompts.Message],
     sink: UsageSink,
+    masker: pii.Masker | None = None,
 ) -> Generator[str, None, str]:
-    """리포트 한 번을 스트리밍하며 delta를 흘리고 원문을 돌려준다. ClaudeError는 던진다."""
+    """리포트 한 번을 스트리밍하며 delta를 흘리고 (가렸으면 되돌린) 원문을 돌려준다.
+    ClaudeError는 던진다."""
     chunks: list[str] = []
-    for text in claude.stream_text(
-        system=system,
-        messages=msgs,
-        effort="medium",
-        max_tokens=REPORT_MAX_TOKENS,
-        on_usage=sink,
-        output_format=report_v2.REPORT_V2_SCHEMA,
+    for text in _unmasked(
+        claude.stream_text(
+            system=system,
+            messages=msgs,
+            effort="medium",
+            max_tokens=REPORT_MAX_TOKENS,
+            on_usage=sink,
+            output_format=report_v2.REPORT_V2_SCHEMA,
+        ),
+        masker,
+        json_escape=True,  # JSON 문자열 안에 들어가므로 이스케이프해 되돌린다
     ):
         chunks.append(text)
         yield sse("delta", {"text": text})
@@ -476,12 +648,13 @@ def _report_v2_events(
     sink: UsageSink,
     *,
     voice_wait: bool,
+    build_masker: Callable[[], pii.Masker | None] = lambda: None,
 ) -> Iterator[str]:
     """버전 2 리포트: 구조화 출력을 검증하고 실패하면 한 번 더 만든다(원문·측정값은 로그 금지)."""
     voices = None
     if voice_wait:
         voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
-    merged = _metrics(parsed, voices)
+    merged = _metrics(parsed, voices, consent=interview.voice_consent)
     briefing = interview.briefing
     has_posting = bool(interview.track == "company" and briefing and prompts._has_posting(briefing))
     has_delivery = bool(parsed)
@@ -490,8 +663,14 @@ def _report_v2_events(
         delivery.render(merged),
         voice=delivery.voice_used(merged),
         posting=has_posting,
+        warmth=prompts.ben_settings(interview.inputs)["warmth"],
     )
     n = report_v2.answer_count(interview.messages)
+    # 재생성도 같은 가린 요청을 보낸다(번호가 그대로라 되돌리기도 같다)
+    masked = yield from _mask_or_fail(build_masker, system, msgs)
+    if masked is None:
+        return
+    masker, out_system, out_msgs = masked
     for attempt in (1, 2):
         if attempt == 2:
             try:
@@ -502,7 +681,7 @@ def _report_v2_events(
                 return
             yield sse("reset", {})
         try:
-            raw = yield from _generate_report_once(claude, system, msgs, sink)
+            raw = yield from _generate_report_once(claude, out_system, out_msgs, sink, masker)
         except ClaudeError as exc:
             # too_long도 같은 코드로 끝낸다(다시 만들어도 같은 길이라 재생성하지 않음)
             yield sse("error", {"code": exc.code})
@@ -556,19 +735,27 @@ def make_report(
     with_voice = interview.voice_consent and bool(parsed)
     settings = request.app.state.settings
     v2 = settings.ben_report_v2
+    warmth = prompts.ben_settings(interview.inputs)["warmth"]
     messages = (
         None
         if with_voice or v2
-        else prompts.report_messages(interview.messages, delivery.render(_metrics(parsed)))
+        else prompts.report_messages(
+            interview.messages, delivery.render(_metrics(parsed)), warmth=warmth
+        )
     )
     if v2 and report_v2.answer_count(interview.messages) == 0:
         raise ApiError(409, "no_answers")  # 시도를 세기 전에 거절 — Claude를 부르지 않는다
     claude = _claude(request)
     _count_attempt(conn, interview)
+    mask_on = settings.ben_pii_mask
+
+    def build_masker() -> pii.Masker | None:
+        return _masker(settings, user, interview)
+
     system = (
-        prompts.report_system(interview.track, interview.inputs, interview.briefing)
+        prompts.report_system(interview.track, interview.inputs, interview.briefing, masked=mask_on)
         if v2
-        else prompts.build_system(interview.track, interview.inputs)
+        else prompts.build_system(interview.track, interview.inputs, masked=mask_on)
     )
     db_path = settings.db_path
     report_sink = _usage_sink(db_path, request.app.state.clock, user.id, interview.id, "report")
@@ -576,7 +763,14 @@ def make_report(
     if v2:
         return _stream(
             _report_v2_events(
-                claude, interview, parsed, system, db_path, report_sink, voice_wait=with_voice
+                claude,
+                interview,
+                parsed,
+                system,
+                db_path,
+                report_sink,
+                voice_wait=with_voice,
+                build_masker=build_masker,
             )
         )
 
@@ -586,16 +780,27 @@ def make_report(
             voices = yield from _await_voice(db_path, interview.id, {m.answer for m in parsed})
             merged = _metrics(parsed, voices)
             msgs = prompts.report_messages(
-                interview.messages, delivery.render(merged), voice=delivery.voice_used(merged)
+                interview.messages,
+                delivery.render(merged),
+                voice=delivery.voice_used(merged),
+                warmth=warmth,
             )
+        masked = yield from _mask_or_fail(build_masker, system, msgs)
+        if masked is None:
+            return
+        masker, out_system, out_msgs = masked
         chunks: list[str] = []
         try:
-            for text in claude.stream_text(
-                system=system,
-                messages=msgs,
-                effort="medium",
-                max_tokens=REPORT_MAX_TOKENS,
-                on_usage=report_sink,
+            for text in _unmasked(
+                claude.stream_text(
+                    system=out_system,
+                    messages=out_msgs,
+                    effort="medium",
+                    max_tokens=REPORT_MAX_TOKENS,
+                    on_usage=report_sink,
+                ),
+                masker,
+                json_escape=True,  # 리포트는 JSON — 되돌린 값도 JSON 문자열로 이스케이프
             ):
                 chunks.append(text)
                 yield sse("delta", {"text": text})

@@ -1,4 +1,4 @@
-from app.llm.claude import ClaudeError
+from app.llm.claude import MODEL, ClaudeError
 from app.repos import usage
 from tests.helpers import COMPANY_START, open_db, sse_events, start_ben
 
@@ -32,7 +32,12 @@ def test_turn_records_one_usage_row(client, settings):
 def test_company_first_turn_records_research_and_turn(client, settings):
     iid = start_ben(client, NAMED)
     _turn(client, iid)
-    assert sorted(r["kind"] for r in _rows(settings)) == ["research", "turn"]
+    rows = {r["kind"]: r for r in _rows(settings)}
+    assert sorted(rows) == ["research", "turn"]
+    # 브리핑 요약은 complete()로 Haiku가 한다(spec 2026-11-08)
+    assert rows["research"]["model"] == "claude-haiku-5-5"
+    assert rows["research"]["outcome"] == "ok"
+    assert rows["turn"]["model"] == MODEL == "claude-sonnet-5-5"
 
 
 def test_failed_turn_records_error(client, fake_claude, settings):

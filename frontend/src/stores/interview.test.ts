@@ -40,7 +40,9 @@ import {
   SYNTH_TIMEOUT_MS,
   TTS_WARNING,
   useInterviewStore,
+  benSettingsPayload,
 } from './interview'
+import { DEFAULT_BEN } from '@/content/benAxes'
 import { REPORT_INSTRUCTION } from '@/prompts/report'
 import { approxTokens } from '@/utils/tokens'
 import { useAccountStore, setAccountApi } from './account'
@@ -134,10 +136,10 @@ describe('interview store', () => {
 
   it.each([
     ['ready', 'it', '백엔드', true, null],
-    ['downloaded', 'it', '백엔드', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', 'it', '백엔드', false, '면접관이 준비되면 열립니다'],
     ['ready', null, '백엔드', false, '위 항목을 채우면 열립니다'],
     ['ready', 'it', '', false, '위 항목을 채우면 열립니다'],
-    ['downloaded', null, '', false, '면접관이 자리에 앉으면 열립니다'],
+    ['downloaded', null, '', false, '면접관이 준비되면 열립니다'],
   ] as const)(
     'canStart: model=%s field=%s job=%s → %s',
     async (status, field, job, expected, reason) => {
@@ -371,6 +373,43 @@ describe('interview flow', () => {
     expect(s.messages).toEqual([])
     expect(s.report).toBeNull()
     expect(s.profile.job).toBe('')
+  })
+
+  it('reset(true)는 적어 둔 것을 남긴다 — 같은 조건으로 한 번 더 보려는 것이다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    s.setResume('이력서.pdf', '경력 10년')
+    s.setCompanyName('모모')
+    s.setPostingUrl('https://example.com/jobs/1')
+    s.setAdmission({ name: '이우진', age: 27, university: '모모대', department: '컴공' })
+    const field = s.profile.field
+    const job = s.profile.job
+    await s.start()
+    await s.reset(true)
+    expect(s.phase).toBe('prepare')
+    expect(s.profile.field).toBe(field)
+    expect(s.profile.job).toBe(job)
+    expect(s.profile.companyName).toBe('모모')
+    expect(s.profile.postingUrl).toBe('https://example.com/jobs/1')
+    expect(s.profile.name).toBe('이우진')
+    expect(s.profile.age).toBe(27)
+    expect(s.profile.university).toBe('모모대')
+    expect(s.profile.department).toBe('컴공')
+    expect(s.resumeName).toBe('이력서.pdf')
+    expect(s.resumeText).toBe('경력 10년')
+  })
+
+  it('reset(true)여도 지난 면접은 비운다 — 남기는 것은 입력뿐이다', async () => {
+    vi.mocked(startSession).mockResolvedValue(fakeSession(['q']))
+    const s = await readyStore()
+    await s.start()
+    await s.reset(true)
+    expect(s.messages).toEqual([])
+    expect(s.report).toBeNull()
+    expect(s.reportV2).toBeNull()
+    expect(s.ended).toBe(false)
+    expect(s.archiveSaved).toBe(false)
+    expect(s.interviewerId).toBeNull()
   })
 
   it('start·send·종료 시각을 기록한다', async () => {
@@ -625,7 +664,7 @@ describe('canStart — TTS (멘토링 보완: 목소리를 기다리지 않는�
     const m = useModelStore()
     m.status = 'downloading'
     expect(s.canStart).toBe(false)
-    expect(s.startBlockReason).toBe('면접관이 자리에 앉으면 열립니다')
+    expect(s.startBlockReason).toBe('면접관이 준비되면 열립니다')
   })
 })
 
@@ -1878,5 +1917,77 @@ describe('벤 리포트에 전달력 측정을 싣는다 (#99)', () => {
     await s2.finish()
     expect(sentDelivery()).toHaveLength(1)
     expect(sentDelivery()?.[0].answer).toBe(1)
+  })
+})
+
+describe('benSettingsPayload — 바꾼 칸만 보낸다', () => {
+  it('전부 기본이면 아무것도 보내지 않는다 — 지금 벤과 프롬프트가 글자까지 같아야 한다', () => {
+    expect(benSettingsPayload(DEFAULT_BEN)).toBeUndefined()
+  })
+
+  it('바꾼 칸만 담는다', () => {
+    expect(benSettingsPayload({ ...DEFAULT_BEN, warmth: 2 })).toEqual({ warmth: 'high' })
+    expect(benSettingsPayload({ ...DEFAULT_BEN, difficulty: 0, followUp: 2 })).toEqual({
+      followUp: 'high',
+      difficulty: 'basic',
+    })
+  })
+
+  it('눈금 위치를 API 이름으로 옮긴다 — 축마다 이름이 다르다', () => {
+    expect(benSettingsPayload({ ...DEFAULT_BEN, questionMix: 0 })).toEqual({
+      questionMix: 'technical',
+    })
+    expect(benSettingsPayload({ ...DEFAULT_BEN, companyWeight: 2 })).toEqual({
+      companyWeight: 'high',
+    })
+  })
+})
+
+describe('benRequest — 성향 싣기', () => {
+  /** 트랙은 고른 면접관이 정한다 — 스토어에 직접 넣을 수 없다 */
+  const company = () => {
+    useInterviewerStore().select('m2')
+    const s = useInterviewStore()
+    s.setTrack('company') // 벤은 두 갈래를 다 본다 — 골라야 track이 정해진다
+    s.profile.field = 'it'
+    s.profile.job = '백엔드'
+    return s
+  }
+
+  it('손대지 않으면 benSettings 키 자체가 없다', () => {
+    expect('benSettings' in company().benRequest()).toBe(false)
+  })
+
+  it('한 칸이라도 옮기면 그 칸만 실려 나간다', () => {
+    const s = company()
+    s.benSettings = { ...DEFAULT_BEN, warmth: 2 }
+    expect(s.benRequest()).toMatchObject({ benSettings: { warmth: 'high' } })
+  })
+})
+
+describe('벤으로 바꿀 때 트랙 (2026-11-08)', () => {
+  it('트랙을 아직 안 골랐으면 그것을 사유로 말한다 — "위 항목을 채우면"은 어느 항목인지 알려 주지 않는다', () => {
+    const s = useInterviewStore()
+    const m = useModelStore()
+    m.$patch({ status: 'ready' })
+    useInterviewerStore().select('m2') // 벤 — 트랙을 사용자가 고른다
+    s.setTrack(null)
+    expect(s.track).toBe(null)
+    expect(s.startBlockReason).toBe('어느 면접으로 볼지 고르면 열립니다')
+  })
+
+  it('트랙을 고른 뒤에는 그 사유가 사라진다', () => {
+    const s = useInterviewStore()
+    useModelStore().$patch({ status: 'ready' })
+    useInterviewerStore().select('m2')
+    s.setTrack('company')
+    expect(s.startBlockReason).not.toBe('어느 면접으로 볼지 고르면 열립니다')
+  })
+
+  it('모델이 아직이면 모델 얘기가 먼저다 — 둘 다 모자라도 손댈 수 있는 것부터', () => {
+    const s = useInterviewStore()
+    useInterviewerStore().select('m2')
+    s.setTrack(null)
+    expect(s.startBlockReason).toBe('면접관이 준비되면 열립니다')
   })
 })

@@ -301,6 +301,7 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 { "track": "admission", "resumeText": "...(자기소개서)",
   "admission": { "name": "홍길동", "age": 19, "university": "한국대학교", "department": "컴퓨터공학과" } }
 // 선택 "voiceAnalysisConsent": true   // 목소리 분석 동의(기본 false, 2026-10-23)
+// 선택 "benSettings": { "warmth": "high", "difficulty": "advanced" }   // 벤 성향 설정(2026-11-07), 일부만 보내도 됨
 // 201 { "interviewId": "pi_01J9ZQ...", "session": Session, "voiceAnalysis": "on" }   // 티켓 1장 차감된 Session
 // 403 premium_required
 // 409 { "error": "no_tickets" }
@@ -310,10 +311,20 @@ POST 본문 = `ArchiveDetail`에서 `id`·`recordings`를 뺀 모양(`hasRecordi
 // 503 { "error": "ben_unavailable" }                         // 서버에 Claude 키가 없음. 티켓 차감 없음
 ```
 
-- `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 벤이 **회사명·직무만으로** 웹을 검색해 최신 정보 브리핑을 만들고 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
+- `company.name`(선택, 2026-10-15): 실제 지원 회사. 공백 제거 후 1~100자, 비면 없는 것으로 친다. 있으면 첫 턴에 서버가 **회사명·직무만으로** 공고 페이지·네이버 검색으로 자료를 모으고 요약해 최신 정보 브리핑을 만들고, 벤이 면접 내내 질문 근거로 쓴다(이력서는 검색에 쓰지 않는다). 같은 회사·직무 브리핑은 서버가 7일 동안 재사용한다. `track: "admission"`이면 무시.
 - `company.postingUrl`(선택, 2026-10-23): 모집공고 링크. 공백 제거 후 1~500자, ASCII 문자만(한글 경로는 퍼센트 인코딩된 주소), `http`/`https` 스킴과 호스트가 있는 절대 URL이어야 하고 비면 없는 것으로 친다(위반은 `422 invalid`, `field: "postingUrl"`). 회사명 **또는** 공고 링크가 있으면 첫 턴에 조사를 시작한다(둘 다 없으면 지금처럼 조사 없음). 조사에 보내는 것은 회사명·직무·공고 URL뿐이며 이력서·대화는 보내지 않는다. `track: "admission"`이면 무시하고 저장하지 않는다.
 
 - `voiceAnalysisConsent`(선택, 2026-10-23, additive): 답변 녹음을 외부 AI(Google Gemini — 서버 설정 `VOICE_PROVIDER`에 따라 직접 또는 학교 BAZE 게이트웨이 경유, 2026-11-03)로 보내 목소리를 분석하는 데 동의했는지. 기본 `false`이며 `false`이거나 서버에 고른 쪽의 키가 없으면 동작은 이전과 같다. 응답 `voiceAnalysis`는 `"off"`(동의 안 함) / `"on"`(동의 + 분석 가능) / `"unavailable"`(동의했지만 키가 없거나 모두 쓸 수 없음 - 프론트는 업로드하지 않는다). 동의 여부는 면접에 저장된다.
+
+- `benSettings`(선택, 2026-11-07, additive): 벤 성향 설정. 다섯 칸 모두 선택이며 빠진 칸은 기본값이다. **설정을 안 보내거나 모두 기본값이면 프롬프트가 이전과 같다**(지금의 압박형 벤). 정해진 값이 아니거나 모르는 키는 `422 invalid`. 면접 시작 때 저장되고 면접 중에는 바꿀 수 없다(턴·리포트가 저장된 값을 쓴다). 응답 형태는 그대로다.
+
+  | 칸 | 값 (굵은 것이 기본) | 뜻 |
+  |---|---|---|
+  | `warmth` | **`low`** / `mid` / `high` | 온화함. 면접 말투·짧은 반응·리포트 말투가 함께 바뀐다(low = 지금 벤, mid = 데이빗과 같은 표준, high = 부드럽게) |
+  | `followUp` | `low` / **`mid`** / `high` | 꼬리질문 깊이. low = 너무 짧을 때만·전체 1개, mid = 질문당 2개·전체 3개, high = 적극적으로·질문당 3개·전체 3개 |
+  | `questionMix` | `technical` / **`balanced`** / `personal` | 질문 비중. 자기소개 다음 질문 중 3개 이상을 직무 지식·문제 해결(입학 트랙: 전공 지식·탐구) 또는 인성·동기로 |
+  | `difficulty` | `basic` / **`practical`** / `advanced` | 난이도. 기초 개념 확인 ~ 선택 이유·대안 비교·한계까지 |
+  | `companyWeight` | `low` / **`mid`** / `high` | 회사·공고 비중. 회사 소식 질문 1개 / 1~2개 / 2~3개(공고가 있으면 공고·회사 합쳐 1~2개 / 2~3개 / 3~4개). 브리핑이 없는 면접·입학 트랙은 무시 |
 
 **2) 턴 — POST /api/premium/interviews/{id}/turns**
 
@@ -339,14 +350,14 @@ data: {"ended":false}
 - **회사 브리핑 `status` 이벤트(2026-10-15, 회사명이 있는 면접의 첫 턴만):** `: ping` 다음, 첫 `delta` 앞에 온다.
   ```
   event: status
-  data: {"phase":"researching"}      ← 조사 시작(캐시가 있으면 생략). 20~40초 걸릴 수 있고 그동안 `: ping`이 15초마다 온다
+  data: {"phase":"researching"}      ← 조사 시작(캐시가 있으면 생략). 서버가 공고 페이지·네이버 검색으로 모으고 요약한다. 최대 10초
 
   event: status
   data: {"phase":"briefing","ok":true}
   ```
-  `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 조사는 약 90초 안에 끝나지 않으면 포기하고 `ok: false`로 알린다(늦게 끝난 결과는 7일 캐시에만 들어간다). 브리핑은 면접 질문에만 쓰이고 리포트에는 쓰이지 않는다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
+  `ok: false`면 조사에 실패한 것이다. 면접은 브리핑 없이 이어진다 — "회사 최신 정보를 찾지 못해 이력서 중심으로 진행해요"를 보여 준다. 조사 결과는 첫 질문 전에 저장되므로, 첫 질문이 `error`로 끝나 같은 요청을 다시 보내면 `briefing` 이벤트만 다시 오고 조사는 반복되지 않는다. 조사도 Claude 호출 시도 1번으로 센다. 조사는 10초 안에 끝나지 않으면 포기하고 `ok: false`로 알린다(늦게 끝난 결과는 7일 캐시에만 들어간다). 브리핑은 면접 질문에만 쓰이고 리포트에는 쓰이지 않는다. 두 번째 턴부터는 `status` 이벤트가 없다. 모르는 이벤트는 무시해도 된다.
 
-- `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 9번 — 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1, 2026-10-15). 다음 턴은 `409 interview_over`. 리포트를 부른다.
+- `done.ended`가 `true`면 면접이 끝났다(종료 문장 "면접을 마치겠습니다"가 나왔거나 면접관 응답 9번 — 본질문 5 + 면접 전체 꼬리질문 최대 3 + 끝맺음 1, 2026-10-15). 9번째 응답은 서버가 Claude 없이 짧은 반응 + "면접을 마치겠습니다."로 보낸다(2026-11-08 — 상한의 마지막 응답이 질문이면 답할 수 없는 채로 끝나던 버그). 다음 턴은 `409 interview_over`. 리포트를 부른다.
 - Claude 호출이 실패하면 `event: error` / `data: {"code":"claude_error"}`(안전 분류기 거절이면 `"refused"`)를 보내고 끝난다. 그 턴은 기록하지 않으므로 **같은 요청을 다시 보내면 된다**. 이미 받은 `delta`는 버린다. 티켓은 돌려주지 않고 면접은 이어 갈 수 있다. 무료 면접관으로 떨어지지 않는다.
 - SSE `error` 코드 `turn_conflict`: 같은 면접에 턴 요청이 겹쳐 뒤의 것을 기록하지 않음. 새로 고쳐 이어 가면 된다.
 - SSE `error` 코드 `server_error`: 서버 내부 오류. 그 턴은 기록되지 않았을 수 있으니 `claude_error`처럼 같은 요청으로 다시 시도한다.
@@ -391,7 +402,13 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
       "voice": { "confidence": {"level": "...", "reason": "..."}, "tone": {"level": "...", "reason": "..."},
                  "tremor": {"present": false, "reason": "..."}, "trailingOff": {"present": false, "reason": "..."},
                  "clarity": {"level": "...", "reason": "..."} },                        // 목소리 결과 없으면 null
-      "insufficient": false    // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null
+      "insufficient": false,   // 측정 부족(말한 시간 5초 미만·음절 0)이면 true이고 나머지 키는 모두 null(voiceStatus 제외)
+      "voiceStatus": "ok"      // 목소리 분석 이유(2026-11-10, 이슈 #178, additive) — 자신감·발음 축이 비는 이유를 말한다. 항상 있다
+                               // no_consent: 이 면접에서 목소리 분석에 동의하지 않음(가장 먼저 본다)
+                               // too_short: 측정 부족(insufficient와 같은 조건)
+                               // ok: 분석 결과 있음 / pending: 리포트를 만들 때까지(20초) 분석이 안 끝남
+                               // failed: 분석 오류(한글 없는 받아쓰기 포함) / unavailable: 서버 사정(키 없음·한도 소진·녹음 미도착)
+                               // 예전에 저장된 리포트(report_v2_json·보관함 reportV2)에는 이 키가 없다 -> 이유 없이 "측정 없음"
     },
     "profile": [               // 답변별 육각형 프로필(2026-10-30). 항상 6개, 순서 고정
       { "key": "content", "label": "답변 내용", "level": 4, "comment": "..." },   // level 1~5(모델), comment 40자 이내(서버가 정리)
@@ -540,7 +557,7 @@ SSE(맨 앞 `: ping` 주석)로 리포트 원문을 `delta`로 보내고 `event:
   "topInterviews": [{ "interviewId": "pi_…", "userEmail": "…" | null, "calls": 12, "costUsd": 0.31 }] }  // 비용 상위 10 (면접 id 없는 행 제외)
 ```
 
-비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
+비용은 저장하지 않고 **조회할 때** `pricing` 요금표(USD, 100만 토큰당; 웹 검색은 회당)로 계산한다: `(입력×inputPerMTok + 출력×outputPerMTok + 캐시읽기×cacheReadPerMTok + 캐시쓰기×cacheWritePerMTok) / 1,000,000 + 웹검색×webSearch`. `pricing`은 면접(턴·리포트) 모델 요금이고, 다른 모델로 기록된 행(브리핑 요약 `claude-haiku-5-5`: 입력 0.10·출력 0.50·캐시읽기 0.01·캐시쓰기 0.125)은 그 모델 요금으로, 모르는 모델은 `pricing` 요금으로 센다. 요금표가 바뀌면 지난 기록의 비용도 새 요금으로 다시 계산된다. 프롬프트·응답 본문은 기록하지 않는다. 합계는 행별 비용을 더한 뒤 한 번만 반올림한다. 비용은 **하한 추정치**다 — 클라이언트 연결이 끊기거나 호출이 중도 포기되면 기록되지 않을 수 있다.
 
 ### GET /api/admin/audit?page=
 

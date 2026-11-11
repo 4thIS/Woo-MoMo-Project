@@ -7,6 +7,7 @@
 import { ref } from 'vue'
 import type { ResumeSlot } from '@/services/account'
 import PixelButton from '@/components/ui/PixelButton.vue'
+import ResumeFileDrop from './ResumeFileDrop.vue'
 
 // `slot`은 Vue 예약 속성이라 쓸 수 없다
 const props = defineProps<{ current: ResumeSlot | null; label: string }>()
@@ -18,6 +19,14 @@ const emit = defineEmits<{
 const title = ref(props.current?.title ?? '')
 const body = ref(props.current?.text ?? '')
 const error = ref('')
+
+/** 읽어 온 PDF로 칸을 채운다 (2026-11-08) */
+function onRead({ name, text }: { name: string; text: string }) {
+  body.value = text
+  // 제목이 비었을 때만 파일명으로 채운다 — 써 둔 제목을 덮으면 안 된다
+  if (!title.value.trim()) title.value = name.replace(/\.pdf$/i, '')
+  error.value = ''
+}
 
 function save() {
   if (!title.value.trim()) {
@@ -41,8 +50,13 @@ function save() {
         data-test="slot-title"
       />
     </label>
+    <!-- 파일로 채우는 길. 제목 아래·본문 위가 제 자리다 — 넣으면 둘이 함께 찬다 -->
+    <div class="field">
+      <span class="mono lab">{{ label }} 파일</span>
+      <ResumeFileDrop @read="onRead" />
+    </div>
     <label class="field">
-      <span class="mono lab">{{ label }}</span>
+      <span class="mono lab">{{ label }} 내용</span>
       <textarea
         v-model="body"
         class="input area"

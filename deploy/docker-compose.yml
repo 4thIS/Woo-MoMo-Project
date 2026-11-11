@@ -27,6 +27,9 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://momo.ssenu.cloud,https://demomo.ssenu.cloud,http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 벤 회사 브리핑 검색(spec 2026-11-08). 없으면 공고만으로 쓴다
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID:-}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET:-}
       ADMIN_LOGIN: ${ADMIN_LOGIN:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
@@ -37,12 +40,14 @@ services:
       # 목소리 분석 경로(gemini|baze, spec 2026-11-03). 프론트 동의 문구가 나가기 전까지는 baze로 둔다
       VOICE_PROVIDER: ${VOICE_PROVIDER:-baze}
       GEMINI_API_KEYS: ${GEMINI_API_KEYS:-}
-      GEMINI_VOICE_MODEL: ${GEMINI_VOICE_MODEL:-gemini-3.8-flash}
+      GEMINI_VOICE_MODEL: ${GEMINI_VOICE_MODEL:-gemini-3.5-flash}
       SIGNUP_EMAIL_VERIFY: ${SIGNUP_EMAIL_VERIFY:-false}
       SIGNUP_TERMS_REQUIRED: ${SIGNUP_TERMS_REQUIRED:-false}
       MAIL_API_KEY: ${MAIL_API_KEY:-}
       MAIL_API_URL: ${MAIL_API_URL:-https://send.ssenu.cloud/v1/send}
       BEN_REPORT_V2: ${BEN_REPORT_V2:-false}
+      # 벤 개인정보 가림(spec 2026-11-08). 기본 켜짐, 문제 있으면 false
+      BEN_PII_MASK: ${BEN_PII_MASK:-true}
     volumes:
       # 계정 DB·녹음. 운영 /srv/momo/data, demomo는 deploy/.env의 DATA_HOST_DIR=/srv/momo-dev/data
       - ${DATA_HOST_DIR:-/srv/momo/data}:/data

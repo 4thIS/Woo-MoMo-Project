@@ -95,6 +95,9 @@ function codeOf(raw: unknown): BenErrorCode {
 interface StartCommon {
   /** 목소리 분석 동의(2026-10-23, 기본 false). 켠 면접만 녹음을 올릴 수 있다 */
   voiceAnalysisConsent?: boolean
+  /** 벤 성향(2026-11-07, 선택). **바꾼 칸만** 보낸다 — 빠진 칸은 서버가 기본값으로 채운다.
+   *  전부 기본이면 이 키 자체를 싣지 않는다(그래야 프롬프트가 지금과 글자까지 같다) */
+  benSettings?: Record<string, string>
 }
 export interface StartCompany extends StartCommon {
   track: Extract<Track, 'company'>

@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReportV2Cards from './ReportV2Cards.vue'
-import type { Measurements, ReportV2, ReportV2Item } from '@/utils/reportV2'
+import type { Measurements, ReportV2, ReportV2Item, Voice } from '@/utils/reportV2'
 
 const item = (p: Partial<ReportV2Item> = {}): ReportV2Item => ({
   id: 'Q1',
@@ -40,6 +42,68 @@ const report = (p: Partial<ReportV2> = {}): ReportV2 => ({
 })
 
 const mountIt = (r: ReportV2) => mount(ReportV2Cards, { props: { report: r } })
+
+const voice = (p: Partial<Voice> = {}): Voice => ({
+  confidence: { level: '보통', reason: '고른 음량' },
+  tone: { level: '차분', reason: '일정한 속도' },
+  tremor: { present: false, reason: '고른 음높이' },
+  trailingOff: { present: false, reason: '끝까지 또렷' },
+  clarity: { level: '좋음', reason: '자음이 또렷함' },
+  ...p,
+})
+const withVoice = (v: Partial<Voice> = {}) =>
+  report({ items: [item({ measurements: measurements({ voice: voice(v) }) })] })
+
+describe('ReportV2Cards — 측정값 접기 (2026-11-07)', () => {
+  it('눈에 띄는 축은 근거까지 펼치고, 보통인 축은 이름만 한 줄로', () => {
+    const w = mountIt(
+      withVoice({
+        tone: { level: '긴장', reason: '첫 문장에서 호흡이 짧음' },
+        trailingOff: { present: true, reason: '문장 끝 음량이 떨어짐' },
+      }),
+    )
+    const flags = w.findAll('[data-test=voice-flag]')
+    expect(flags).toHaveLength(2)
+    expect(w.text()).toContain('첫 문장에서 호흡이 짧음')
+    expect(w.text()).toContain('문장 끝 음량이 떨어짐')
+    // 나머지 셋은 이름만, 근거는 접힌 채
+    expect(w.get('[data-test=voice-plain]').text()).toContain('자신감 보통')
+    expect(w.get('[data-test=voice-plain]').text()).toContain('발음 좋음')
+  })
+
+  it('접는 것은 보통인 축뿐이다 — "자신감 낮음"만 보이고 근거가 접히면 고칠 수가 없다', () => {
+    const w = mountIt(withVoice({ confidence: { level: '낮음', reason: '수치를 말한 뒤 작아짐' } }))
+    expect(w.text()).toContain('수치를 말한 뒤 작아짐')
+  })
+
+  it('떨림·끝 흐려짐은 "있음"일 때만 눈에 띄는 축이다', () => {
+    const off = mountIt(withVoice())
+    expect(off.findAll('[data-test=voice-flag]')).toHaveLength(0)
+    const on = mountIt(withVoice({ tremor: { present: true, reason: '음높이가 흔들림' } }))
+    expect(on.findAll('[data-test=voice-flag]')).toHaveLength(1)
+  })
+
+  it('측정 숫자는 카드 바닥 한 줄로 편다 — 프로필 육각형이 있을 때', () => {
+    const w = mountIt(
+      report({
+        items: [
+          item({
+            measurements: measurements(),
+            profile: [{ key: 'content', label: '답변 내용', level: 4, comment: '좋아요' }],
+          }),
+        ],
+      }),
+    )
+    const line = w.get('[data-test=measure-line]').text()
+    expect(line).toContain('300')
+    expect(line).toContain('적음')
+  })
+
+  it('예전에 저장된 리포트(프로필 없음)는 지금처럼 측정값 표를 그린다', () => {
+    const w = mountIt(report({ items: [item({ profile: null, measurements: measurements() })] }))
+    expect(w.find('[data-test=measure-rows]').exists()).toBe(true)
+  })
+})
 
 describe('ReportV2Cards — 종합', () => {
   it('강점·개선점을 근거 항목과 함께 보여 준다', () => {
@@ -217,9 +281,13 @@ describe('ReportV2Cards — 측정값', () => {
         ],
       }),
     )
-    const t = w.find('[data-test=voice]').text()
+    // 높음·또렷·있음은 모두 눈에 띄는 축이라 근거까지 펼쳐진다 (2026-11-07)
+    const t = w.text()
     expect(t).toContain('어미가 분명합니다')
     expect(t).toContain('문장 끝이 흐려집니다')
+    // 차분·없음은 정상 범위라 이름만 한 줄로
+    expect(w.get('[data-test=voice-plain]').text()).toContain('어조 차분')
+    expect(t).not.toContain('기복이 적습니다')
   })
 
   it('목소리 결과가 없으면 그 줄을 비운다', () => {
@@ -246,5 +314,40 @@ describe('ReportV2Cards — 답변별 프로필', () => {
   it('profile이 없는 옛 기록은 그리지 않는다 — 측정값 표가 그대로 남는다', () => {
     const w = mountIt(report({ items: [item({ profile: null })] }))
     expect(w.find('[data-test=v2-profile]').exists()).toBe(false)
+  })
+})
+
+describe('ReportV2Cards — 카드 바닥 (2026-11-07)', () => {
+  it('끼울 자리를 연다 — 벤 기록이 녹음을 갖는 쪽이다', () => {
+    const w = mount(ReportV2Cards, {
+      props: { report: report() },
+      slots: { foot: '<b data-test="x-foot">끼운 것</b>' },
+    })
+    expect(w.findAll('[data-test=x-foot]').length).toBe(w.findAll('[data-test=v2-card]').length)
+  })
+})
+
+describe('ReportV2Cards — 총평의 문항 참조 (2026-11-08)', () => {
+  const src = readFileSync(join(__dirname, 'ReportV2Cards.vue'), 'utf8')
+
+  it('참조 링크도 해시를 바꾸지 않는다 — 레일만 고치면 벤 리포트에서 같은 병이 남는다', () => {
+    const refs = src.match(/<a[\s\S]{0,200}?#item-\$\{r\}[\s\S]{0,200}?>/g) ?? []
+    expect(refs.length).toBe(2) // 강점·개선점 둘
+    for (const a of refs) expect(a).toMatch(/@click\.prevent/)
+  })
+})
+
+describe('ReportV2Cards — 카드 폭은 일정하다 (2026-11-08)', () => {
+  const src2 = readFileSync(join(__dirname, 'ReportV2Cards.vue'), 'utf8')
+
+  it('꼬리질문 카드를 들여쓰지 않는다 — 그 카드만 좁아져 줄이 들쭉날쭉해진다', () => {
+    const follow = src2.match(/\.follow \{[^}]*\}/)![0]
+    expect(follow).not.toMatch(/margin-left/)
+    expect(follow).not.toMatch(/margin-inline-start/)
+  })
+
+  it('대신 왼쪽 띠로 묶음을 보인다 — 폭을 줄이지 않고도 부모에 딸린 것이 보인다', () => {
+    const follow = src2.match(/\.follow \{[^}]*\}/)![0]
+    expect(follow).toMatch(/border-left/)
   })
 })
