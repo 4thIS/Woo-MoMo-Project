@@ -102,7 +102,7 @@ onBeforeUnmount(() => io?.disconnect())
         @click="modal.show('contact')"
       >
         <BuildingIcon />
-        <span class="label">제휴 문의</span>
+        <span class="label">제휴 안내</span>
       </button>
       <span class="divider" data-test="top-contact-divider" aria-hidden="true" />
       <template v-if="account.signedIn">

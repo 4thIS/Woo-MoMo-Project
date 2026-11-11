@@ -26,7 +26,7 @@ beforeEach(() => {
   setAccountApi(makeMockAccount({ delayMs: 0 }))
 })
 
-describe('TopBar — 기업 제휴 문의', () => {
+describe('TopBar — 기업 제휴 안내', () => {
   it('비로그인에게도 보인다 — 회사 사람은 로그인하지 않고 둘러본다', async () => {
     const w = bar()
     await flushPromises()
@@ -104,7 +104,7 @@ describe('TopBar — 등급별로 보이는 것', () => {
     const keys = [...w.element.querySelectorAll('.side [data-test^=top-]')].map(
       (e) => (e as HTMLElement).dataset.test,
     )
-    // 제휴 문의는 계정 묶음 앞에 선다 — 서비스 소개이지 내 상태가 아니다 (2026-11-11)
+    // 제휴 안내는 계정 묶음 앞에 선다 — 서비스 소개이지 내 상태가 아니다 (2026-11-11)
     expect(keys).toEqual([
       'top-contact',
       'top-contact-divider',
