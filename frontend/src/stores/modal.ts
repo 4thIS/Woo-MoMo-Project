@@ -6,7 +6,7 @@
  */
 import { defineStore } from 'pinia'
 
-export type ModalName = 'login' | 'premium' | 'me' | 'archive'
+export type ModalName = 'login' | 'premium' | 'me' | 'archive' | 'contact'
 
 export const useModalStore = defineStore('modal', {
   state: () => ({ open: null as ModalName | null }),

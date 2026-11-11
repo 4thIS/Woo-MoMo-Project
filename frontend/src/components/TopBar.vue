@@ -16,9 +16,11 @@ import AuthModal from '@/components/account/AuthModal.vue'
 import MeModal from '@/components/account/MeModal.vue'
 import PremiumModal from '@/components/account/PremiumModal.vue'
 import ArchiveModal from '@/components/account/ArchiveModal.vue'
+import ContactModal from '@/components/ContactModal.vue'
 import TicketIcon from '@/components/ui/icons/TicketIcon.vue'
 import ArchiveIcon from '@/components/ui/icons/ArchiveIcon.vue'
 import MeIcon from '@/components/ui/icons/MeIcon.vue'
+import BuildingIcon from '@/components/ui/icons/BuildingIcon.vue'
 
 const account = useAccountStore()
 const interview = useInterviewStore()
@@ -90,6 +92,19 @@ onBeforeUnmount(() => io?.disconnect())
     </button>
     <div class="side">
       <a v-if="onAdmin" href="/" class="mono link press" data-test="top-home">모모로</a>
+      <!-- 기업 제휴 제안. **로그인 여부와 무관하게** 늘 보인다 — 회사 사람은 가입하지 않고
+           둘러본다. 계정 묶음(프리미엄·티켓·보관함·내정보) 앞에 두고 세로줄로 가른다 -->
+      <button
+        type="button"
+        class="mono link press"
+        aria-label="기업 제휴 제안"
+        data-test="top-contact"
+        @click="modal.show('contact')"
+      >
+        <BuildingIcon />
+        <span class="label">제휴 안내</span>
+      </button>
+      <span class="divider" data-test="top-contact-divider" aria-hidden="true" />
       <template v-if="account.signedIn">
         <!-- 램프가 지금 프리미엄인지 한눈에 알려 준다. 요금 카드의 램프와 같은 어법 -->
         <button
@@ -161,6 +176,7 @@ onBeforeUnmount(() => io?.disconnect())
     @close="modal.close()"
     @need-premium="modal.show('premium')"
   />
+  <ContactModal :open="modal.open === 'contact'" @close="modal.close()" />
 </template>
 
 <style scoped>
